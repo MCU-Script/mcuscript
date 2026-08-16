@@ -116,6 +116,33 @@ unsigned mcuscript_instruction_size(uint8_t opcode)
 	case OP_IS_VALID:
 	case OP_IS_UNAVAILABLE:
 	case OP_IS_INVALID:
+	case OP_ADD_I64:
+	case OP_SUB_I64:
+	case OP_MUL_I64:
+	case OP_DIV_I64:
+	case OP_REM_I64:
+	case OP_NEG_I64:
+	case OP_EQ_I64:
+	case OP_NE_I64:
+	case OP_LT_I64:
+	case OP_LE_I64:
+	case OP_GT_I64:
+	case OP_GE_I64:
+	case OP_EXTEND_I32_I64:
+	case OP_WRAP_I64_I32:
+	case OP_ADD_F32:
+	case OP_SUB_F32:
+	case OP_MUL_F32:
+	case OP_DIV_F32:
+	case OP_NEG_F32:
+	case OP_EQ_F32:
+	case OP_NE_F32:
+	case OP_LT_F32:
+	case OP_LE_F32:
+	case OP_GT_F32:
+	case OP_GE_F32:
+	case OP_CONVERT_I32_F32:
+	case OP_TRUNC_F32_I32:
 		return 1;
 	case OP_CONST_I32_S8:
 	case OP_CONST_I32:
@@ -124,6 +151,8 @@ unsigned mcuscript_instruction_size(uint8_t opcode)
 	case OP_LOAD_H:
 	case OP_STORE_H:
 	case OP_CALL_H:
+	case OP_CONST_I64:
+	case OP_CONST_F32:
 		return 2;
 	case OP_CONST_I32_S16:
 	case OP_JMP:
@@ -519,10 +548,15 @@ static bool pop_type(walker *w, uint8_t want, uint8_t *got)
 	return true;
 }
 
-static bool binary_i32(walker *w, uint8_t result)
+static bool binary(walker *w, uint8_t operand, uint8_t result)
 {
-	return pop_type(w, MCUSCRIPT_I32, NULL) && pop_type(w, MCUSCRIPT_I32, NULL) &&
+	return pop_type(w, operand, NULL) && pop_type(w, operand, NULL) &&
 	       push_type(w, result);
+}
+
+static bool unary(walker *w, uint8_t operand, uint8_t result)
+{
+	return pop_type(w, operand, NULL) && push_type(w, result);
 }
 
 static bool same_shape(const shape *a, const shape *b)
@@ -685,10 +719,10 @@ static bool verify_function(const mcuscript_program *program, section imports,
 		case OP_MUL_I32:
 		case OP_DIV_I32:
 		case OP_REM_I32:
-			ok = binary_i32(&w, MCUSCRIPT_I32);
+			ok = binary(&w, MCUSCRIPT_I32, MCUSCRIPT_I32);
 			break;
 		case OP_NEG_I32:
-			ok = pop_type(&w, MCUSCRIPT_I32, NULL) && push_type(&w, MCUSCRIPT_I32);
+			ok = unary(&w, MCUSCRIPT_I32, MCUSCRIPT_I32);
 			break;
 		case OP_EQ_I32:
 		case OP_NE_I32:
@@ -696,7 +730,65 @@ static bool verify_function(const mcuscript_program *program, section imports,
 		case OP_LE_I32:
 		case OP_GT_I32:
 		case OP_GE_I32:
-			ok = binary_i32(&w, MCUSCRIPT_BOOL);
+			ok = binary(&w, MCUSCRIPT_I32, MCUSCRIPT_BOOL);
+			break;
+		case OP_CONST_I64:
+		case OP_CONST_F32: {
+			uint8_t want = (opcode == OP_CONST_I64) ? MCUSCRIPT_I64 : MCUSCRIPT_F32;
+			uint8_t type;
+			if (!constant_type(program, index, &type))
+				return fail(diagnostic, MCUSCRIPT_INDEX_OUT_OF_RANGE, pc);
+			if (type != want)
+				return fail(diagnostic, MCUSCRIPT_TYPE_MISMATCH, pc);
+			ok = push_type(&w, want);
+			break;
+		}
+		case OP_ADD_I64:
+		case OP_SUB_I64:
+		case OP_MUL_I64:
+		case OP_DIV_I64:
+		case OP_REM_I64:
+			ok = binary(&w, MCUSCRIPT_I64, MCUSCRIPT_I64);
+			break;
+		case OP_NEG_I64:
+			ok = unary(&w, MCUSCRIPT_I64, MCUSCRIPT_I64);
+			break;
+		case OP_EQ_I64:
+		case OP_NE_I64:
+		case OP_LT_I64:
+		case OP_LE_I64:
+		case OP_GT_I64:
+		case OP_GE_I64:
+			ok = binary(&w, MCUSCRIPT_I64, MCUSCRIPT_BOOL);
+			break;
+		case OP_EXTEND_I32_I64:
+			ok = unary(&w, MCUSCRIPT_I32, MCUSCRIPT_I64);
+			break;
+		case OP_WRAP_I64_I32:
+			ok = unary(&w, MCUSCRIPT_I64, MCUSCRIPT_I32);
+			break;
+		case OP_ADD_F32:
+		case OP_SUB_F32:
+		case OP_MUL_F32:
+		case OP_DIV_F32:
+			ok = binary(&w, MCUSCRIPT_F32, MCUSCRIPT_F32);
+			break;
+		case OP_NEG_F32:
+			ok = unary(&w, MCUSCRIPT_F32, MCUSCRIPT_F32);
+			break;
+		case OP_EQ_F32:
+		case OP_NE_F32:
+		case OP_LT_F32:
+		case OP_LE_F32:
+		case OP_GT_F32:
+		case OP_GE_F32:
+			ok = binary(&w, MCUSCRIPT_F32, MCUSCRIPT_BOOL);
+			break;
+		case OP_CONVERT_I32_F32:
+			ok = unary(&w, MCUSCRIPT_I32, MCUSCRIPT_F32);
+			break;
+		case OP_TRUNC_F32_I32:
+			ok = unary(&w, MCUSCRIPT_F32, MCUSCRIPT_I32);
 			break;
 		case OP_NOT:
 			ok = pop_type(&w, MCUSCRIPT_BOOL, NULL) && push_type(&w, MCUSCRIPT_BOOL);
@@ -907,6 +999,18 @@ int mcuscript_find_entry(const mcuscript_program *program, const char *name)
 int32_t mcuscript_constant_i32(const mcuscript_program *program, uint8_t index)
 {
 	return read_i32(program->constants + program->constant_offsets[index] + 1);
+}
+
+int64_t mcuscript_constant_i64(const mcuscript_program *program, uint8_t index)
+{
+	const uint8_t *at = program->constants + program->constant_offsets[index] + 1;
+	uint64_t bits = (uint64_t)read_u32(at) | ((uint64_t)read_u32(at + 4) << 32);
+	return (int64_t)bits;
+}
+
+uint32_t mcuscript_constant_f32_bits(const mcuscript_program *program, uint8_t index)
+{
+	return read_u32(program->constants + program->constant_offsets[index] + 1);
 }
 
 uint8_t mcuscript_import_type(const mcuscript_program *program, uint8_t index)

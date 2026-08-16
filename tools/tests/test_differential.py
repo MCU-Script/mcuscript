@@ -10,187 +10,18 @@ compiled against the same host description and prints through the same
 code; and the test asserts that the two outputs are **byte-identical**
 — not that each matches an expected string. Writing expectations down
 would test the expectations. Comparing the backends tests the promise.
+
+Floating point gets its own module, `test_float_agreement.py`, because
+that is where the promise was most in doubt.
 """
 
 from __future__ import annotations
 
-import shutil
-import subprocess
-from dataclasses import dataclass
-from pathlib import Path
-
 import pytest
+from harness import PROFILE, agree, both  # noqa: F401
 
 from mcuscript.asm import assemble
-from mcuscript.cbackend import generate, mangle, symbols
-from mcuscript.container import ImportKind
-from mcuscript.opcodes import ValType
-
-REPO = Path(__file__).resolve().parents[2]
-RUNTIME = REPO / "runtime"
-
-PROFILE = ".profile 1 0.0\n"
-
-
-@dataclass(frozen=True)
-class Run:
-    output: str
-    code: int
-
-
-@pytest.fixture(scope="session")
-def vm(tmp_path_factory) -> Path:
-    if shutil.which("cmake") is None:
-        pytest.skip("cmake is not installed")
-    build = tmp_path_factory.mktemp("vm")
-    subprocess.run(
-        ["cmake", "-S", str(RUNTIME), "-B", str(build), "-DCMAKE_BUILD_TYPE=Debug"],
-        check=True,
-        capture_output=True,
-    )
-    subprocess.run(["cmake", "--build", str(build)], check=True, capture_output=True)
-    return build / "tests" / "mcuscript-run"
-
-
-@pytest.fixture(scope="session")
-def cc() -> str:
-    for candidate in ("cc", "gcc", "clang"):
-        found = shutil.which(candidate)
-        if found:
-            return found
-    pytest.skip("no C compiler")
-
-
-def _shim(container, entry_name: str) -> str:
-    """The extern functions the generated code expects, onto the same
-    world the VM runner uses, plus a `main` that prints the same lines.
-
-    The generated program needs no runtime; this needs the name strings
-    and the host file, and nothing else."""
-    names = symbols(container)
-    entry_symbol = dict(names.entries)[entry_name]
-    returns = next(f.return_type for f in container.functions if f.name == entry_name)
-    kind = {
-        ValType.VOID: "MCUSCRIPT_VOID",
-        ValType.I32: "MCUSCRIPT_I32",
-        ValType.BOOL: "MCUSCRIPT_BOOL",
-    }[returns]
-
-    lines = [
-        "/* Test scaffolding, generated per container. */",
-        '#include "hostfile.h"',
-        '#include "mcuscript.h"',
-        "",
-    ]
-    for imp in container.imports:
-        symbol = mangle(imp.name)
-        if imp.kind == ImportKind.FUNCTION:
-            lines += [
-                f"bool mcuscript_call__{symbol}(const mcuscript_value *arguments,",
-                f"{' ' * (len(symbol) + 22)}mcuscript_value *result)",
-                "{",
-                f'\treturn hostfile_call_by_name("{imp.name}", arguments, result);',
-                "}",
-            ]
-            continue
-        if imp.access & 0x01:
-            lines += [
-                f"mcuscript_value mcuscript_read__{symbol}(void)",
-                "{",
-                f'\treturn hostfile_read_by_name("{imp.name}");',
-                "}",
-            ]
-        if imp.access & 0x02:
-            lines += [
-                f"void mcuscript_write__{symbol}(mcuscript_value value)",
-                "{",
-                f'\thostfile_write_by_name("{imp.name}", value);',
-                "}",
-            ]
-    lines += [
-        "",
-        f"extern bool {entry_symbol}(mcuscript_value *result, mcuscript_fault *fault);",
-        "",
-        "int main(int argc, char **argv)",
-        "{",
-        "\tif (argc < 2 || !hostfile_load(argv[1]))",
-        "\t\treturn 2;",
-        "\tmcuscript_value result = mcuscript_absent(MCUSCRIPT_UNAVAILABLE);",
-        "\tmcuscript_fault fault = MCUSCRIPT_NO_FAULT;",
-        f"\tif (!{entry_symbol}(&result, &fault)) {{",
-        "\t\thostfile_print_fault(fault);",
-        "\t\treturn 3;",
-        "\t}",
-        f"\thostfile_print_result({kind}, result);",
-        "\thostfile_print_done();",
-        "\treturn 0;",
-        "}",
-    ]
-    return "\n".join(lines) + "\n"
-
-
-def both(vm: Path, cc: str, tmp_path: Path, source: str, host: str) -> tuple[Run, Run]:
-    container = assemble(source)
-    entry = next(f.name for f in container.functions if f.invocable)
-
-    blob = tmp_path / "program.mcs"
-    blob.write_bytes(container.encode())
-    host_file = tmp_path / "host.txt"
-    host_file.write_text(host, encoding="utf-8")
-
-    interpreted = subprocess.run(
-        [str(vm), str(blob), str(host_file)],
-        capture_output=True,
-        text=True,
-        check=False,
-    )
-
-    (tmp_path / "program.c").write_text(generate(container), encoding="utf-8")
-    (tmp_path / "shim.c").write_text(_shim(container, entry), encoding="utf-8")
-    binary = tmp_path / "compiled"
-    build = subprocess.run(
-        [
-            cc,
-            "-std=c99",
-            "-O2",
-            "-Wall",
-            "-Wextra",
-            "-Werror",
-            f"-I{RUNTIME / 'include'}",
-            f"-I{RUNTIME / 'tests'}",
-            str(tmp_path / "program.c"),
-            str(tmp_path / "shim.c"),
-            str(RUNTIME / "tests" / "hostfile.c"),
-            str(RUNTIME / "src" / "names.c"),
-            "-o",
-            str(binary),
-        ],
-        capture_output=True,
-        text=True,
-        check=False,
-    )
-    assert build.returncode == 0, (
-        build.stderr + "\n" + (tmp_path / "program.c").read_text()
-    )
-    compiled = subprocess.run(
-        [str(binary), str(host_file)], capture_output=True, text=True, check=False
-    )
-    return (
-        Run(interpreted.stdout, interpreted.returncode),
-        Run(compiled.stdout, compiled.returncode),
-    )
-
-
-def agree(vm, cc, tmp_path, source: str, host: str = "") -> Run:
-    interpreted, compiled = both(vm, cc, tmp_path, source, host)
-    assert interpreted.output == compiled.output, (
-        f"the backends disagree\n"
-        f"  interpreted: {interpreted.output!r}\n"
-        f"  compiled:    {compiled.output!r}"
-    )
-    assert interpreted.code == compiled.code
-    return interpreted
-
+from mcuscript.cbackend import UnsupportedProgram, generate
 
 # -- arithmetic -----------------------------------------------------------
 
@@ -437,8 +268,6 @@ def test_the_generated_c_states_its_own_floating_point_requirement():
 
 
 def test_a_name_collision_is_refused_rather_than_emitted():
-    from mcuscript.cbackend import UnsupportedProgram
-
     container = assemble(
         PROFILE
         + ".entity read i32 fan.speed dim 1\n"

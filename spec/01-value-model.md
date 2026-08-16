@@ -232,30 +232,62 @@ alone, because it depends on how the embedder's toolchain compiles the
 generated C. Two requirements therefore fall on a conforming C backend
 and on the build around it:
 
-1. **The generated C states its own requirement where it can.** Every
-   generated translation unit carries `#pragma STDC FP_CONTRACT OFF`, so
-   that `a*b + c` is two roundings and not a fused multiply-add. This is
-   not a courtesy: measured on GCC 16.1.1, that expression contracts to
-   a single FMA under `-std=gnu11` and does not under `-std=c11` — the
-   same compiler and the same source, differing by a flag nobody thinks
-   about.
+1. **No contraction.** `a*b + c` must be two roundings, never a fused
+   multiply-add. The generated source carries
+   `#pragma STDC FP_CONTRACT OFF` for compilers that implement it, and
+   **a conforming build passes `-ffp-contract=off`**, because GCC does
+   not implement the pragma — it warns that the pragma is ignored and
+   contracts anyway.
 
-   **The pragma is not enough, because GCC does not implement it.** It
-   warns that the pragma is ignored and then contracts anyway. So the
-   generated source emits it only for compilers that honour it, and a
-   GCC build must pass **`-ffp-contract=off`**. A warning nobody can act
-   on trains people to ignore warnings, which is worse than the warning
-   is worth.
-2. **The specification names what must not be set.** `-ffast-math` and
-   anything implying it, and any flag enabling flush-to-zero, are
-   incompatible with a conforming build. An embedder that sets them has
-   a non-conforming build, in the same way that an embedder that
-   corrupts the container has a broken transport: the language states
-   the semantics, and the build must honour them.
+   This was measured rather than argued. On x86-64 with `-mfma`, the
+   program `a*b + c` for `1e20`, `1e20`, `-inf` produces **NaN**
+   interpreted and **-inf** compiled: the product overflows to infinity
+   and `inf + -inf` is NaN, while a fused operation never forms the
+   intermediate that overflows. That is not a difference in the last
+   digit; it is a different kind of number. GCC's default is
+   `-ffp-contract=fast` under `-std=gnu*` and `on` under `-std=c*`, so
+   the same source diverges or does not depending on a flag nobody
+   thinks about.
 
-Both requirements therefore land on the **build**, not only on the
-generated file, and a conforming C backend is one that ships with the
-flags it needs rather than one that hopes for them.
+   It is worth being precise about why storing every intermediate is
+   not enough by itself: `fast` contracts across a store as readily as
+   within an expression. The lowering helps against *excess precision*;
+   only the flag helps against contraction.
+2. **No `-ffast-math`.** It implies contraction and it flushes
+   subnormals to zero — measured: the smallest normal times 0.5 is
+   `0x00400000` interpreted and `0x00000000` under `-ffast-math`. Any
+   flag enabling flush-to-zero is likewise incompatible. Generated
+   translation units `#error` on `__FAST_MATH__`, which is the one of
+   the two a compiler will admit to.
+
+Both requirements land on the **build**, not only on the generated
+file, and a conforming C backend is one that ships with the flags it
+needs rather than one that hopes for them.
+
+### 1.5.1 Why bit-identity and not a tolerance
+
+The obvious softening — "equal to so many significant digits" — is
+worse than it looks, and not because of precision.
+
+**A comparison feeds a branch.** One ULP of disagreement in
+`temp > 25.0` is not one ULP of disagreement in the output; it is a
+different arm of the ladder and a fan at a different speed. A tolerance
+on values gives no bound at all on behaviour, because there is no
+tolerance on a `bool`.
+
+**It is also unnecessary.** IEEE-754 defines `+`, `-`, `*` and `/` as
+the correctly rounded result of the exact mathematical operation: for
+given operands and rounding mode there is exactly one right answer, and
+every conforming implementation produces it. Bit-identity is the
+*normal* case and the deviations are nameable — contraction, excess
+precision, flush-to-zero, and library functions that are not correctly
+rounded. This language has no library functions, by the same logic that
+kept `REM.f32` out (§3.5).
+
+**And a tolerance cannot express the cases that matter.** NaN is not
+within any tolerance of NaN, `+0` and `-0` are bit-different and
+numerically equal, and an infinity is not near anything. Those are
+exactly the values a faulty sensor produces.
 
 The differential test suite runs every case through both backends, on
 the host and on real hardware, with the host forced to single precision

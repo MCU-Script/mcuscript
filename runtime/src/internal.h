@@ -16,6 +16,8 @@ unsigned mcuscript_instruction_size(uint8_t opcode);
 
 /* A constant-pool entry, already known by the verifier to be an i32. */
 int32_t mcuscript_constant_i32(const mcuscript_program *program, uint8_t index);
+int64_t mcuscript_constant_i64(const mcuscript_program *program, uint8_t index);
+uint32_t mcuscript_constant_f32_bits(const mcuscript_program *program, uint8_t index);
 
 /* The declared type of a host entity, and of a host function's return,
  * by container import index. */

@@ -1,7 +1,8 @@
 # 4. Two backends, one container
 
 - Status: **draft** — the shape is settled and implemented for the
-  `core` group; the parts marked *open* below are not yet decided.
+  `core`, `i64` and `float` groups; the parts marked *open* below are
+  not yet decided.
 - Supersedes nothing. Answers ADR 0002 §8's largest open question, the
   C API toward embedders.
 
@@ -86,7 +87,31 @@ The trade is reversible. If a toolchain ever appears that cannot take
 the header, the arithmetic gets a second implementation and the test
 gets its teeth back; the header says so.
 
-### 4.5 The differential test compares, it does not expect
+### 4.5 Floating point is bit-identical, not approximate
+
+Asked whether the two backends could be allowed to differ in the last
+digits, the answer is no, and it is cheaper than it sounds.
+
+IEEE-754 defines `+`, `-`, `*` and `/` as the *correctly rounded* result
+of the exact mathematical operation, so for given operands there is one
+right answer and both backends compute it on the same hardware.
+Bit-identity is the normal case; the deviations are nameable and all of
+them are the compiler's doing, not the arithmetic's.
+
+A tolerance would also not buy what it appears to. A comparison feeds a
+branch: one ULP of disagreement in `temp > 25.0` is not one ULP of
+disagreement in the output, it is a different arm of the ladder. And the
+values that matter here — NaN, the two zeroes, the infinities a faulty
+sensor produces — are precisely the ones no tolerance can express.
+
+Two things make it hold in practice. A slot holds the 32-bit pattern, so
+both backends narrow at the same points and an FPU with wider
+intermediates cannot separate them. And the build passes
+`-ffp-contract=off` and never `-ffast-math` — measured, not assumed
+(§1.5, and the one test in this repository that asserts a
+*disagreement*).
+
+### 4.6 The differential test compares, it does not expect
 
 `tools/tests/test_differential.py` runs the same container through both
 backends against the same host description and asserts the outputs are
@@ -102,14 +127,16 @@ convenience.
 
 ## Consequences
 
-- **Floating point needs the build, not only the source.** Writing the
-  backend found that GCC does not implement `#pragma STDC FP_CONTRACT`:
-  it warns that the pragma is ignored and contracts anyway. The
-  generated source emits the pragma only where it is honoured, and a GCC
-  build must pass `-ffp-contract=off`. Specification §1.5 was corrected
-  to say so. The `float` group is not lowered yet, so this is
-  forward-looking — but it is the kind of thing that would have been
-  discovered far later and far more expensively.
+- **Floating point needs the build, not only the source**, and the
+  requirement is measured. GCC does not implement
+  `#pragma STDC FP_CONTRACT` — it warns that the pragma is ignored and
+  contracts anyway — so a conforming build passes `-ffp-contract=off`.
+  With `-mfma` and GCC's `-std=gnu*` default, `a*b + c` for `1e20`,
+  `1e20`, `-inf` gives NaN through the VM and -inf through the compiled
+  C. Generated units also `#error` on `__FAST_MATH__`, the one of the
+  two a compiler will admit to. The test suite contains the only
+  assertion in this repository that the backends **disagree**, so the
+  requirement cannot quietly stop mattering.
 - **The C API toward embedders is settled by having been written.** An
   embedder declares an array of imports and three callbacks, calls
   `mcuscript_load`, and is either refused by name or handed a program.
@@ -123,9 +150,6 @@ convenience.
 - **Function calls.** The `call` group is not lowered. Ordinary C
   functions plus the recursion counter of spec §5.4 is the obvious
   shape, but it has not been written and so it is not decided.
-- **`i64` and `float`.** The VM does not implement them either; both
-  backends should gain them together, and the differential test is the
-  reason to do it in that order.
 - **Several containers in one translation unit.** Today the generated
   symbols are global and a second program would collide. A per-program
   prefix is the likely answer; nothing needs it yet.

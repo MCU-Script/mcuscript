@@ -6,11 +6,12 @@ SPDX-License-Identifier: Apache-2.0
 # The MCUScript specification
 
 - Specification version: **0.1.0-draft**
-- Status: **complete in draft, being implemented.** Chapters 2 and 4 —
-  the container and its tables — now have a reader, a writer and a
-  verifier that follow them, and every correction that implementation
-  forced is in the text below. Chapters 1, 3 and 5 are still
-  unexecuted: there is no VM and no C backend yet, so nothing has run.
+- Status: **complete in draft, and executed.** All five chapters have
+  an implementation: two verifiers, an interpreter and a C backend, and
+  a differential test that runs the same container through both
+  backends and compares the bytes. The `core`, `i64` and `float`
+  instruction groups work end to end; `call` and `bits` are specified
+  and not lowered.
 
 This is the contract. Everything else in this repository is an
 implementation of it, including the reference compiler, the VM and the
@@ -60,10 +61,15 @@ language of this size might otherwise leave to the implementation —
 integer wrapping, division by zero, shift counts, the propagation of
 absent values.
 
-Where identity cannot be guaranteed by the specification alone — the
-floating-point cases, which depend on how the embedder compiles the
-generated C — the document says so and states the requirement on the
-build (§1.5).
+Where identity depends on how the embedder compiles the generated C —
+the floating-point cases — the document states the requirement on the
+build (§1.5), and it states it from measurement: a careless build does
+diverge, and the test suite proves it by compiling one program both
+ways and asserting that the results come apart.
+
+**It is bit-identity, not a tolerance**, and §1.5.1 says why: a
+comparison feeds a branch, so one ULP of disagreement is not one ULP of
+output, it is a different arm of the ladder.
 
 ## Conformance
 

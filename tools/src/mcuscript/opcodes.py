@@ -35,9 +35,10 @@ class Group(enum.IntEnum):
         return 1 << self.value
 
 
-#: The groups this version's runtime implements. `loop` is reserved and
-#: has no instructions at all (spec §3.8).
-IMPLEMENTED_GROUPS = frozenset({Group.CORE})
+#: The groups this version's runtime implements. `call` is specified but
+#: not lowered by either backend yet, and `loop` is reserved with no
+#: instructions at all (spec §3.8).
+IMPLEMENTED_GROUPS = frozenset({Group.CORE, Group.I64, Group.FLOAT})
 
 #: Opcode range per group (inclusive), spec §3.2. Ranges are disjoint so
 #: an implementation that omits a group omits a contiguous span of its

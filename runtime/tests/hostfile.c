@@ -60,11 +60,28 @@ static const char *type_name(uint8_t type)
 
 static void print_value(uint8_t type, mcuscript_value value)
 {
-	if (type == MCUSCRIPT_BOOL)
-		printf("%s %s", value.as.boolean ? "true" : "false",
-		       validity_name(value.validity));
-	else
-		printf("%ld %s", (long)value.as.i32, validity_name(value.validity));
+	switch (type) {
+	case MCUSCRIPT_BOOL:
+		printf("%s", value.as.boolean ? "true" : "false");
+		break;
+	case MCUSCRIPT_I64:
+		printf("%lld", (long long)value.as.i64);
+		break;
+	case MCUSCRIPT_F32: {
+		/* The bit pattern first, because that is what "the two
+		 * backends agree" has to mean for a float: %.9g round-trips
+		 * binary32, but a decimal rendering is a second thing that
+		 * could differ. The decimal is for a human, in brackets. */
+		uint32_t bits;
+		memcpy(&bits, &value.as.f32, sizeof bits);
+		printf("0x%08lx(%.9g)", (unsigned long)bits, (double)value.as.f32);
+		break;
+	}
+	default:
+		printf("%ld", (long)value.as.i32);
+		break;
+	}
+	printf(" %s", validity_name(value.validity));
 }
 
 /* -- the callbacks -------------------------------------------------- */
@@ -189,11 +206,31 @@ static bool parse_value(const char *token, uint8_t type, mcuscript_value *out,
 		return true;
 	}
 	char *end = NULL;
-	long parsed = strtol(token, &end, 0);
+	if (type == MCUSCRIPT_F32) {
+		out->as.i64 = 0;
+		out->validity = MCUSCRIPT_VALID;
+		if (token[0] == '0' && (token[1] == 'x' || token[1] == 'X')) {
+			/* An exact bit pattern, so a test can name a specific
+			 * NaN or the smallest subnormal without going through
+			 * a decimal that might not round back. */
+			uint32_t bits = (uint32_t)strtoul(token + 2, &end, 16);
+			memcpy(&out->as.f32, &bits, sizeof bits);
+		} else {
+			out->as.f32 = strtof(token, &end);
+		}
+		return end != token && *end == '\0';
+	}
+	long long parsed = strtoll(token, &end, 0);
 	if (end == token || *end != '\0')
 		return false;
-	*out = (type == MCUSCRIPT_BOOL) ? mcuscript_bool(parsed != 0)
-					: mcuscript_i32((int32_t)parsed);
+	out->as.i64 = 0;
+	out->validity = MCUSCRIPT_VALID;
+	if (type == MCUSCRIPT_BOOL)
+		out->as.boolean = parsed != 0;
+	else if (type == MCUSCRIPT_I64)
+		out->as.i64 = (int64_t)parsed;
+	else
+		out->as.i32 = (int32_t)parsed;
 	return true;
 }
 

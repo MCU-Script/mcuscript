@@ -33,6 +33,7 @@ strictly earlier than the load-time refusal the VM would give.
 from __future__ import annotations
 
 import re
+import struct
 from dataclasses import dataclass
 
 from .container import Container, Function, ImportKind
@@ -117,16 +118,24 @@ def generate(container: Container, *, source: str = "a container") -> str:
     w('#include "mcuscript.h"')
     w('#include "mcuscript_ops.h"')
     w("")
-    w("/* Two roundings, never a fused multiply-add: the specification")
-    w(" * pins the arithmetic and the build must honour it (spec §1.5).")
+    w("/*")
+    w(" * REQUIRED BUILD FLAGS: -ffp-contract=off, and not -ffast-math.")
     w(" *")
-    w(" * GCC does not implement this pragma — it warns that the pragma is")
-    w(" * ignored and then contracts anyway — so a GCC build must pass")
-    w(" * -ffp-contract=off. The pragma is emitted where it is honoured")
-    w(" * rather than everywhere, because a warning nobody can act on")
-    w(" * trains people to ignore warnings. */")
+    w(" * Two roundings, never a fused multiply-add (spec §1.5). The")
+    w(" * pragma below says so to compilers that implement it; GCC does")
+    w(" * not — it warns that the pragma is ignored and contracts anyway")
+    w(" * — so on GCC the flag is the only thing that works. Measured: on")
+    w(" * x86-64 with -mfma and -ffp-contract=fast, a*b+c for 1e20, 1e20,")
+    w(" * -inf gives NaN through the VM and -inf through this file.")
+    w(" */")
     w("#if defined(__clang__) || !defined(__GNUC__)")
     w("#pragma STDC FP_CONTRACT OFF")
+    w("#endif")
+    w("#if defined(__FAST_MATH__)")
+    w(
+        '#error "MCUScript requires IEEE-754 arithmetic: -ffast-math is not '
+        'a conforming build"'
+    )
     w("#endif")
     w("")
 
@@ -187,6 +196,10 @@ def _read_slot(name: str, type_: ValType) -> str:
     """A slot, as the C value of its verified type."""
     if type_ is ValType.I32:
         return f"mcuscript_op_as_i32({name})"
+    if type_ is ValType.I64:
+        return f"mcuscript_op_as_i64({name})"
+    if type_ is ValType.F32:
+        return f"mcuscript_op_as_f32({name})"
     if type_ is ValType.BOOL:
         return f"({name} != 0)"
     raise UnsupportedProgram(f"{type_} is not lowered yet")
@@ -195,24 +208,67 @@ def _read_slot(name: str, type_: ValType) -> str:
 def _write_slot(name: str, type_: ValType, expression: str) -> str:
     if type_ is ValType.I32:
         return f"{name} = mcuscript_op_from_i32({expression});"
+    if type_ is ValType.I64:
+        return f"{name} = mcuscript_op_from_i64({expression});"
+    if type_ is ValType.F32:
+        # Storing narrows back to binary32 at exactly the point the VM
+        # narrows, which is what makes an FPU with wider intermediates
+        # unable to separate the two backends.
+        return f"{name} = mcuscript_op_from_f32({expression});"
     if type_ is ValType.BOOL:
         return f"{name} = ({expression}) ? 1u : 0u;"
     raise UnsupportedProgram(f"{type_} is not lowered yet")
 
 
+_ARITHMETIC = {
+    "add": ValType.I32,
+    "sub": ValType.I32,
+    "mul": ValType.I32,
+}
+
+#: mnemonic -> (operand type, helper, result type)
 _BINARY = {
-    "add.i32": "mcuscript_op_add_i32({a}, {b})",
-    "sub.i32": "mcuscript_op_sub_i32({a}, {b})",
-    "mul.i32": "mcuscript_op_mul_i32({a}, {b})",
+    f"{stem}.{suffix}": (
+        {"i32": ValType.I32, "i64": ValType.I64, "f32": ValType.F32}[suffix],
+        f"mcuscript_op_{stem}_{suffix}",
+    )
+    for suffix in ("i32", "i64", "f32")
+    for stem in ("add", "sub", "mul")
+}
+_BINARY.update(
+    {
+        "div.f32": (ValType.F32, "mcuscript_op_div_f32"),
+    }
+)
+
+_DIVISION = {
+    "div.i32": (ValType.I32, "mcuscript_op_div_i32"),
+    "rem.i32": (ValType.I32, "mcuscript_op_rem_i32"),
+    "div.i64": (ValType.I64, "mcuscript_op_div_i64"),
+    "rem.i64": (ValType.I64, "mcuscript_op_rem_i64"),
+}
+
+_UNARY = {
+    "neg.i32": (ValType.I32, ValType.I32, "mcuscript_op_neg_i32"),
+    "neg.i64": (ValType.I64, ValType.I64, "mcuscript_op_neg_i64"),
+    "neg.f32": (ValType.F32, ValType.F32, "mcuscript_op_neg_f32"),
+    "convert.i32_f32": (ValType.I32, ValType.F32, "mcuscript_op_convert_i32_f32"),
 }
 
 _COMPARE = {
-    "eq.i32": "==",
-    "ne.i32": "!=",
-    "lt.i32": "<",
-    "le.i32": "<=",
-    "gt.i32": ">",
-    "ge.i32": ">=",
+    f"{stem}.{suffix}": (
+        {"i32": ValType.I32, "i64": ValType.I64, "f32": ValType.F32}[suffix],
+        operator,
+    )
+    for suffix in ("i32", "i64", "f32")
+    for stem, operator in (
+        ("eq", "=="),
+        ("ne", "!="),
+        ("lt", "<"),
+        ("le", "<="),
+        ("gt", ">"),
+        ("ge", ">="),
+    )
 }
 
 
@@ -314,6 +370,22 @@ def _instruction(
             _write_slot(push, ValType.I32, _c_i32(literal)),
             f"{push_state} = MCUSCRIPT_VALID;",
         ]
+    if name == "const.i64":
+        literal = container.constants[index].value
+        return [
+            _write_slot(push, ValType.I64, _c_i64(literal)),
+            f"{push_state} = MCUSCRIPT_VALID;",
+        ]
+    if name == "const.f32":
+        # The slot holds the bit pattern, so the literal is emitted as
+        # bits. A decimal literal would ask the C compiler to re-round
+        # it, and the two backends would then disagree about a constant.
+        literal = container.constants[index].value
+        bits = struct.unpack("<I", struct.pack("<f", literal))[0]
+        return [
+            f"{push} = 0x{bits:08X}u; /* {literal!r} */",
+            f"{push_state} = MCUSCRIPT_VALID;",
+        ]
     if name in ("const.true", "const.false"):
         return [
             f"{push} = {1 if name.endswith('true') else 0}u;",
@@ -389,43 +461,50 @@ def _instruction(
         return [f"{push} = {top};", f"{push_state} = {top_state};"]
 
     if name in _BINARY:
+        operand, helper = _BINARY[name]
         a, a_state = _slot(depth - 2)
         b, b_state = _slot(depth - 1)
-        expression = _BINARY[name].format(
-            a=_read_slot(a, ValType.I32), b=_read_slot(b, ValType.I32)
-        )
+        expression = f"{helper}({_read_slot(a, operand)}, {_read_slot(b, operand)})"
         return [
-            _write_slot(a, ValType.I32, expression),
+            _write_slot(a, operand, expression),
             f"{a_state} = mcuscript_op_worse({a_state}, {b_state});",
         ]
-    if name in ("div.i32", "rem.i32"):
+    if name in _DIVISION:
+        operand, helper = _DIVISION[name]
         a, a_state = _slot(depth - 2)
         b, b_state = _slot(depth - 1)
-        helper = "mcuscript_op_div_i32" if name == "div.i32" else "mcuscript_op_rem_i32"
         return [
             f"{a_state} = mcuscript_op_worse({a_state}, {b_state});",
             _write_slot(
                 a,
-                ValType.I32,
-                f"{helper}({_read_slot(a, ValType.I32)}, "
-                f"{_read_slot(b, ValType.I32)}, &{a_state})",
+                operand,
+                f"{helper}({_read_slot(a, operand)}, "
+                f"{_read_slot(b, operand)}, &{a_state})",
             ),
         ]
-    if name == "neg.i32":
+    if name in _UNARY:
+        source, result, helper = _UNARY[name]
+        return [_write_slot(top, result, f"{helper}({_read_slot(top, source)})")]
+    if name == "trunc.f32_i32":
         return [
             _write_slot(
                 top,
                 ValType.I32,
-                f"mcuscript_op_neg_i32({_read_slot(top, ValType.I32)})",
+                f"mcuscript_op_trunc_f32_i32({_read_slot(top, ValType.F32)}, "
+                f"&{top_state})",
             )
         ]
+    if name == "extend.i32_i64":
+        return [
+            _write_slot(top, ValType.I64, f"(int64_t){_read_slot(top, ValType.I32)}")
+        ]
+    if name == "wrap.i64_i32":
+        return [_write_slot(top, ValType.I32, f"(int32_t)(uint32_t)(uint64_t){top}")]
     if name in _COMPARE:
+        operand, operator = _COMPARE[name]
         a, a_state = _slot(depth - 2)
         b, b_state = _slot(depth - 1)
-        expression = (
-            f"{_read_slot(a, ValType.I32)} {_COMPARE[name]} "
-            f"{_read_slot(b, ValType.I32)}"
-        )
+        expression = f"{_read_slot(a, operand)} {operator} {_read_slot(b, operand)}"
         return [
             _write_slot(a, ValType.BOOL, expression),
             f"{a_state} = mcuscript_op_worse({a_state}, {b_state});",
@@ -485,6 +564,12 @@ def _instruction(
         ]
 
     raise UnsupportedProgram(f"{name} is not lowered yet")
+
+
+def _c_i64(value: int) -> str:
+    if value == -(2**63):
+        return "INT64_MIN"
+    return f"INT64_C({value})"
 
 
 def _c_i32(value: int) -> str:

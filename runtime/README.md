@@ -44,10 +44,13 @@ in about 300 lines, and it is short enough to read as documentation.
 - **It does not skip verification.** There is no flag for it. The VM
   sizes its frame from numbers the container supplied, and this is where
   those numbers are recomputed.
-- **It does not implement every instruction group.** This build is
-  `core` only; a container needing `i64`, `float`, `call` or `bits` is
+- **It does not implement every instruction group.** This build has
+  `core`, `i64` and `float`; a container needing `call` or `bits` is
   refused at load, by name, before anything runs. That is the mechanism
   working, not a gap in it.
+- **It does not survive `-ffast-math`.** The header refuses to compile
+  under it, and a build must pass `-ffp-contract=off`. Both are measured
+  requirements, not superstition — see spec §1.5.
 - **It does not count instructions.** Termination is proved at load —
   no backward jumps, capped call-graph cycles — so the dispatch loop
   carries no budget, and the C backend has nothing artificial to

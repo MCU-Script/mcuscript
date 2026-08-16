@@ -50,8 +50,12 @@ def test_the_c_opcode_table_matches_the_python_one():
     }
     assert found, "no opcode rows parsed — has the header's shape changed?"
 
-    core = {name: op.code for name, op in BY_NAME.items() if op.group is Group.CORE}
-    assert found == core
+    from mcuscript.opcodes import IMPLEMENTED_GROUPS
+
+    implemented = {
+        name: op.code for name, op in BY_NAME.items() if op.group in IMPLEMENTED_GROUPS
+    }
+    assert found == implemented
 
     for group in Group:
         macro = f"#define MCUSCRIPT_GROUP_{group.name} (1u << {group.value})"
@@ -394,9 +398,16 @@ def test_a_container_for_another_profile_is_refused(runner, tmp_path):
 
 
 def test_a_group_this_build_does_not_implement_is_refused(runner, tmp_path):
-    source = PROFILE + ".const n i64 5\n.entry go\n  const.i64 n\n  drop\n  ret\n"
+    # `bits` is specified and neither backend implements it, which is
+    # what makes it the honest test of the group mechanism.
+    source = (
+        PROFILE
+        + ".entry go -> i32\n  const.i32.s8 6\n  const.i32.s8 3\n  and.i32\n  ret_v\n"
+    )
     result = run(runner, tmp_path, source, "")
     assert result.refusal == "unsupported_group"
+    # `where` carries the mask of the groups this build lacks — bit 4.
+    assert result.out.split()[3] == "16"
 
 
 def test_an_import_the_host_does_not_offer_is_refused_by_name(runner, tmp_path):

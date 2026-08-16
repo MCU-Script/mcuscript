@@ -30,9 +30,10 @@ static mcuscript_value slot_to_value(uint8_t type, uint64_t raw, uint8_t state)
 	case MCUSCRIPT_BOOL:
 		value.as.boolean = raw != 0;
 		break;
+	case MCUSCRIPT_F32:
+		value.as.f32 = mcuscript_op_as_f32(raw);
+		break;
 	default:
-		/* i64 and f32 arrive with their groups; until then the
-		 * verifier has made this unreachable. */
 		value.as.i64 = (int64_t)raw;
 		break;
 	}
@@ -47,6 +48,8 @@ static uint64_t value_to_slot(uint8_t type, mcuscript_value value)
 		return mcuscript_op_from_i32(value.as.i32);
 	case MCUSCRIPT_BOOL:
 		return value.as.boolean ? 1u : 0u;
+	case MCUSCRIPT_F32:
+		return mcuscript_op_from_f32(value.as.f32);
 	default:
 		return (uint64_t)value.as.i64;
 	}
@@ -280,6 +283,177 @@ bool mcuscript_invoke(const mcuscript_program *program, int entry, mcuscript_slo
 			uint8_t wanted = (uint8_t)(opcode - OP_IS_VALID);
 			values[sp - 1] = (states[sp - 1] == wanted) ? 1u : 0u;
 			states[sp - 1] = MCUSCRIPT_VALID;
+			pc += 1;
+			break;
+		}
+
+		/* -- i64 ------------------------------------------------ */
+		case OP_CONST_I64:
+			PUSH(mcuscript_op_from_i64(mcuscript_constant_i64(program, OPERAND)),
+			     MCUSCRIPT_VALID);
+			pc += 2;
+			break;
+		case OP_ADD_I64:
+		case OP_SUB_I64:
+		case OP_MUL_I64: {
+			int64_t b = mcuscript_op_as_i64(values[sp - 1]);
+			int64_t a = mcuscript_op_as_i64(values[sp - 2]);
+			int64_t out = (opcode == OP_ADD_I64)   ? mcuscript_op_add_i64(a, b)
+				      : (opcode == OP_SUB_I64) ? mcuscript_op_sub_i64(a, b)
+							       : mcuscript_op_mul_i64(a, b);
+			sp--;
+			values[sp - 1] = mcuscript_op_from_i64(out);
+			states[sp - 1] = mcuscript_op_worse(states[sp - 1], states[sp]);
+			pc += 1;
+			break;
+		}
+		case OP_DIV_I64:
+		case OP_REM_I64: {
+			int64_t b = mcuscript_op_as_i64(values[sp - 1]);
+			int64_t a = mcuscript_op_as_i64(values[sp - 2]);
+			uint8_t state = mcuscript_op_worse(states[sp - 2], states[sp - 1]);
+			int64_t out = (opcode == OP_DIV_I64)
+					      ? mcuscript_op_div_i64(a, b, &state)
+					      : mcuscript_op_rem_i64(a, b, &state);
+			sp--;
+			values[sp - 1] = mcuscript_op_from_i64(out);
+			states[sp - 1] = state;
+			pc += 1;
+			break;
+		}
+		case OP_NEG_I64:
+			values[sp - 1] = mcuscript_op_from_i64(
+				mcuscript_op_neg_i64(mcuscript_op_as_i64(values[sp - 1])));
+			pc += 1;
+			break;
+		case OP_EQ_I64:
+		case OP_NE_I64:
+		case OP_LT_I64:
+		case OP_LE_I64:
+		case OP_GT_I64:
+		case OP_GE_I64: {
+			int64_t b = mcuscript_op_as_i64(values[sp - 1]);
+			int64_t a = mcuscript_op_as_i64(values[sp - 2]);
+			bool out;
+			switch (opcode) {
+			case OP_EQ_I64:
+				out = a == b;
+				break;
+			case OP_NE_I64:
+				out = a != b;
+				break;
+			case OP_LT_I64:
+				out = a < b;
+				break;
+			case OP_LE_I64:
+				out = a <= b;
+				break;
+			case OP_GT_I64:
+				out = a > b;
+				break;
+			default:
+				out = a >= b;
+				break;
+			}
+			sp--;
+			values[sp - 1] = out ? 1u : 0u;
+			states[sp - 1] = mcuscript_op_worse(states[sp - 1], states[sp]);
+			pc += 1;
+			break;
+		}
+		case OP_EXTEND_I32_I64:
+			values[sp - 1] = mcuscript_op_from_i64(
+				(int64_t)mcuscript_op_as_i32(values[sp - 1]));
+			pc += 1;
+			break;
+		case OP_WRAP_I64_I32:
+			/* Truncates silently rather than producing `invalid`:
+			 * it is the explicit "I want the low half" operation
+			 * (§3.4). */
+			values[sp - 1] = mcuscript_op_from_i32(
+				(int32_t)(uint32_t)(uint64_t)values[sp - 1]);
+			pc += 1;
+			break;
+
+		/* -- f32 ------------------------------------------------ */
+		case OP_CONST_F32:
+			PUSH((uint64_t)mcuscript_constant_f32_bits(program, OPERAND),
+			     MCUSCRIPT_VALID);
+			pc += 2;
+			break;
+		case OP_ADD_F32:
+		case OP_SUB_F32:
+		case OP_MUL_F32:
+		case OP_DIV_F32: {
+			float b = mcuscript_op_as_f32(values[sp - 1]);
+			float a = mcuscript_op_as_f32(values[sp - 2]);
+			float out = (opcode == OP_ADD_F32)   ? mcuscript_op_add_f32(a, b)
+				    : (opcode == OP_SUB_F32) ? mcuscript_op_sub_f32(a, b)
+				    : (opcode == OP_MUL_F32) ? mcuscript_op_mul_f32(a, b)
+							     : mcuscript_op_div_f32(a, b);
+			sp--;
+			/* Storing the result narrows it back to binary32 here
+			 * and in the generated C at the same point, which is
+			 * what makes an FPU with wider intermediates harmless
+			 * to the agreement of the two backends. */
+			values[sp - 1] = mcuscript_op_from_f32(out);
+			states[sp - 1] = mcuscript_op_worse(states[sp - 1], states[sp]);
+			pc += 1;
+			break;
+		}
+		case OP_NEG_F32:
+			values[sp - 1] = mcuscript_op_from_f32(
+				mcuscript_op_neg_f32(mcuscript_op_as_f32(values[sp - 1])));
+			pc += 1;
+			break;
+		case OP_EQ_F32:
+		case OP_NE_F32:
+		case OP_LT_F32:
+		case OP_LE_F32:
+		case OP_GT_F32:
+		case OP_GE_F32: {
+			float b = mcuscript_op_as_f32(values[sp - 1]);
+			float a = mcuscript_op_as_f32(values[sp - 2]);
+			bool out;
+			switch (opcode) {
+			/* IEEE-754 comparison: every one of these is false
+			 * when either operand is NaN, except `ne`. */
+			case OP_EQ_F32:
+				out = a == b;
+				break;
+			case OP_NE_F32:
+				out = a != b;
+				break;
+			case OP_LT_F32:
+				out = a < b;
+				break;
+			case OP_LE_F32:
+				out = a <= b;
+				break;
+			case OP_GT_F32:
+				out = a > b;
+				break;
+			default:
+				out = a >= b;
+				break;
+			}
+			sp--;
+			values[sp - 1] = out ? 1u : 0u;
+			states[sp - 1] = mcuscript_op_worse(states[sp - 1], states[sp]);
+			pc += 1;
+			break;
+		}
+		case OP_CONVERT_I32_F32:
+			values[sp - 1] = mcuscript_op_from_f32(
+				mcuscript_op_convert_i32_f32(mcuscript_op_as_i32(values[sp - 1])));
+			pc += 1;
+			break;
+		case OP_TRUNC_F32_I32: {
+			uint8_t state = states[sp - 1];
+			int32_t out = mcuscript_op_trunc_f32_i32(
+				mcuscript_op_as_f32(values[sp - 1]), &state);
+			values[sp - 1] = mcuscript_op_from_i32(out);
+			states[sp - 1] = state;
 			pc += 1;
 			break;
 		}
