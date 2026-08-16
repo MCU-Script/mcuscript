@@ -1345,7 +1345,7 @@ still open, renumbered.
 | 16 | Endianness, alignment, total length, must-understand sections, opcode-group declaration — the container gaps of §2.11, all of which the first spec must answer | §2.11 |
 | 17 | Whether load-time verification is mandatory. If the VM sizes its stack from a number in an untrusted file, it cannot be a build option | §2.11 |
 | 18 | Nothing — authenticity is the embedder's (§4). The language-side residue is only that the CRC must be labelled as corruption detection and the section mechanism must admit a signature section | §2.11, §4 |
-| 19 | Whether the specification *requires* a script to be able to observe its own write, forbids it, or names it embedder-defined — the last makes scripts non-portable, so it is not a free choice | §2.11, §4 |
+| 19 | Whether a script may observe its own write. Recommended resolution: **the language guarantees it can**, and commit *timing* stays the embedder's — the two are orthogonal, since a buffering host need only consult its own staging buffer on reads. That keeps scripts portable and still lets an embedder commit atomically at the end | §2.11, §4 |
 | 20 | Whether a script may hold state that survives an invocation. §1.2 implies not; nothing says it | §3.2 |
 | 21 | Whether the spec and the first profile get their own repositories inside the organization | ADR 0003 |
 | 22 | "Static inference is more pleasant for non-developers" is unevidenced, and sits oddly beside Pane & Myers, who found laypeople think in events and sets rather than in types | §2.3, §2.9 |
