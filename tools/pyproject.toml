@@ -1,0 +1,62 @@
+# SPDX-FileCopyrightText: 2026 The MCUScript Contributors
+# SPDX-License-Identifier: Apache-2.0
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "mcuscript"
+version = "0.1.0.dev0"
+description = "The MCUScript host toolchain: assembler, container tools, verifier and C backend"
+readme = "README.md"
+requires-python = ">=3.11"
+license = "Apache-2.0"
+authors = [{ name = "The MCUScript Contributors" }]
+keywords = ["mcuscript", "bytecode", "embedded", "microcontroller", "vm"]
+classifiers = [
+  "Development Status :: 2 - Pre-Alpha",
+  "Intended Audience :: Developers",
+  "Programming Language :: Python :: 3",
+  "Topic :: Software Development :: Compilers",
+  "Topic :: Software Development :: Embedded Systems",
+]
+
+# No runtime dependencies, and that is a rule rather than a coincidence:
+# the toolchain is the reference implementation of a specification, and
+# a reader reproducing it should not have to reproduce a dependency
+# tree first.
+dependencies = []
+
+[project.optional-dependencies]
+dev = ["pytest>=8", "ruff>=0.6"]
+
+[project.scripts]
+mcuscript = "mcuscript.cli:main"
+
+[project.urls]
+Homepage = "https://github.com/mcu-script/mcuscript"
+Specification = "https://github.com/mcu-script/mcuscript/tree/main/spec"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.ruff]
+line-length = 88
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "N", "UP", "B", "SIM", "RUF"]
+ignore = [
+  # The prose in this repository uses en dashes, em dashes and × on
+  # purpose, in comments as well as in the specification.
+  "RUF001",
+  "RUF002",
+  "RUF003",
+  # `Refused` is what a loader does to a container; naming it
+  # `RefusedError` would say it twice.
+  "N818",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

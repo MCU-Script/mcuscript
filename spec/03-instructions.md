@@ -318,7 +318,7 @@ the home profile normalizing temperature to tenths of a degree, so
         LOAD.H 0            ; temp                     [i32]
         CONST.i32.s16 280                              [i32 i32]
         GT.i32                                         [bool]
-        JMP_IF_FALSE +7 → L1                           []
+        JMP_IF_FALSE +5 → L1                           []
         CONST.i32.s8 3                                 [i32]
         JMP +16 → end                                  [i32]
 L1:     LOAD.H 0                                       [i32]

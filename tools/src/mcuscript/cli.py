@@ -1,0 +1,139 @@
+# SPDX-FileCopyrightText: 2026 The MCUScript Contributors
+# SPDX-License-Identifier: Apache-2.0
+"""The ``mcuscript`` command.
+
+Four subcommands so far, and each one is a thing the specification says
+somebody must be able to do: turn text into a container, turn a
+container back into text, refuse a bad container by name, and say what
+is inside a good one.
+"""
+
+from __future__ import annotations
+
+import argparse
+import sys
+from pathlib import Path
+
+from . import SPEC_VERSION, __version__
+from .asm import AsmError, assemble, disassemble
+from .container import Container, ImportKind
+from .errors import Refused
+from .opcodes import IMPLEMENTED_GROUPS, ValType, group_names
+from .verify import verify
+
+EXIT_OK = 0
+EXIT_REFUSED = 1
+EXIT_USAGE = 2
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(
+        prog="mcuscript",
+        description="The MCUScript host toolchain.",
+    )
+    parser.add_argument(
+        "--version",
+        action="version",
+        version=f"mcuscript {__version__} (specification {SPEC_VERSION})",
+    )
+    sub = parser.add_subparsers(dest="command", required=True)
+
+    p = sub.add_parser("asm", help="assemble text into a container")
+    p.add_argument("source", type=Path)
+    p.add_argument("-o", "--output", type=Path, required=True)
+    p.set_defaults(run=_asm)
+
+    p = sub.add_parser("dis", help="render a container as assembler source")
+    p.add_argument("container", type=Path)
+    p.set_defaults(run=_dis)
+
+    p = sub.add_parser("verify", help="check a container as a loader would")
+    p.add_argument("container", type=Path)
+    p.set_defaults(run=_verify)
+
+    p = sub.add_parser("info", help="describe a container")
+    p.add_argument("container", type=Path)
+    p.set_defaults(run=_info)
+
+    args = parser.parse_args(argv)
+    try:
+        return args.run(args)
+    except AsmError as error:
+        print(f"{args.source}:{error.line}: {error}", file=sys.stderr)
+        return EXIT_USAGE
+    except Refused as error:
+        print(f"refused: {error}", file=sys.stderr)
+        return EXIT_REFUSED
+    except OSError as error:
+        print(f"{error}", file=sys.stderr)
+        return EXIT_USAGE
+
+
+def _asm(args: argparse.Namespace) -> int:
+    container = assemble(args.source.read_text(encoding="utf-8"))
+    blob = container.encode()
+    args.output.write_bytes(blob)
+    print(f"{args.output}: {len(blob)} bytes, {len(container.functions)} function(s)")
+    return EXIT_OK
+
+
+def _dis(args: argparse.Namespace) -> int:
+    print(disassemble(_load(args.container)), end="")
+    return EXIT_OK
+
+
+def _verify(args: argparse.Namespace) -> int:
+    container = _load(args.container)
+    facts = verify(container)
+    for name, fact in facts.items():
+        print(
+            f"{name}: stack {fact.max_stack}, call depth {fact.max_call_depth}"
+            + (f", recursion cap {fact.recursion_cap}" if fact.recursion_cap else "")
+        )
+    return EXIT_OK
+
+
+def _info(args: argparse.Namespace) -> int:
+    container = _load(args.container)
+    print(f"format version   {container.format_version}")
+    print(
+        f"profile          {container.profile_id} "
+        f"v{container.profile_major}.{container.profile_minor}"
+    )
+    print(
+        "groups           "
+        + (", ".join(group_names(container.required_groups)) or "none")
+    )
+    missing = [
+        g
+        for g in group_names(container.required_groups)
+        if g not in {i.name.lower() for i in IMPLEMENTED_GROUPS}
+    ]
+    if missing:
+        print(f"                 not implemented here: {', '.join(missing)}")
+    print(f"code             {len(container.code)} bytes")
+    print(f"constants        {len(container.constants)}")
+    for imp in container.imports:
+        kind = "entity" if imp.kind == ImportKind.ENTITY else "function"
+        extra = f" dim {imp.dimension}" if imp.dimension else ""
+        if imp.kind == ImportKind.FUNCTION:
+            extra = "(" + ", ".join(str(t) for t in imp.param_types) + ")"
+        print(f"import           {kind} {imp.type} {imp.name}{extra}")
+    for fn in container.functions:
+        kind = "entry" if fn.invocable else "fn"
+        returns = "" if fn.return_type is ValType.VOID else f" -> {fn.return_type}"
+        print(
+            f"{kind:16s} {fn.name}{returns} at {fn.code_offset}, "
+            f"stack {fn.max_stack}, locals {len(fn.local_types)}"
+        )
+    for section in container.ancillary:
+        print(f"ancillary        {section.type}, {len(section.data)} bytes")
+    return EXIT_OK
+
+
+def _load(path: Path) -> Container:
+    return Container.decode(path.read_bytes())
+
+
+if __name__ == "__main__":  # pragma: no cover
+    raise SystemExit(main())

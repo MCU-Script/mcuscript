@@ -6,9 +6,11 @@ SPDX-License-Identifier: Apache-2.0
 # The MCUScript specification
 
 - Specification version: **0.1.0-draft**
-- Status: **complete in draft, unimplemented** — all five chapters
-  exist; none has been tested against a compiler, because there is not
-  one yet
+- Status: **complete in draft, being implemented.** Chapters 2 and 4 —
+  the container and its tables — now have a reader, a writer and a
+  verifier that follow them, and every correction that implementation
+  forced is in the text below. Chapters 1, 3 and 5 are still
+  unexecuted: there is no VM and no C backend yet, so nothing has run.
 
 This is the contract. Everything else in this repository is an
 implementation of it, including the reference compiler, the VM and the
@@ -88,11 +90,32 @@ An implementation conforms if it:
 | [04-linking.md](04-linking.md) | The constant, entry-point and import tables; name resolution; every error |
 | [05-execution.md](05-execution.md) | Invocation, frames, recursion, faults, termination |
 
-All five exist in draft. Writing 3 to 5 changed 1 and 2 twice, which
-was expected: `DUP` turned out to be the one instruction that pushes
-more than it pops, and the group table gained two entries. It will
-happen again — the first compiler will find what no amount of writing
-does.
+All five exist in draft, and each round of work on them changes the
+ones before. Writing 3 to 5 changed 1 and 2 twice: `DUP` turned out to
+be the one instruction that pushes more than it pops, and the group
+table gained two entries.
+
+Then implementing 2 and 4 changed them again, in eight places, and the
+list is worth keeping because it is what the exercise is for:
+
+- the checksum said "CRC32", which names at least four incompatible
+  functions — now CRC-32/ISO-HDLC, by name;
+- the `ENTR` record was missing the flag §4.3 said it had, and the
+  recursion cap §5.4 requires;
+- the string area's encoding was described as "length-prefixed" and
+  never specified;
+- "at most 256 constants" was 255;
+- `HOST` was both mandatory and omittable;
+- a function's **code region** was never defined, so "a branch outside
+  the function" had no meaning;
+- two refusals had no names (`reserved_field_set`, `unreachable_code`);
+- and the worked example in §3.9 printed a branch offset of `+7` where
+  the encoder computes `+5`.
+
+None of those is a change of design. Every one of them is a place where
+the document read as though it said something and did not, and no
+amount of re-reading had found them. The VM and the C backend will find
+the next set.
 
 ## Versioning
 

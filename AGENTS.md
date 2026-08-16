@@ -32,14 +32,17 @@ to prevent.
 | Path | Role |
 |---|---|
 | `spec/` | **The specification** — the contract every implementation answers to. Its own version number, and deliberately its own top-level directory so it can be split into `mcu-script/spec` in one cut if a second implementation ever justifies it |
+| `tools/` | The **host toolchain**, Python: container reader/writer, assembler, verifier, and later the compiler and the C backend |
 | `docs/adr/` | Architecture decision records — living drafts in `draft/`, immutable finals at the top level once something real exists |
 | `.github/` | CI, issue templates, CODEOWNERS |
 
-There is no source directory yet: the host compiler's implementation
-language is an open question (ADR 0002 §8), and an empty `src/` would
-answer it by accident. The specification comes first on purpose — the
-product owner's choice, and the right one for a project whose central
-promise is that two backends agree.
+The specification came first on purpose, and the implementation is
+being built from it rather than beside it: the verifier is written from
+chapter 2, the tables from chapter 4, and where the two disagree the
+**specification is corrected**, in place, in the same commit. Writing
+the first thousand lines of code already produced eight such
+corrections. A specification nobody implements is a specification
+nobody has checked.
 
 ## Where the decisions live: three layers
 
@@ -106,19 +109,40 @@ Sources and status in ADR 0002.
 
 ## Coding standards
 
-The implementation language is undecided, so there are no
-language-specific rules yet — add them here in the same commit that
-introduces the first source file, together with the matching
-`.pre-commit-config.yaml` hook and CI gate.
+Two languages, and the boundary between them is a rule rather than a
+habit: **anything that runs on a device is C; anything that runs on a
+developer's machine is Python.** A host tool may allocate, may take a
+second and may say a paragraph about what went wrong. A device runtime
+may do none of those.
 
-Until then:
+**Python (`tools/`)** — ruff for both linting and formatting, 88
+columns, configured in `tools/pyproject.toml`. The distribution has
+**no runtime dependencies** and that is a rule, not a coincidence: this
+is the reference implementation of a specification, and a reader
+reproducing it should not have to reproduce a dependency tree first.
+Type annotations everywhere, `from __future__ import annotations` at the
+top of every module. The floor is Python 3.11 and CI tests both ends of
+the supported range.
+
+**C (`runtime/`)** — C99, freestanding, no allocation, no libc beyond
+`<string.h>`; warnings are errors.
+
+Common to both:
 
 - `.editorconfig` holds the whitespace rules.
 - `pre-commit run --all-files` is the whole gate (whitespace, YAML,
-  TOML, codespell, REUSE, Conventional Commits). CI runs the same
-  thing.
+  TOML, codespell, REUSE, ruff, Conventional Commits). CI runs the same
+  thing plus the test suites.
+- Run the tests from the repository's own `.venv`, never a system
+  Python.
 - Everything in this repository is English, including documents that
   started as a German conversation with the product owner.
+
+**The opcode table lives in exactly one place** —
+`tools/src/mcuscript/opcodes.py` — and the C runtime's header is checked
+against it by a test. Adding an instruction in one and not the other is
+the drift this project cannot afford, because the two backends' agreeing
+is the whole promise.
 
 ## Licensing rules (strict)
 

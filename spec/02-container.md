@@ -24,7 +24,7 @@ to test.
 |---|---|---|---|
 | 0 | 4 | `magic` | `4D 43 55 53`, the bytes `MCUS` |
 | 4 | 2 | `format_version` | u16, this specification defines 1 |
-| 6 | 2 | `flags` | u16, all bits reserved and zero in version 1 |
+| 6 | 2 | `flags` | u16, all bits reserved; a non-zero value is `reserved_field_set` |
 | 8 | 4 | `total_length` | u32, the size of the whole container in bytes, header included |
 | 12 | 4 | `profile_id` | u32, identifies the profile this was compiled against |
 | 16 | 2 | `profile_major` | u16 |
@@ -40,7 +40,15 @@ differs from this field is refused before a single section is read. The
 alternative — walking section lengths to find the end — asks a hostile
 file where its own end is.
 
-**`crc32` detects corruption and nothing else.** It is not a security
+**`crc32` detects corruption and nothing else.** The algorithm is
+CRC-32/ISO-HDLC — the one PNG, gzip and Ethernet use, and the one
+`zlib.crc32` computes — over the whole container from offset 0 to
+`total_length`, with these four bytes taken as zero. Naming it matters:
+"CRC32" alone describes at least four incompatible functions, and two
+implementations that pick differently reject each other's containers
+with a checksum error that looks like corruption.
+
+It is not a security
 mechanism, and an implementation must not present it as one. It catches
 a flipped bit in flash or a truncated transfer. Whether a container is
 *authentic* — whether it came from someone entitled to put it on this
@@ -98,9 +106,11 @@ Defined in version 1:
 | `dbug` | ancillary | source line mapping and names, for diagnostics |
 | `note` | ancillary | free-form text; ignored |
 
-Every critical section must appear exactly once. `CODE`, `CNST` and
-`ENTR` may be empty; `HOST` may be absent only if the program refers to
-nothing outside itself, which is legal and useless.
+**All four appear exactly once, in every container.** A program that
+refers to nothing outside itself carries a `HOST` section with a count
+of zero; it does not omit it. An empty table and an absent section are
+the same fact, and a format that can express it twice makes every
+reader carry a branch for the second spelling.
 
 **An embedder that wants a signature gives it an ancillary type of its
 own** and looks for it in its own loader. Ancillary is the right choice
@@ -175,12 +185,14 @@ refuses the container if what it computes differs from what the file
 claims. The file's numbers are then either redundant or a lie, and
 either way the VM uses its own.
 
-What verification establishes, before any instruction runs:
+Verification walks each function from its first instruction along every
+path its branches can take. Everything below is established before any
+instruction runs:
 
-1. every instruction is fully contained in `CODE` and its opcode is
-   defined in a required group;
+1. every instruction is fully contained in its function's code region
+   and its opcode is defined in a required group;
 2. every branch target is a valid instruction boundary within the same
-   entry point's code;
+   function's region, and lies forward (§3.8);
 3. the operand stack is type-consistent along every path — the type
    stack at a join point is the same by every route to it — and every
    instruction receives the types it takes;
@@ -188,11 +200,37 @@ What verification establishes, before any instruction runs:
 5. the maximum stack depth and call depth, recomputed, match `ENTR`;
 6. the call graph's cycles all carry a declared depth cap, and the
    worst-case call depth follows from it;
-7. every index into `CNST`, `HOST` and the local slots is in range.
+7. every index into `CNST`, `HOST`, the local slots and the function
+   table is in range.
 
 Points 3 and 4 are what make the untagged slots of §1.2 safe: nothing
 at runtime checks a type because nothing at runtime *can* be the wrong
 type.
+
+### 2.6.1 Code regions
+
+Point 1 needs "the function's code region" to mean something, so the
+format fixes it: **the functions' code regions tile `CODE` exactly.**
+Sorted by `code_offset`, the first begins at 0, each one ends where the
+next begins, the last ends at the end of the section, and none is
+empty. Records need not be in offset order.
+
+The regions are what makes "a branch outside this function" a decidable
+question rather than a matter of taste, and the tiling is what leaves
+no bytes in `CODE` that belong to nobody.
+
+Within a region, verification counts how often each byte is decoded, and
+neither zero nor twice is allowed:
+
+- a byte decoded **twice** means two instruction boundaries overlap, so
+  some branch landed in the middle of an instruction and the code has
+  two readings — `bad_branch_target`. Counting is what catches this;
+  checking targets against a list of boundaries only works if the list
+  is complete, and its completeness is precisely what is in question.
+- a byte decoded **never** is code no path reaches — `unreachable_code`.
+  It cannot execute, so this is not a safety rule; it is a rule that a
+  container means one thing. Dead bytes are an encoder bug or something
+  smuggled in, and neither should be quietly accepted.
 
 ## 2.7 Load and fault behaviour
 

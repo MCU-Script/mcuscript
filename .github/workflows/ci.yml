@@ -1,13 +1,16 @@
 # SPDX-FileCopyrightText: 2026 The MCUScript Contributors
 # SPDX-License-Identifier: Apache-2.0
 #
-# CI for MCUScript. One gate today, because there is no implementation:
+# CI for MCUScript.
 #
-#   lint  — the same pre-commit hooks a contributor runs locally
-#           (whitespace, YAML/TOML, codespell, REUSE compliance).
+#   lint   — the same pre-commit hooks a contributor runs locally
+#            (whitespace, YAML/TOML, codespell, REUSE, ruff).
+#   tools  — the host toolchain's test suite, on the oldest and the
+#            newest Python the project supports. Both, because the
+#            oldest is what the floor in pyproject.toml claims and the
+#            newest is what a contributor will actually have.
 #
-# A build and a test gate are added in the same commit that introduces
-# the first source file. All actions are pinned to commit SHAs, not tags.
+# All actions are pinned to commit SHAs, not tags.
 
 name: CI
 
@@ -40,3 +43,25 @@ jobs:
       # runs locally via `pre-commit install --hook-type commit-msg`.
       - name: pre-commit
         run: pre-commit run --all-files --show-diff-on-failure
+
+  tools:
+    name: Toolchain (Python ${{ matrix.python }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ["3.11", "3.13"]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: ${{ matrix.python }}
+
+      - name: Install
+        run: python -m pip install --disable-pip-version-check -e "tools[dev]"
+
+      - name: pytest
+        run: python -m pytest tools/tests -q

@@ -35,7 +35,7 @@ Each entry is a type code followed by its value, little-endian: 4 bytes
 for `i32` and `f32`, 8 for `i64`. `bool` may not appear — it has
 dedicated instructions and a pool entry would be a wasted byte.
 
-The index is one byte, so a container holds at most 256 constants. That
+`count` is one byte, so a container holds at most 255 constants. That
 is not a limit any script in this domain approaches, and a wide form is
 a reserved extension rather than a cost paid now by every program.
 
@@ -59,15 +59,21 @@ Each record:
 
 | Size | Field | |
 |---|---|---|
-| 2 | `name_offset` | u16 into the string area, the entry point's name |
+| 2 | `name_offset` | u16 into the string area, the function's name |
 | 4 | `code_offset` | u32, the first instruction, relative to `CODE` |
+| 1 | `flags` | bit 0: the host may invoke this by name. Other bits reserved |
 | 1 | `return_type` | type code, `0x00` for none |
 | 1 | `max_stack` | slots |
-| 1 | `max_call_depth` | frames, `0` when the entry point calls nothing |
+| 1 | `max_call_depth` | frames below this one, `0` when it calls nothing |
+| 1 | `recursion_cap` | the cap of the call-graph cycle this belongs to, `0` for none (§5.4) |
 | 1 | `local_count` | |
 | `local_count` | `local_types` | one type code per local, in index order |
 
-Records are followed by the string area: length-prefixed UTF-8 names.
+Records are followed by the **string area**: for each name, one byte of
+length and then that many UTF-8 bytes, with no terminator. A record's
+`name_offset` addresses the length byte and is relative to the start of
+the area, so a name is at most 255 bytes and the area at most 64 KiB.
+Identical names are stored once.
 
 `max_stack` and `max_call_depth` are what the VM allocates from, and
 they are **recomputed by the verifier and compared** rather than
@@ -75,11 +81,16 @@ trusted (§2.6). A container whose declared numbers differ from the
 computed ones is refused; it is either a compiler bug or an attack, and
 neither should reach a running device.
 
+`recursion_cap` is the one number the verifier cannot derive: a cap is a
+*decision* the author made, not a property of the code (§5.4). What the
+verifier does derive is which functions form a cycle, and it refuses a
+cycle whose members declare no cap, or declare different ones.
+
 Function definitions — the targets of `CALL` (§3.6) — use the same
 record layout in the same section. An entry point is a function the
 host may invoke by name; a plain function is one only other code calls.
-The distinction is a flag in the record rather than a separate table,
-so the call-graph analysis of §5.4 sees one uniform set of nodes.
+The distinction is `flags` bit 0 rather than a separate table, so the
+call-graph analysis of §5.4 sees one uniform set of nodes.
 
 ## 4.4 `HOST` — the import table
 
@@ -92,7 +103,7 @@ container is loaded.
 | Offset | Size | Field |
 |---|---|---|
 | 0 | 1 | `count`, u8 |
-| 1 | … | `count` records, then the string area |
+| 1 | … | `count` records, then the string area (§4.3) |
 
 Each record:
 
@@ -158,8 +169,9 @@ the loader can only say "invalid".
 | `bad_checksum` | the CRC does not match |
 | `malformed_section` | a section extends past `total_length`, or the sections do not tile the container exactly |
 | `unknown_critical_section` | a section with an uppercase type this reader does not know (§2.3) |
-| `missing_section` | a required critical section is absent |
+| `missing_section` | one of the four critical sections is absent |
 | `duplicate_section` | a critical section appears more than once |
+| `reserved_field_set` | a field this version reserves is not zero — the header's `flags`, an `ENTR` record's unused flag bits |
 
 ### Compatibility errors
 
@@ -174,15 +186,16 @@ the loader can only say "invalid".
 |---|---|
 | `undefined_opcode` | an opcode not assigned, or assigned to a group not required |
 | `truncated_instruction` | an instruction's operands extend past `CODE` |
-| `bad_branch_target` | a target outside the function, or not on an instruction boundary |
+| `bad_branch_target` | a target outside the function's code region, or not on an instruction boundary (§2.6.1) |
 | `backward_branch` | a backward jump (§3.8) |
+| `unreachable_code` | a byte of a function's region that no path reaches (§2.6.1) |
 | `type_mismatch` | an instruction receives an operand type it does not take |
 | `stack_underflow` | an instruction pops from an empty stack on some path |
 | `inconsistent_join` | two paths reach the same instruction with different stack shapes |
 | `unbalanced_return` | the stack at `RET`/`RET_V` does not hold exactly what the return type requires |
 | `stack_depth_mismatch` | the recomputed `max_stack` differs from the declared one |
 | `call_depth_mismatch` | the recomputed `max_call_depth` differs from the declared one |
-| `uncapped_recursion` | a cycle in the call graph without a declared cap (§5.4) |
+| `uncapped_recursion` | a cycle in the call graph without a declared cap, or whose members declare different ones (§5.4) |
 | `index_out_of_range` | an index into `CNST`, `HOST`, the locals or the function table is past its count |
 
 ### Linking errors

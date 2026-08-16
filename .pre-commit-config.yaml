@@ -5,12 +5,19 @@
 #          pre-commit install --hook-type commit-msg
 # Update pins periodically with: pre-commit autoupdate
 #
-# Language-specific hooks (a formatter, a linter) are added in the same
-# commit that introduces the first source file — the implementation
-# language is an open question (docs/adr/draft/0002-inherited-context.md).
+# The toolchain in `tools/` is Python and the runtime in `runtime/` is
+# C; ruff covers the first, and the second is covered by the compiler's
+# own warnings in CI rather than by a formatter here.
 # Pinned versions are kept in step with the mcuhome repository.
 
 repos:
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.16.1
+    hooks:
+      - id: ruff
+        args: [--fix]
+      - id: ruff-format
+
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v5.0.0
     hooks:
