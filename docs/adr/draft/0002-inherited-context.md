@@ -866,11 +866,16 @@ things that would otherwise be discovered by writing them wrong first.
 3. **No total length in the header.** Every section states its own
    length and nothing states the file's, so a truncated container is
    only detectable by arithmetic that a hostile file controls.
-4. **CRC32 is integrity, not authenticity.** §1.6 requires an
-   authenticated channel, and §1.10 records that MCUboot's signature is
-   the only payload trust anchor in the existing path — which a script
-   push deliberately bypasses. A checksum catches a flipped bit, not an
-   attacker.
+4. **CRC32 is integrity, not authenticity — and authenticity is not
+   this project's to provide.** How bytecode reaches a device and what
+   vouches for it is the embedder's business (ADR 0001): it may arrive
+   over an authenticated channel, be signed, or sit on an SD card as a
+   plain file. What the *format* owes is (a) a checksum that says
+   plainly it detects corruption and nothing else, so nobody mistakes
+   it for a security mechanism, and (b) an extension slot an embedder
+   can put a signature in without the language deciding anything —
+   which the optional-section mechanism of gap 5 already provides. The
+   obligation lands on the embedder and is listed in §4.
 5. **"Unknown sections are skipped" has no must-understand flag.**
    WebAssembly separates custom sections (skippable) from defined ones;
    ELF is built for it. Without that split, a v1.1 compiler emitting a
@@ -909,12 +914,19 @@ things that would otherwise be discovered by writing them wrong first.
    groups selected per Kconfig (§2.7), a device that linked no float
    support must reject float bytecode at load time. It can only do that
    if the requirement is written in the header.
-10. **Budget exhaustion has the same rollback hole §2.8 objects to.**
-    The argument against heap frames is that a half-run script that
-    already wrote two entities cannot be undone. An instruction budget
-    that fires mid-script does exactly the same thing. Either writes
-    are buffered to a commit point, or scripts are documented as
-    non-atomic — but it has to be one of them, on purpose.
+10. **Termination is this project's problem; atomicity is the
+    embedder's.** The two were conflated. A script that stops early —
+    because a budget fired, or because it faulted — may have already
+    written two entities and cannot undo them, which is the same
+    objection §2.8 raises against heap frames. But writes go through
+    the host, so whether they take effect immediately or buffer to a
+    commit point is a *host* policy, not a VM one, and both backends
+    inherit whichever the embedder implements. What the language owes
+    is narrower and still real: proving that a script terminates, and
+    **specifying whether a script may observe its own write** — because
+    that is observable behaviour, and a language that leaves it
+    genuinely undefined makes scripts non-portable between
+    embedders.
 
 ### 2.12 Proposed answers to §2.11 — researched, not yet signed off
 
@@ -979,33 +991,56 @@ Cortex-M0+ never faults; a total-length field in the header, so
 truncation is detectable without trusting section lengths; PNG's
 critical-bit convention on the section identifier, so a section a reader
 does not know is either safely skippable or a hard refusal and never
-silently ignored; **verification mandatory and never a build option**,
+silently ignored — and so an embedder can attach a signature section
+without the format needing to know what a signature is; a CRC that the
+spec labels explicitly as corruption detection and **not** a security
+mechanism; **verification mandatory and never a build option**,
 recomputing the stack depth rather than trusting the ENTRY section;
 required opcode groups declared as a bitmask in the header so a build
 without float refuses at load instead of misbehaving; and the eight
 HOST linking failures named individually as load-time errors, modelled
 on the JVM's linking-error hierarchy.
 
-**Execution budget: the PLC scan cycle, not an instruction counter.**
-Writes go to a staging buffer and commit atomically at `RET`, which is
-how IEC 61131-3 has run industrial plants for forty years, and it closes
-gap 10 exactly: a script cut short leaves the device consistent because
-it leaves it unchanged. It also removes the reason for a per-opcode
-counter — with loops bounded (§2.4) and recursion capped (§2.8),
-termination is provable at load time, the way eBPF does it, so the
-runtime counts nothing and the C backend has nothing awkward to
-reproduce.
+**Termination is proved, not metered.** With loops bounded (§2.4) and
+recursion capped (§2.8), a script's termination is provable at load
+time the way eBPF proves it — so there is no per-opcode counter, the
+runtime counts nothing, and the C backend has nothing awkward to
+imitate. This is the half of gap 10 that belongs to the language.
 
-**Float is the one that does not resolve cleanly.** Integer semantics
-pin down without difficulty — wrapping defined explicitly, division and
-modulo by zero yielding `invalid`, shift counts and negative shifts
-specified rather than left to C. Float does not: bit-identity depends on
-`-ffp-contract`, `-ffast-math` and denormal handling, and those belong
-to the *embedder's* build, not to this project. Measured locally on
-GCC 16.1.1: `a*b+c` contracts to a single FMA under `-std=gnu11` and
-does not under `-std=c11` — the same compiler, the same source, two
-different results, decided by a flag nobody thinks about. Options are
-in §8 and one of them is a product decision, not an engineering one.
+The other half does not. Whether a partly-run script's writes are
+undone, and whether a script can observe its own write, are **host
+policies**: writes leave through the host interface, so an embedder
+that buffers them to a commit point gets atomicity, and one that
+applies them immediately does not, and both backends inherit whichever
+it chose. The industrial answer is worth citing to embedders — IEC
+61131-3's scan cycle reads inputs into an image, computes, and writes
+outputs at the end, which is why a PLC cut mid-scan leaves a plant
+consistent — but citing it is the most this project should do. What it
+*must* do is say in the specification which behaviour a script may rely
+on, rather than leave it genuinely undefined and make scripts
+non-portable between embedders (§4).
+
+**Float ships from the first version (product owner, 2026-08-16).**
+Integer semantics pin down without difficulty — wrapping defined
+explicitly, division and modulo by zero yielding `invalid`, shift counts
+and negative shifts specified rather than left to C. Float is harder:
+bit-identity depends on `-ffp-contract`, `-ffast-math` and denormal
+handling. Measured locally on GCC 16.1.1, `a*b+c` contracts to a single
+FMA under `-std=gnu11` and does not under `-std=c11` — the same
+compiler, the same source, two results, decided by a flag nobody thinks
+about.
+
+The decision is to include it, single-precision IEEE-754, and to make
+the language state its requirement rather than assume it: the generated
+C carries `#pragma STDC FP_CONTRACT OFF` itself, the specification names
+the flags that must not be set, and the differential harness runs on
+host and device with the host forced to single precision. That is what
+Java and WebAssembly do, and it puts this in the same place as
+everything else on this boundary — the language specifies the
+semantics, the embedder's build must honour them, and a build that does
+not is the embedder's defect. Which is consistent rather than
+convenient: the same reasoning that hands transport and storage to the
+embedder hands it responsibility for its own compiler flags.
 
 ---
 
@@ -1214,7 +1249,14 @@ its documents says any of this yet.
    phase (§1.10); §2.7 is the first sketch, §2.11 lists what it is
    still missing, and the two documents will have to agree on framing,
    alignment and whether the region holds one container or several.
-9. **MCUScript becomes a pinned dependency.** §1.4's charter says
+9. **The embedder decides, documents and applies uniformly whether a
+   script's writes are buffered.** Writes leave through the host
+   interface, so atomicity is the embedder's policy, not the VM's — but
+   both backends must inherit the same one, and users need to know
+   which they have. IEC 61131-3's scan cycle (buffer, commit at the
+   end) is the model worth copying: a script cut short then leaves the
+   device unchanged rather than half-updated.
+10. **MCUScript becomes a pinned dependency.** §1.4's charter says
    MCUHome pins an engine release the way it pins Zephyr and the Matter
    SDK — which in practice means an entry in the west manifest and in
    the build container, plus the compiler reaching the builder. Neither
@@ -1293,7 +1335,7 @@ still open, renumbered.
 | 6 | The C API toward embedders — the contract that makes this a language rather than a component | §1.4, §4 |
 | 7 | **How a 64-bit value lives in a 32-bit-cell stack machine.** The time base is decided as `int64` ms, so this is now a design problem rather than a choice: two cells and a changed stack-effect rule, or a wider cell and more RAM per script | §2.6, §2.11 |
 | 8 | The percent base unit (0–100 / 0–255 / 0–1000). A profile question, but the first profile still has to answer it — Matter uses 0–254 for level and 0–10000 for percent100ths | §2.6 |
-| 9 | Float: which width, and how bit-identity across the two backends is actually achieved given compiler flags and intermediate precision | §2.3, §2.7 |
+| 9 | Float is in and single-precision; what remains is the exact flag list the specification names, and how the differential harness pins host precision | §2.12 |
 | 10 | The host compiler's implementation language. A compiler that only Python embedders can run is a different product from one anybody can | §1.4 |
 | 11 | Whether the first artifact is the spec (the product owner's choice) or the expression-level end-to-end MVP (the advice), and what a spec is worth before either backend exists | §2.2f, §2.3 |
 | 12 | Execution-budget semantics: what happens when a script is cut off after it has already written entities | §2.4, §2.8, §2.11 |
@@ -1302,8 +1344,8 @@ still open, renumbered.
 | 15 | How the non-developer validation actually gets done, given that the product owner has said he cannot judge it himself | §2.2g, §2.9 |
 | 16 | Endianness, alignment, total length, must-understand sections, opcode-group declaration — the container gaps of §2.11, all of which the first spec must answer | §2.11 |
 | 17 | Whether load-time verification is mandatory. If the VM sizes its stack from a number in an untrusted file, it cannot be a build option | §2.11 |
-| 18 | Authenticity of pushed bytecode: channel-level, a signature in the container, or both. CRC32 answers neither | §2.11, §4 |
-| 19 | Script atomicity: buffered writes with a commit point, or documented non-atomicity | §2.11 |
+| 18 | Nothing — authenticity is the embedder's (§4). The language-side residue is only that the CRC must be labelled as corruption detection and the section mechanism must admit a signature section | §2.11, §4 |
+| 19 | Whether the specification *requires* a script to be able to observe its own write, forbids it, or names it embedder-defined — the last makes scripts non-portable, so it is not a free choice | §2.11, §4 |
 | 20 | Whether a script may hold state that survives an invocation. §1.2 implies not; nothing says it | §3.2 |
 | 21 | Whether the spec and the first profile get their own repositories inside the organization | ADR 0003 |
 | 22 | "Static inference is more pleasant for non-developers" is unevidenced, and sits oddly beside Pane & Myers, who found laypeople think in events and sets rather than in types | §2.3, §2.9 |
