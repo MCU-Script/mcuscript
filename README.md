@@ -14,7 +14,7 @@ compiled into the firmware — every program expressible both ways, with
 the same behaviour either way.**
 
 MCUScript is a standalone project in its own organization,
-[`mcuscript-lang`](https://github.com/mcuscript-lang), developed
+[`mcu-script`](https://github.com/mcu-script), developed
 independently. [MCUHome](https://github.com/mcu-home/mcuhome), which
 turns YAML device descriptions into Zephyr firmware, is its first and
 reference embedder — not its owner. Being useful to projects that have

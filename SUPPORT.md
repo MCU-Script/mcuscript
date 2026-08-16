@@ -4,9 +4,9 @@ MCUScript is a design in progress with no implementation — there is
 nothing to install and nothing to run.
 
 - **Questions and ideas:**
-  [GitHub Discussions](https://github.com/mcuscript-lang/mcuscript/discussions)
+  [GitHub Discussions](https://github.com/mcu-script/mcuscript/discussions)
 - **Bug reports:**
-  [Issue tracker](https://github.com/mcuscript-lang/mcuscript/issues/new/choose)
+  [Issue tracker](https://github.com/mcu-script/mcuscript/issues/new/choose)
   (please use the issue forms)
 - **Security vulnerabilities:** see [SECURITY.md](SECURITY.md) — never
   public issues

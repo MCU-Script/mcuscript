@@ -11,7 +11,7 @@ on-device VM, and transpilable to plain C to be built into the firmware
 instead — one source, two backends, identical behaviour, and **every
 program expressible both ways**. It is a **standalone project** in its
 own organization,
-[`mcuscript-lang`](https://github.com/mcuscript-lang), with its own ADR
+[`mcu-script`](https://github.com/mcu-script), with its own ADR
 sequence, release cadence, copyright line and domain
 (`mcuscript.org`), developed independently of any embedder's schedule.
 [MCUHome](https://github.com/mcu-home/mcuhome) is its first and
@@ -31,7 +31,7 @@ to prevent.
 
 | Path | Role |
 |---|---|
-| `spec/` | **The specification** — the contract every implementation answers to. Its own version number, and deliberately its own top-level directory so it can be split into `mcuscript-lang/spec` in one cut if a second implementation ever justifies it |
+| `spec/` | **The specification** — the contract every implementation answers to. Its own version number, and deliberately its own top-level directory so it can be split into `mcu-script/spec` in one cut if a second implementation ever justifies it |
 | `docs/adr/` | Architecture decision records — living drafts in `draft/`, immutable finals at the top level once something real exists |
 | `.github/` | CI, issue templates, CODEOWNERS |
 

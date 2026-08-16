@@ -41,7 +41,7 @@ There is nothing to build. The only gate is
 [pre-commit](https://pre-commit.com/):
 
 ```sh
-git clone https://github.com/mcuscript-lang/mcuscript
+git clone https://github.com/mcu-script/mcuscript
 cd mcuscript
 python3 -m venv .venv && . .venv/bin/activate
 pip install pre-commit
@@ -82,7 +82,7 @@ implementation language, which is an open question.
 
 ## Reporting issues
 
-Use the [issue forms](https://github.com/mcuscript-lang/mcuscript/issues/new/choose).
+Use the [issue forms](https://github.com/mcu-script/mcuscript/issues/new/choose).
 Security vulnerabilities go through [SECURITY.md](SECURITY.md), never public
 issues.
 

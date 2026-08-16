@@ -4,7 +4,7 @@
 blank_issues_enabled: false
 contact_links:
   - name: Questions, ideas & design discussion
-    url: https://github.com/mcuscript-lang/mcuscript/discussions
+    url: https://github.com/mcu-script/mcuscript/discussions
     about: MCUScript has no implementation yet — design discussion belongs here, not in the issue tracker.
   - name: How MCUHome uses a scripting engine
     url: https://github.com/mcu-home/mcuhome/discussions
@@ -12,5 +12,5 @@ contact_links:
   # TODO(publish): enable private vulnerability reporting in the repo
   # settings, otherwise this link 404s for reporters.
   - name: Security vulnerabilities
-    url: https://github.com/mcuscript-lang/mcuscript/security/advisories/new
+    url: https://github.com/mcu-script/mcuscript/security/advisories/new
     about: Report security issues privately — never as public issues.

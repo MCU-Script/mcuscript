@@ -1,7 +1,7 @@
 version = 1
 SPDX-PackageName = "MCUScript"
 SPDX-PackageSupplier = "The MCUScript Contributors"
-SPDX-PackageDownloadLocation = "https://github.com/mcuscript-lang/mcuscript"
+SPDX-PackageDownloadLocation = "https://github.com/mcu-script/mcuscript"
 
 # Fallback annotation: files carrying their own SPDX headers take
 # precedence ("closest"); everything else (Markdown, templates) is

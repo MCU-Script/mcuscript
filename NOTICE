@@ -2,7 +2,7 @@ MCUScript
 Copyright 2026 The MCUScript Contributors
 
 This product includes software developed as part of the MCUScript project
-(https://github.com/mcuscript-lang).
+(https://github.com/mcu-script).
 
 MCUScript is a standalone project. MCUHome (https://github.com/mcu-home)
 is its first and reference embedder, not its owner.

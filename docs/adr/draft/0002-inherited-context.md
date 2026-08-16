@@ -409,10 +409,8 @@ explicitly.
 | a | Berry is *"not quite what I would like for the project, which is why I think I will develop a completely separate 'MCUScript'"* | Phrased as intent, not as a formal decision — see §3.3 |
 | b | **Python-style syntax is rejected** | Reason: it forces line breaks and indentation; in this use case one often wants 2–3 statements compactly on one line, and inside YAML that means indentation carries two meanings at once |
 | c | **The name stays MCUScript** | Because the units problem is solved by profiles, not by renaming — [ADR 0003](0003-name-organization-positioning.md) |
-| d | **Own GitHub organization `mcuscript-lang`, repo `mcuscript-lang/mcuscript`** | Verbatim, and the only German left in this document because the
-sentence is the decision: *"mcuscript-lang/mcuscript auf github, so soll
-es sein!"* — that is how it shall be. — [ADR 0003](0003-name-organization-positioning.md) |
-| e | Compiler, transpiler and later the profiles should be runnable as their own projects in that org | The topology is *not* settled — ADR 0003, Consequences |
+| d | **Own GitHub organization, repo `mcu-script/mcuscript`** | Verbatim, and the only German left in this document because the sentence is the decision: *"mcuscript-lang/mcuscript auf github, so soll es sein!"* — that is how it shall be. The organization was created the same day as **`MCU-Script`**, mirroring `MCU-Home` — [ADR 0003](0003-name-organization-positioning.md) |
+| e | Compiler, transpiler and later the profiles should be runnable as their own projects in that org | Settled since: monorepo for the language and its specification, `profile-home` its own repository — ADR 0003 §4 |
 | f | **Start with the spec and the bytecode format**, not with the Level-0 prototype | Asked which to start with, he answered: the spec and the bytecode. Note this differs from the MVP advice he was given (§2.3) |
 | g | He cannot judge the non-developer perspective himself | *"things automatically seem simple and logical to me that may not be simple for non-developers, and I personally cannot see that"* — a standing constraint on how the language gets validated (§2.9) |
 

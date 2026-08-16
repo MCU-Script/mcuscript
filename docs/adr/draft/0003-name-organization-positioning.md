@@ -56,14 +56,26 @@ at first, that leaves room for extensibility and general, broad use
 later."* The initial focus on MCUHome
 is a starting point, not a scope.
 
-### 3. Its own GitHub organization: `mcuscript-lang`
+### 3. Its own GitHub organization: `MCU-Script`
 
 Product owner, 2026-08-16, verbatim: **"mcuscript-lang/mcuscript auf
-github, so soll es sein!"**
+github, so soll es sein!"** — and then, creating it the same day, named
+it **`MCU-Script`** instead, deliberately mirroring `MCU-Home`. The
+repository is `mcu-script/mcuscript`.
+
+The change is worth a sentence, because it inverts one of the arguments
+that produced the original name. `-lang` was partly a searchability
+device: one-word language names usually need the suffix to be findable
+at all. That reason lapsed — the collision check below found the field
+clear, so there is nothing to disambiguate from — and the parallel to
+`MCU-Home` buys something the suffix did not. Two organizations named
+the same way read as one ecosystem containing two projects, which is
+exactly the relationship, and it makes the cross-discovery argument
+below literal rather than hopeful.
 
 Positioning and ownership are separate problems, and the ownership one
 is solved organizationally rather than by a different name. MCUScript
-lives in the `mcuscript-lang` organization; **MCUHome is its first and
+lives in the `mcu-script` organization; **MCUHome is its first and
 reference embedder, not its owner.** The shared "MCU" prefix then reads
 as "same ecosystem" — the ESPHome/ESP-IDF relationship — rather than as
 dependency, and it works as cross-discovery in both directions.
@@ -95,15 +107,50 @@ without: differential testing needs **both backends tested against the
 same spec in the same commit**. Splitting later is always possible;
 re-merging is not.
 
-So `mcuscript-lang/mcuscript` holds the compiler, both backends, the VM
-and the test harness. Two candidates for their own repositories remain
-open rather than decided: a `spec` repository, on the argument that the
-language and bytecode definition is the contract for third-party
-implementations and benefits from being citable on its own, and
-`profile-home` as the first profile and the template for others. The
-VM as a Zephyr module is the first sensible split once it is stable —
-an embedder should be able to pull it through `west.yml` without the
-compiler.
+So `mcu-script/mcuscript` holds the compiler, both backends, the VM,
+the test harness — **and the specification**, as a top-level `spec/`
+directory with its own version number.
+
+Keeping the specification in is that same argument applied harder, not
+an exception to it. The spec *is* the bytecode definition, so it is the
+most tightly coupled thing in the repository rather than the least;
+splitting it out would mean two pull requests for every semantic change
+during exactly the period when the semantics change daily, and it would
+reintroduce the "compiler 0.4 needs spec 0.3" skew the monorepo exists
+to avoid. The pattern elsewhere agrees: languages with one
+implementation keep the specification beside it (Go's is a file in the
+Go repository; Zig and Lua likewise), and languages with several split
+it out (WebAssembly, C#) — and this project has none yet. The
+citability a separate repository would buy comes from *publishing* the
+specification, which a monorepo does just as well. `spec/` is a
+top-level directory precisely so that the split is one clean cut on the
+day a second implementation justifies it.
+
+**`profile-home` does get its own repository** (product owner,
+2026-08-16), and it belongs to this organization rather than to
+MCUHome. Its coupling runs the other way from the spec's: a profile
+depends on the profile *format*, a narrow and deliberately stable
+interface, not on any compiler internal. Two further reasons make the
+separation structural rather than tidy. A community profile cannot live
+inside the language repository by definition, so the mechanism has to
+work from outside — and `profile-home` is where that gets proved. And
+§1 of this ADR says `°C` and `lux` must not be MCUScript vocabulary; a
+separate repository makes that boundary physical instead of merely
+documented.
+
+It is a *general* home-automation profile with MCUHome as its first
+consumer, not MCUHome's private file — the product owner's reasoning
+being that profiles should be usable by others, even though this one
+will grow from MCUHome's needs at first. Under `mcu-home` it would have
+been one project's internal detail, and the community-profile mechanism
+would have had no worked example.
+
+It is created when the specification defines the profile format, not
+before. An empty repository says nothing.
+
+The VM as a Zephyr module is the first sensible split of the monorepo
+itself, once it is stable: an embedder should be able to pull it
+through `west.yml` without dragging the compiler along.
 
 ### 5. Apache-2.0
 
@@ -124,7 +171,7 @@ MCUHome.
 
 ## Consequences
 
-- The repository is `mcuscript-lang/mcuscript`. Every link, template
+- The repository is `mcu-script/mcuscript`. Every link, template
   and license header in it names that org, and this had to be corrected
   once already: the scaffold was created under `mcu-home/mcuscript`
   before this conversation was available.
@@ -134,14 +181,12 @@ MCUHome.
 - MCUHome gains an obligation it does not have yet: it must publish and
   version a home profile as an artifact, because a profile is part of
   the bytecode ABI (see [ADR 0002](0002-inherited-context.md) §4).
-- **Still open inside the monorepo decision:** whether the spec gets
-  its own repository, and where the first profile lives. Both are
-  additions to the monorepo rather than splits of it, so neither
-  blocks anything.
+- The organization holds one repository today and will hold two: the
+  monorepo, and `profile-home` once the profile format exists.
 - The name survives the collision check the conversation recommended
   and never performed (carried out 2026-08-16): **the namespace is
   clear.** Verified by direct lookup — no `mcuscript` or
-  `mcuscript-lang` organization, user or repository on GitHub, and both
+  `mcu-script` organization, user or repository on GitHub, and both
   names 404 on PyPI and npm. Verified by search only, so weaker: no
   crate of either name on crates.io; no MCU vendor ships anything
   branded "MCU Script" (the

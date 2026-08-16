@@ -12,7 +12,7 @@ body:
         defects in the documentation, the ADRs or the repository setup —
         a decision recorded here that contradicts its cited source, for
         instance. Design questions belong in
-        [Discussions](https://github.com/mcuscript-lang/mcuscript/discussions).
+        [Discussions](https://github.com/mcu-script/mcuscript/discussions).
   - type: dropdown
     id: component
     attributes:

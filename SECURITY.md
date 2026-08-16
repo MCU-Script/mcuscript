@@ -12,7 +12,7 @@ scaffold are still welcome.
 
 Use GitHub's private vulnerability reporting:
 **Security → Report a vulnerability** on this repository
-([direct link](https://github.com/mcuscript-lang/mcuscript/security/advisories/new)).
+([direct link](https://github.com/mcu-script/mcuscript/security/advisories/new)).
 
 We aim to acknowledge reports within **3 business days**. Please include a
 description of the issue, the affected component (compiler, bytecode

@@ -9,10 +9,10 @@ body:
     attributes:
       value: |
         MCUScript is in its design phase; the open questions are listed
-        in [ADR 0002 §8](https://github.com/mcuscript-lang/mcuscript/blob/main/docs/adr/draft/0002-inherited-context.md).
+        in [ADR 0002 §8](https://github.com/mcu-script/mcuscript/blob/main/docs/adr/draft/0002-inherited-context.md).
         Use this form for a **concrete, scoped** proposal — open-ended
         ideas belong in
-        [Discussions](https://github.com/mcuscript-lang/mcuscript/discussions).
+        [Discussions](https://github.com/mcu-script/mcuscript/discussions).
   - type: input
     id: question
     attributes:
