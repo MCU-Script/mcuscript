@@ -10,3 +10,9 @@
 *.pdf binary
 *.bin binary
 *.hex -text
+
+# The conformance corpus is bytes, and the whole point of it is that
+# every implementation sees the *same* bytes. A checkout that helpfully
+# translated a line ending would change a container's CRC and turn the
+# corpus into forty containers that all say `bad_checksum`.
+*.mcs binary

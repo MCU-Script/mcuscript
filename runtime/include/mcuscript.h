@@ -176,7 +176,6 @@ typedef enum {
 	MCUSCRIPT_ACCESS_DENIED,
 	MCUSCRIPT_SIGNATURE_MISMATCH,
 	MCUSCRIPT_DUPLICATE_IMPORT,
-	MCUSCRIPT_IMPORT_LIMIT,
 
 	/* Not a refusal the specification names: this build's compile-time
 	 * limits are too small for the container. It is separate on purpose

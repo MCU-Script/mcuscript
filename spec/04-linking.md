@@ -198,6 +198,7 @@ the loader can only say "invalid".
 | `duplicate_section` | a critical section appears more than once |
 | `reserved_field_set` | a field this version reserves is not zero — the header's `flags`, an `ENTR` record's unused flag bits |
 | `entry_takes_parameters` | an `ENTR` record has the invocable flag and a non-zero `param_count` (§4.3) |
+| `duplicate_import` | two `HOST` records name the same import |
 
 ### Compatibility errors
 
@@ -224,6 +225,8 @@ the loader can only say "invalid".
 | `uncapped_recursion` | a cycle in the call graph without a declared cap, or whose members declare different ones (§5.4) |
 | `recursion_cap_mismatch` | a `recursion_cap` on a function that is in no cycle |
 | `index_out_of_range` | an index into `CNST`, `HOST`, the locals or the function table is past its count |
+| `kind_mismatch` | `LOAD.H` or `STORE.H` addresses a record the container's own `HOST` table calls a function, or `CALL.H` one it calls an entity |
+| `access_denied` | `STORE.H` targets an entity the container's own table declares read-only, or `LOAD.H` a write-only one |
 
 ### Linking errors
 
@@ -232,18 +235,45 @@ One per check in §4.5:
 | Error | Condition |
 |---|---|
 | `unknown_import` | the name is not in the registry |
-| `kind_mismatch` | an entity was expected and a function found, or the reverse |
+| `kind_mismatch` | the registry has an entity where the container declares a function, or the reverse |
 | `import_type_mismatch` | the declared type is not the registry's type |
 | `dimension_mismatch` | the declared dimension is not the registry's |
-| `access_denied` | a write to a read-only entity, or a read of a write-only one |
+| `access_denied` | the registry declares the entity read-only and the container writes it, or write-only and the container reads it |
 | `signature_mismatch` | a host function's parameter count or types differ |
-| `duplicate_import` | the same name appears in two records |
-| `import_limit` | the registry cannot bind as many imports as the container declares |
 
-`duplicate_import` is an error rather than a harmless redundancy
-because two records for one name can hold *different* declared types,
-and accepting that would mean the same entity had two contradictory
-contracts inside one program.
+**`kind_mismatch` and `access_denied` appear twice, on purpose.** A
+container can contradict *itself* — an instruction that writes an entity
+its own table calls read-only — and it can contradict the *registry*. It
+is the same thing being wrong and it gets the same name, but the two
+happen at different times and only the second needs an embedder: the
+first is caught by a host toolchain with no registry in sight, and the
+second cannot be. Splitting them into four names would say that a
+script writing a read-only entity is two different mistakes depending
+on who noticed.
+
+`duplicate_import` is not a linking error at all and is filed above with
+the container's own defects, because it needs no registry to see: two
+records for one name can hold *different* declared types, and accepting
+that would mean the same entity had two contradictory contracts inside
+one program.
+
+### What is deliberately not in these tables
+
+**An implementation running out of its own capacity.** A runtime sized
+at build time will meet containers with more imports, deeper call
+chains or wider stacks than it was built for, and it must refuse them —
+but not with a name from above, because every name above says *the
+container is wrong*, and this one says the container is fine and the
+build is too small. The fix is a rebuild, the refusal is the
+implementation's own, and conformance cannot cover it: §"Conformance"
+requires accepting every well-formed container, and this is exactly the
+case where a conforming implementation does not.
+
+An earlier draft of this chapter had an `import_limit` row for it. It
+was removed rather than implemented, because no implementation ever
+produced it and neither could: the two readings of it are "the registry
+does not have the name" — which is `unknown_import` — and "this build
+is too small", which is the paragraph above.
 
 ## 4.7 What is not an error here
 

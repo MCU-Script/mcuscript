@@ -61,7 +61,6 @@ class Refusal(enum.Enum):
     ACCESS_DENIED = "access_denied"
     SIGNATURE_MISMATCH = "signature_mismatch"
     DUPLICATE_IMPORT = "duplicate_import"
-    IMPORT_LIMIT = "import_limit"
 
     def __str__(self) -> str:
         return self.value

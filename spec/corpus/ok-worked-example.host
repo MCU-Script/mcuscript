@@ -1,0 +1,2 @@
+entity read i32 temp dim 1 = 291
+entity write i32 fan.speed dim 2

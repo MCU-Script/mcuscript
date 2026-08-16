@@ -78,5 +78,5 @@ over at most `MCUSCRIPT_MAX_FUNCTIONS` functions is a handful of bytes
 and a triple loop.
 
 Two methods over one specification is worth more than two copies of one
-method. What binds them is a corpus of containers with expected
-verdicts, run against both.
+method. What binds them is [the corpus](../spec/corpus/) — containers
+with the verdict each must get, run against both.

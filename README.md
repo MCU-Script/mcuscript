@@ -108,8 +108,12 @@ from quietly becoming a home-automation one.
 the instruction set, linking and execution. A third party should be
 able to write a conforming VM from it alone — and the implementation in
 this repository is how that claim gets checked, because writing it has
-corrected the document a dozen times and the list is kept in
+corrected the document fifteen times and the list is kept in
 [spec/README.md](spec/README.md).
+
+[spec/corpus/](spec/corpus/) is how *you* would check: containers with
+the verdict each must get, as bytes, so a loader written from the
+document can be pointed at them without running any of this code.
 
 ## Design decisions
 
@@ -127,6 +131,8 @@ from the real result.
   name, the organization, the positioning, the license
 - [0004](docs/adr/draft/0004-two-backends-one-container.md) — how the
   two backends are kept identical, decided while writing them
+- [0005](docs/adr/draft/0005-the-conformance-corpus.md) — the
+  conformance corpus: what binds the two loaders to one verdict
 
 ## Contributing
 

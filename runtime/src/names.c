@@ -45,7 +45,6 @@ static const char *const REFUSAL_NAMES[] = {
 	"access_denied",
 	"signature_mismatch",
 	"duplicate_import",
-	"import_limit",
 	"build_limit",
 };
 

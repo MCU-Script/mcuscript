@@ -48,6 +48,7 @@ built and tested against each other before anybody argues about how an
 | `verify.py` | The load-time verifier of spec §2.6 |
 | `asm.py` | Assembler and disassembler |
 | `cbackend.py` | The second backend: a container, lowered to plain C |
+| `corpus.py` | The conformance corpus's definitions; `../build_corpus.py` writes it |
 | `cli.py` | The `mcuscript` command |
 
 ## Tests
@@ -60,6 +61,14 @@ Three of them are not tests of the code but of the **specification**:
 the opcode table, the refusal names and the fault names are compared
 against the specification's own tables, so a change to one that is not a
 change to the other fails the build.
+
+`test_corpus.py` is the one that binds the two *loaders*. It runs
+[`spec/corpus/`](../spec/corpus/) — containers with the verdict each
+must get — past the Python verifier and the C runtime, and it also
+checks that the committed bytes are still the ones
+`src/mcuscript/corpus.py` produces. When they are not, regenerate with
+`python tools/build_corpus.py` and read the diff: a container format
+changes on purpose, so it should be visible in review.
 
 `test_differential.py`, `test_float_agreement.py` and `test_call.py`
 are the ones that matter most. They run the same container through the

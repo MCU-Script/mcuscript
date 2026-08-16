@@ -95,6 +95,7 @@ An implementation conforms if it:
 | [03-instructions.md](03-instructions.md) | The instruction set, group by group, with a worked example |
 | [04-linking.md](04-linking.md) | The constant, entry-point and import tables; name resolution; every error |
 | [05-execution.md](05-execution.md) | Invocation, frames, recursion, faults, termination |
+| [corpus/](corpus/) | **Containers, with the verdict each must get.** Not prose — how an implementation checks itself against the four documents above |
 
 All five exist in draft, and each round of work on them changes the
 ones before. Writing 3 to 5 changed 1 and 2 twice: `DUP` turned out to
@@ -147,6 +148,23 @@ The corresponding defect in the code is worth naming too, because it is
 what the exercise buys. The C loader's check that code regions tile
 `CODE` was wrong in a way that made every two-function container
 `malformed_section` — and every container until now had one function.
+
+Then the [corpus](corpus/) found three more, and it found them while
+being *written* rather than while running — its rule that every named
+refusal must have a container is what does the work:
+
+- **`import_limit` named nothing** and is gone. Neither implementation
+  had ever raised it, and its two possible readings are
+  `unknown_import` and "this build is too small" — the second of which
+  cannot be in a conformance taxonomy, because it refuses a container
+  this document calls well-formed;
+- **`kind_mismatch` and `access_denied` have two occasions each**, and
+  §4.6 listed one. A container can contradict *itself* about an import
+  as well as contradict the registry, and only the second needs an
+  embedder — which decides whether a host toolchain must refuse or
+  accept;
+- **`duplicate_import` was filed as a linking error** and needs no
+  registry to see.
 
 ## Versioning
 
