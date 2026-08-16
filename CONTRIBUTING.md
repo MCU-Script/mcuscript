@@ -5,25 +5,31 @@ first, because it changes what a useful contribution looks like here.
 
 ## The state of this project
 
-**Nothing is implemented, and the project may not be built at all.**
-MCUScript is a scripting language for microcontrollers that
-[MCUHome](https://github.com/mcu-home/mcuhome) has designed the
-requirements for but not yet decided to build: adopting
-[Berry](https://github.com/berry-lang/berry) instead is a live option,
-to be settled by a measured prototype. The reasoning, with citations, is
-in [docs/adr/draft/0002-inherited-context.md](docs/adr/draft/0002-inherited-context.md).
+**Nothing is implemented, and most of what is written down is a
+proposal rather than a decision.** The requirements are settled — always
+compiled to bytecode, optionally transpiled to C, modular — and so are
+the name, the organization and the license. The language is not: there
+is no grammar, no bytecode specification and no C API, and
+[ADR 0002](docs/adr/draft/0002-inherited-context.md) marks every item as
+**decided**, **recorded direction** or **on the table** precisely so
+that nobody implements the third kind by accident.
 
 So the most valuable contributions right now are **not code**:
 
 - review and discussion of the
-  [architecture decision records](docs/adr/), especially the ten open
-  questions in ADR 0002 §10;
-- experience reports from embedding Berry, Lua, MicroPython or a
-  hand-rolled VM on a microcontroller — measured numbers most of all;
-- prior art we have missed.
+  [architecture decision records](docs/adr/), especially the open
+  questions in [ADR 0002 §8](docs/adr/draft/0002-inherited-context.md);
+- experience reports from embedding a small VM on a microcontroller —
+  Berry, Lua, MicroPython, Pawn, wasm3, or something hand-rolled — and
+  **measured** flash/RAM numbers most of all, because this project has
+  none;
+- prior art we have missed. The claim that nothing combines "one
+  source, bytecode VM *and* optional C transpilation, statically typed,
+  MCU-sized" has not been independently verified, and a counterexample
+  would be genuinely valuable.
 
-A pull request implementing a parser is likely to be closed, not
-because it is bad but because the language it parses has not been
+A pull request implementing a parser is likely to be closed — not
+because it is bad, but because the language it parses has not been
 decided.
 
 ## Development environment
@@ -32,7 +38,7 @@ There is nothing to build. The only gate is
 [pre-commit](https://pre-commit.com/):
 
 ```sh
-git clone https://github.com/mcu-home/mcuscript
+git clone https://github.com/mcuscript-lang/mcuscript
 cd mcuscript
 python3 -m venv .venv && . .venv/bin/activate
 pip install pre-commit
@@ -73,7 +79,7 @@ implementation language, which is an open question.
 
 ## Reporting issues
 
-Use the [issue forms](https://github.com/mcu-home/mcuscript/issues/new/choose).
+Use the [issue forms](https://github.com/mcuscript-lang/mcuscript/issues/new/choose).
 Security vulnerabilities go through [SECURITY.md](SECURITY.md), never public
 issues.
 

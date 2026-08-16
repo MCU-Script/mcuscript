@@ -1,4 +1,4 @@
-# SPDX-FileCopyrightText: 2026 The MCUHome Contributors
+# SPDX-FileCopyrightText: 2026 The MCUScript Contributors
 # SPDX-License-Identifier: Apache-2.0
 
 name: Design proposal
@@ -9,15 +9,15 @@ body:
     attributes:
       value: |
         MCUScript is in its design phase; the open questions are listed
-        in [ADR 0002 §10](https://github.com/mcu-home/mcuscript/blob/main/docs/adr/draft/0002-inherited-context.md).
+        in [ADR 0002 §8](https://github.com/mcuscript-lang/mcuscript/blob/main/docs/adr/draft/0002-inherited-context.md).
         Use this form for a **concrete, scoped** proposal — open-ended
         ideas belong in
-        [Discussions](https://github.com/mcu-home/mcuscript/discussions).
+        [Discussions](https://github.com/mcuscript-lang/mcuscript/discussions).
   - type: input
     id: question
     attributes:
       label: Which open question does this answer?
-      placeholder: e.g. ADR 0002 §10 #4 — the bytecode container format
+      placeholder: e.g. ADR 0002 §8 #4 — the bytecode container format
   - type: textarea
     id: problem
     attributes:

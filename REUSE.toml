@@ -1,7 +1,7 @@
 version = 1
 SPDX-PackageName = "MCUScript"
-SPDX-PackageSupplier = "The MCUHome Contributors"
-SPDX-PackageDownloadLocation = "https://github.com/mcu-home/mcuscript"
+SPDX-PackageSupplier = "The MCUScript Contributors"
+SPDX-PackageDownloadLocation = "https://github.com/mcuscript-lang/mcuscript"
 
 # Fallback annotation: files carrying their own SPDX headers take
 # precedence ("closest"); everything else (Markdown, templates) is
@@ -9,7 +9,7 @@ SPDX-PackageDownloadLocation = "https://github.com/mcu-home/mcuscript"
 [[annotations]]
 path = "**"
 precedence = "closest"
-SPDX-FileCopyrightText = "2026 The MCUHome Contributors"
+SPDX-FileCopyrightText = "2026 The MCUScript Contributors"
 SPDX-License-Identifier = "Apache-2.0"
 
 # The Code of Conduct is the Contributor Covenant 3.0, which is licensed

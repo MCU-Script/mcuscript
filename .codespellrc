@@ -1,17 +1,18 @@
-# SPDX-FileCopyrightText: 2026 The MCUHome Contributors
+# SPDX-FileCopyrightText: 2026 The MCUScript Contributors
 # SPDX-License-Identifier: Apache-2.0
 #
-# The other MCUHome repositories keep this block in their pyproject.toml.
-# This repository has no project file — the implementation language is
+# The MCUHome repositories keep this block in their pyproject.toml. This
+# repository has no project file — the implementation language is
 # undecided — so the configuration lives in its own file.
+#
+# There is no ignore-words list on purpose. The design conversation this
+# project inherits was German, and the first draft of the ADRs quoted it
+# verbatim, which meant teaching the spellchecker to ignore German words
+# that are also plausible English typos ("ist", "oder"). The quotes are
+# translated instead; one German sentence remains, and it does not trip
+# anything.
 
 [codespell]
-# German words inside verbatim product-owner quotes in docs/adr/ (the
-# roadmap and glossary are German documents; the quotes must stay
-# verbatim). "als" reads as "also", "sie" as "size" to an English
-# spellchecker.
-ignore-words-list = als,sie
-
 # The Contributor Covenant 3.0, reproduced verbatim. Its wording is the
 # licensed text (CC-BY-SA-4.0, see REUSE.toml) — "correcting" it would
 # make the file no longer the Covenant. Both spellings of the path:

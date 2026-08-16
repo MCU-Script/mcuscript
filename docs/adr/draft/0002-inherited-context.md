@@ -1,5 +1,5 @@
 <!--
-SPDX-FileCopyrightText: 2026 The MCUHome Contributors
+SPDX-FileCopyrightText: 2026 The MCUScript Contributors
 SPDX-License-Identifier: Apache-2.0
 -->
 
@@ -10,55 +10,66 @@ SPDX-License-Identifier: Apache-2.0
 
 ## Context
 
-MCUScript is a new repository for an old idea. Between 2026-08-03 and
-2026-08-16, while MCUHome was designed and built, decisions about
-scripting were taken and written down — never in one place, because
-there was no such place. They sit in one design document, five ADRs, a
-validation gate, a C header, a glossary and a roadmap entry, spread
-over two repositories.
+MCUScript is a new repository for an old idea, and it inherits two
+bodies of thinking that live nowhere a contributor could find them.
 
-Anyone starting work here needs to know all of them, because several
-are load-bearing constraints on the language itself (no heap in the
+**The MCUHome design record**, 2026-08-03 to 2026-08-11: while MCUHome
+was designed and built, decisions about scripting were taken and
+written down — never in one place, because there was no such place.
+They sit in one design document, five ADRs, a validation gate, a C
+header, a glossary and a roadmap entry, spread over two repositories.
+
+**A design conversation** between the product owner and Claude,
+2026-08-16, supplied as a chat export. It is where the name, the
+organization and the project's three technical requirements come from,
+and it goes considerably further into the language than any MCUHome
+document does. It is a *conversation*, not a decision protocol: some of
+it is the product owner deciding, most of it is advice he did not
+answer, and telling those apart is the single most useful thing this
+record does.
+
+Anyone starting work here needs both, because several items are
+load-bearing constraints on the language itself (no heap in the
 expression tier, static analyzability, a bytecode a device must not be
-crashable by) and several are *not* constraints at all but merely
-MCUHome's current guesses. Rediscovering that distinction from scratch
-is how a project accidentally re-decides something the product owner
-already settled — or, worse, treats a guess as settled.
+crashable by) and several are not constraints at all but current
+guesses. Rediscovering that distinction from scratch is how a project
+accidentally re-decides something the product owner already settled —
+or, worse, treats a suggestion as settled.
 
 ## Decision
 
-This ADR is a **reference record**. It decides nothing new: it collects
-what is already decided, cites the document that owns each item, and
-separates what binds MCUScript from what only describes MCUHome's
-intent. Every claim below is traceable to a source; where a source is a
-living draft, it may move, and this record is then wrong and gets
-rewritten.
+This ADR is a **reference record**. It decides nothing: it collects
+what exists, cites the source of each item, and sorts every item into
+one of three buckets, which are marked throughout:
 
-Sources are cited by repository and path:
+| Bucket | Meaning |
+|---|---|
+| **Decided** | The product owner said it. It binds until he changes it. |
+| **Recorded direction** | Written into a MCUHome design document, which makes it product-owner-approved *for MCUHome*. It binds MCUHome; it constrains MCUScript only where MCUScript wants to be embeddable in MCUHome. |
+| **On the table** | Proposed in the conversation and not answered. **Not a decision.** Recorded because losing it would mean re-deriving it, and because several items are strong enough that discarding them silently would be a mistake. |
+
+Where a source is a living draft it may move, and this record is then
+wrong and gets rewritten. Sources:
 
 | Short form | Document |
 |---|---|
-| `component-model.md` | [mcuhome-sdk `docs/design/component-model.md`](https://github.com/mcu-home/mcuhome-sdk/blob/main/docs/design/component-model.md) |
+| `component-model.md` | [mcuhome-sdk `docs/design/component-model.md`](https://github.com/mcu-home/mcuhome-sdk/blob/main/docs/design/component-model.md) — §10 is the origin of this project |
 | `yaml-schema.md` | [mcuhome-sdk `docs/design/yaml-schema.md`](https://github.com/mcu-home/mcuhome-sdk/blob/main/docs/design/yaml-schema.md) |
 | `builder-pipeline.md` | [mcuhome-sdk `docs/design/builder-pipeline.md`](https://github.com/mcu-home/mcuhome-sdk/blob/main/docs/design/builder-pipeline.md) |
 | `channel.h` | [mcuhome-sdk `include/mcuhome/channel.h`](https://github.com/mcu-home/mcuhome-sdk/blob/main/include/mcuhome/channel.h) |
-| mcuhome-sdk ADR 0009/0010/0014 | Matter-explicit YAML schema / Matter-only, CoAP deferred / generated-tables contract |
+| mcuhome-sdk ADR 0009 / 0010 / 0014 | Matter-explicit YAML schema / Matter-only, CoAP deferred / generated-tables contract |
 | mcuhome-sdk draft ADR 0015 | Update and partition architecture |
-| mcuhome ADR 0019, 0020 | Session build protocol / package layout |
+| mcuhome ADR 0019 | Session build protocol (cited once, for a name collision) |
 | `ROADMAP.md`, `GLOSSAR.md` | MCUHome workspace documents, untracked, product-owner-facing |
+| **the conversation** | Design conversation, product owner ↔ Claude, 2026-08-16, chat export. Not in any repository; quoted here because this is the only place it survives |
 
 ---
 
-## 1. The one real design source: `component-model.md` §10
-
-§10 ("Future direction: filters, scripting, and the DEV/LIVE split") is
-product-owner direction of **2026-08-07** and is the origin of this
-project. Its own framing: *"Not v0.x scope — recorded here so nothing
-built before the automation phase closes a door on it. The formal
-decision is an ADR at the start of that phase, backed by a measured
-prototype."*
+## 1. The MCUHome design record
 
 ### 1.1 The principle: a script is never the data path
+
+*Recorded direction, component-model.md §10, 2026-08-07.*
 
 Firmware stays individually generated and compiled per device. Drivers,
 bus wiring, devicetree and the Matter tables are compile-time — Zephyr
@@ -72,20 +83,25 @@ channel and it can react to events, but it never becomes the data path
 itself and never carries the device's Matter model"*. And: **end users
 never write C/C++.**
 
-### 1.2 Three tiers, cheapest one wins
+§10's own framing of its status: *"Not v0.x scope — recorded here so
+nothing built before the automation phase closes a door on it. The
+formal decision is an ADR at the start of that phase, backed by a
+measured prototype."*
 
-The builder picks the cheapest tier that covers the configuration:
+### 1.2 Three filter tiers, cheapest one wins
+
+*Recorded direction, component-model.md §10.* The builder picks the
+cheapest tier that covers the configuration:
 
 1. **Predefined filters** (`offset`, `range`, later moving average,
    deadband, …) — declarative registry entries. *Everything stateful
    lives here*, with its state owned by the C framework.
 2. **Expressions** — deliberately more than arithmetic (product-owner
-   scope call, 2026-08-07: *"end users should normally not need
-   tier 3"*). Named as in scope: variables, the ternary conditional,
-   null coalescing (which *"pairs naturally with the nullable 'sensor
-   not ready yet' semantics of the attribute stores"*), and read-only
-   value access to other channels through a fixed method surface. The
-   worked example given:
+   scope call: *"end users should normally not need tier 3"*). In
+   scope: variables, the ternary conditional, null coalescing (which
+   *"pairs naturally with the nullable 'sensor not ready yet' semantics
+   of the attribute stores"*), and read-only value access to other
+   channels through a fixed method surface. The worked example:
 
    ```
    humidity_kitchen.value() > 30 ? temp_kitchen.value()
@@ -102,51 +118,46 @@ The builder picks the cheapest tier that covers the configuration:
    implementation.
 3. **Scripting engine** — stateful logic, `on_boot`-style hooks,
    timers, actions (e.g. `trigger_measurement()`), user automations.
-   For genuinely complex processing (the example given: an AMG8833 8×8
+   For genuinely complex processing (the example: an AMG8833 8×8
    thermal grid) the engine's footprint is *"a fair price"* — though
    known-complex sensors can also land as C components, shrinking how
    often tier 3 is needed at all.
 
-### 1.3 The two candidate tracks (this is the open question)
+### 1.3 The two candidate tracks
 
-Decided by *"the automation-phase ADR"*, backed by a measured
-prototype:
+*Recorded direction, component-model.md §10.* To be decided by *"the
+automation-phase ADR"*, backed by a measured prototype.
 
-**Track A — adopt an existing engine.**
+**Track A — adopt an existing engine:**
 
 | Candidate | Verdict as recorded |
 |---|---|
 | **Berry** | First choice. MIT, MCU-native, Tasmota precedent |
 | **Lua** | Second choice |
-| Toit | Evaluated and behind: LGPL VM, ESP-IDF-bound |
-| Wren | Evaluated and behind: dormant since 0.4.0, double-precision-only numbers on single-precision-FPU targets |
+| Toit | Behind: LGPL VM, ESP-IDF-bound |
+| Wren | Behind: dormant since 0.4.0, double-precision-only numbers on single-precision-FPU targets |
 
-**Track B — grow our own** from the tier-2 core. A product-owner wish,
-*"to be evaluated honestly"*. Five elements, all named:
+**Track B — grow our own** from the tier-2 core. Five elements, all
+named: one language whose grammar's expression subset *is* tier 2;
+host-side compilation to a compact bytecode — *"the builder is always
+in the loop, unlike Tasmota's on-device console — a device-side parser
+buys us nothing"*; the VM assembled from feature modules so an
+expression-only device links an expression-only VM; the language kept
+statically analyzable enough that LIVE mode can transpile to C; and
+each element individually proven prior art (Lua `luac`, MicroPython
+`.mpy`, Berry solidification; trimmed-library builds; DSL-to-C
+transpilers).
 
-- **one language** whose grammar's expression subset *is* tier 2;
-- **host-side compilation** to a compact bytecode — *"the builder is
-  always in the loop, unlike Tasmota's on-device console — a
-  device-side parser buys us nothing"* — so the MCU carries only a
-  bytecode VM;
-- the **VM assembled from feature modules** (arithmetic, functions,
-  classes, …) so an expression-only device links an expression-only VM;
-- the language kept **statically analyzable enough that LIVE mode can
-  transpile scripts to C** instead of shipping the VM;
-- each element is *individually proven prior art* — Lua `luac`,
-  MicroPython `.mpy`, Berry solidification; trimmed-library builds;
-  DSL-to-C transpilers.
+The risk is stated precisely, and it is not technical: *"the risk is
+not buildability but a decade of ownership: first-class diagnostics,
+documentation, a bytecode verifier (pushed bytecode must never crash a
+node), and format stability across firmware versions."* **Berry remains
+the safety net if this track stalls.**
 
-The risk is stated precisely, and it is not a technical one:
-*"the risk is not buildability but a decade of ownership: first-class
-diagnostics, documentation, a bytecode verifier (pushed bytecode must
-never crash a node), and format stability across firmware versions."*
-**Berry remains the safety net if this track stalls.**
+### 1.4 The standalone-project charter
 
-### 1.4 The decisions that created this repository
-
-Product-owner decision, 2026-08-07, quoted in full because it is this
-repository's charter:
+*Recorded direction, component-model.md §10, product-owner decision of
+2026-08-07 — quoted in full because it is this repository's charter:*
 
 > **If this track is chosen, the engine is a fully standalone
 > project**: own repository, a cleanly versioned C API toward MCUHome,
@@ -159,31 +170,25 @@ repository's charter:
 > one, so it can be promoted into the standalone project rather than
 > rewritten.
 
-Two consequences of that paragraph are already resolved and one is not:
-
-- **The repository exists** (2026-08-16) — this one.
-- **The license is Apache-2.0** (product owner, 2026-08-16), closing
-  the "deliberately left open" question at the moment the design
-  intended: project creation. Consistency with mcuhome ADR 0003 and the
-  explicit patent grant beat the MIT adoption argument (Berry, Lua,
-  Wren and MicroPython are all MIT; Apache-2.0 is not GPLv2-compatible,
-  which is the price paid).
-- **Whether the engine is built at all** is *not* resolved. This
-  repository existing is not the choice of track B — see §7.
+Three of its clauses have since been resolved, and the resolutions live
+in [ADR 0003](0003-name-organization-positioning.md): the repository
+exists, it is in its **own organization** rather than MCUHome's, and
+the license is **Apache-2.0**. The last sentence — build tier 2 inside
+MCUHome first and promote it later — has been overtaken in sequencing:
+the standalone project now starts first (§2.2).
 
 ### 1.5 The DEV/LIVE split
 
-Not MCUScript's mechanism, but the reason several language constraints
-exist, so it is recorded here in full:
+*Recorded direction, component-model.md §10.* Not MCUScript's
+mechanism, but the reason several language constraints exist:
 
 - A freshly set-up device runs in **DEV** mode: YAML filters are
   lowered to *script* and pushed **without recompiling** — *"config
   iteration lands in seconds"*.
 - Once tuned, the user switches to **LIVE**: one full rebuild bakes the
   YAML-defined filters back into **C**, and the engine is linked only
-  for what genuinely needs it (hand-written hooks/automations) —
-  *"possibly not at all, which is the steady state for battery
-  devices"*.
+  for what genuinely needs it — *"possibly not at all, which is the
+  steady state for battery devices"*.
 - Both lowerings of a filter primitive come from **one registry
   definition** and are held equivalent by **golden tests** (same input
   series, identical output).
@@ -195,7 +200,8 @@ exist, so it is recorded here in full:
 
 ### 1.6 Fixed constraints for the automation phase
 
-Verbatim scope, all of it binding on whatever engine is chosen:
+*Recorded direction, component-model.md §10.* All of it binds whatever
+engine is chosen:
 
 - the tables contract (mcuhome-sdk ADR 0014) stays the single
   interface — *"a boot script would be a second producer of the same
@@ -211,44 +217,25 @@ Verbatim scope, all of it binding on whatever engine is chosen:
 - real OTA remains required regardless, for base-image security
   updates.
 
----
+### 1.7 What the YAML schema already reserves
 
-## 2. Where this sits in the plan
-
-`ROADMAP.md` ("Parallele / spätere Stränge"):
-
-> **Automations-/Scripting-Phase** (nach Phase 4/5): drei Filter-Stufen,
-> DEV/LIVE-Split, Engine-Entscheid (Berry vs. eigene Standalone-Engine)
-> — Rahmen fixiert in component-model.md §10, ADR mit vermessenem
-> Prototyp zu Phasenbeginn.
-
-Phase 4 is the dashboard MVP, phase 5 the component breadth strand;
-MCUHome is currently in its CLI phase (2026-08-14 onwards). So the
-scripting phase has **not** started, and the "ADR with a measured
-prototype" it calls for has not been written. `ROADMAP.md` also points
-at §10 from its header as the canonical home of scripting design.
-
----
-
-## 3. What the YAML schema already reserves
-
-`yaml-schema.md` is product-owner-approved (2026-08-03) and describes a
-*"full declarative automation engine"* as a product anchor. Relevant
-decisions:
+*Recorded direction, yaml-schema.md, product-owner-approved
+2026-08-03.* It describes a *"full declarative automation engine"* as a
+product anchor.
 
 - **§1.3 No embedded code.** *"Configs never contain C/C++ snippets
   (ESPHome lambdas are explicitly rejected). Automations are fully
   declarative YAML (§8); if a device needs real code, that is a custom
   component."* mcuhome-sdk ADR 0009 gives the reason: ESPHome's lambdas
   are C++ against ESPHome's runtime API and are *"unrunnable on
-  Zephyr"*, and they are named as *"what cannot be translated"* when
+  Zephyr"*; they are named as *"what cannot be translated"* when
   importing an ESPHome configuration.
-- **§8 `automations:`** — the declarative model is fully specified:
-  triggers (attribute thresholds with `above`/`below`/`equals` and an
-  optional `for:`, `changed:`, `interval:`, `boot:`, a received
-  Matter/CoAP command, later button events), conditions (all must hold;
-  `any:`/`not:` combinators), actions run sequentially (`command:`,
-  `set:`, `delay:`, `log:`, later `scene:`), and references as
+- **§8 `automations:`** specifies the declarative model fully: triggers
+  (attribute thresholds with `above`/`below`/`equals` and an optional
+  `for:`, `changed:`, `interval:`, `boot:`, a received Matter/CoAP
+  command, later button events), conditions (all must hold; `any:`/
+  `not:` combinators), actions run sequentially (`command:`, `set:`,
+  `delay:`, `log:`, later `scene:`), references as
   `alias.cluster.attribute` (node view) or `peripheral.channel`
   (hardware view), *"both resolve to the same value plumbing"*.
 - **§8, deliberately absent:** *"free-form expressions/templates. v1
@@ -256,51 +243,47 @@ decisions:
   language is the single biggest complexity driver in this space —
   reserved as an explicit extension point (`expression:` key) so adding
   it later is non-breaking."*
-- **§8:** automations run on-device and keep working without network —
-  with `network:` absent entirely a config *"degrades to a standalone
-  automation controller"*. mcuhome-sdk ADR 0010 says the same from the
-  other side.
-- **§11 open points** lists *"Expression language in automations —
-  Reserved extension point"* and *"Cross-device automations
-  (bindings) — Reserved schema extension"*.
+- Automations run on-device and keep working without network — with
+  `network:` absent entirely a config *"degrades to a standalone
+  automation controller"*.
+- §11 lists *"Expression language in automations — Reserved extension
+  point"* among the deferred topics.
 
 The single worked example is
 [`docs/design/examples/03-co2-alarm-automation.yaml`](https://github.com/mcu-home/mcuhome-sdk/blob/main/docs/design/examples/03-co2-alarm-automation.yaml)
 — a CO₂ guard with `above: 1200` `for: 2min` → LED, `above: 2000` →
 LED + buzzer + `delay: 5s` + buzzer off, `below: 900` `for: 5min` →
-clear. It is the most concrete statement of what tier 3 must be able to
-express, and it is *declarative YAML*, not script.
+clear. It is the most concrete statement of what the scripting layer
+must be able to express, and it is *declarative YAML*, not script.
 
----
+### 1.8 What the builder pipeline already says
 
-## 4. What the builder pipeline already says
-
-`builder-pipeline.md` §3: stage 4 emits `mcuhome_config.c/.h`
-described as *"endpoint/cluster/automation tables"*, and:
+*Recorded direction, builder-pipeline.md §3.* Stage 4 emits
+`mcuhome_config.c/.h`, described as *"endpoint/cluster/automation
+tables"*, and:
 
 > Automations compile to a compact static table (triggers, conditions,
 > actions as data) interpreted by a small runtime engine — **no
 > generated C control flow**.
 
 This predates §10 and describes the *declarative* engine, not a
-scripting VM. It matters here as a data point about intended shape: the
+scripting VM. It matters as a data point about intended shape: the
 project's instinct has consistently been *data plus a small
 interpreter*, never emitted control flow — with LIVE-mode
-transpile-to-C (§1.5) as the deliberate exception.
+transpile-to-C (§1.5) as the deliberate exception. See §3.2.
 
----
+### 1.9 What the firmware contracts already fix
 
-## 5. What the firmware contracts already fix
+*Recorded direction.*
 
 **mcuhome-sdk ADR 0014 (generated tables contract, final).** *"Future
 automation tables (out of scope for contract v1, see Consequences)
 follow the same pattern: one generated file per device, one symbol set
 per contract domain."* And in Consequences: *"Automation tables and
 actuator write-path semantics are explicitly out of scope for contract
-v1 — both remain open points in component-model.md §9 and get their own
-tables/version bump later."* So a scripting engine's generated data
-gets **its own symbol set and its own contract version**, and does not
-extend the Matter tables.
+v1 […] and get their own tables/version bump later."* So a scripting
+engine's generated data gets **its own symbol set and its own contract
+version**, and does not extend the Matter tables.
 
 **`channel.h` (contract v1, hardware-verified).** The channel layer's
 scope is *"deliberately narrow"* and names its exclusions:
@@ -315,21 +298,20 @@ and, about the generated binding structs:
 > logic: constants, IDs, and integer scale factors — **never
 > expressions, never code.** Keep it that way.
 
-Also fixed there: scale/offset conversion into Matter raw units happens
-in the sensor binding (`raw = round(micro * scale_num / (scale_den *
-1e6)) + offset`), which is the mechanism behind §1.6's *"scripts work
-in user units"*. Runtime state lives in the poller's Kconfig-sized
-static pool, not in the generated arrays, so those stay `const` and
-stay in flash — the same discipline a VM's generated data will be held
-to.
+Also fixed there: conversion into Matter raw units happens in the
+sensor binding, as one integer step —
+`raw = round(micro * scale_num / (scale_den * 1e6)) + offset` — which
+is the mechanism behind §1.6's *"scripts work in user units"*, and the
+place §4 says has to change. Runtime state lives in the poller's
+Kconfig-sized static pool, not in the generated arrays, so those stay
+`const` and stay in flash — the same discipline a VM's generated data
+will be held to.
 
----
+### 1.10 What flash and transport already reserve
 
-## 6. What flash and transport already reserve
-
-**mcuhome-sdk draft ADR 0015 (update and partition architecture).**
-A **script/data area is already reserved** in every layout table,
-citing component-model.md §10:
+*Recorded direction, mcuhome-sdk draft ADR 0015.* A **script/data area
+is already reserved** in every layout table, citing component-model.md
+§10:
 
 - reserved regions are *"named in the layout tables, not squeezed in
   later"*; the script area and (on 1 MiB nRF5340 variants) a
@@ -343,51 +325,610 @@ citing component-model.md §10:
   staged apply and last-good fallback that component-model.md §10 asks
   for."*
 - *"Reservation only; the format is decided in the scripting phase."*
-  — that format is MCUScript's bytecode container, and it is an open
-  question this project inherits.
+  — that format is MCUScript's bytecode container, and §2.7 is the
+  first sketch of it.
 
-Same ADR, on transport: a transfer protocol of MCUHome's own (CoAP over
-Thread, which OpenThread already provides) is deferred to the
-maintenance channel mcuhome-sdk ADR 0010 reserved, *"where it belongs
-together with script push and diagnostics — one channel, designed
-once"*. Note recorded for that design: MCUboot's signature is the only
-payload trust anchor in the existing path.
+On transport: a transfer protocol of MCUHome's own (CoAP over Thread,
+which OpenThread already provides) is deferred to the maintenance
+channel mcuhome-sdk ADR 0010 reserved, *"where it belongs together with
+script push and diagnostics — one channel, designed once"*. Recorded
+for that design: MCUboot's signature is the only payload trust anchor
+in the existing path — and a script push does not go through MCUboot,
+which is why §4 raises who signs pushed bytecode.
 
 The Matter settings partition (fabric credentials, Thread dataset) is
 preserved across updates in every layout — *"which is what makes an
 update not a re-commissioning"*. A script push must not disturb it.
 
-Also relevant, from the phase-3 idea list in `ROADMAP.md` (explicitly
-non-binding product-owner thinking, 2026-08-07): *"Skripte ggf. als
-eigene (vierte) Partition mit eigenem Image"* — an idea that draft ADR
-0015 has since answered in the other direction (not image-framed).
+### 1.11 Where this sits in the plan
+
+`ROADMAP.md`, "Parallele / spätere Stränge": the
+*Automations-/Scripting-Phase* comes **after phase 4/5** (dashboard MVP
+and component breadth) and consists of the three filter tiers, the
+DEV/LIVE split and the engine decision, *"an ADR with a measured prototype at the
+start of the phase"*. MCUHome is currently in its CLI phase. **The
+scripting phase has not started**, and the ADR with a measured
+prototype has not been written.
 
 ---
 
-## 7. What this repository's existence does *not* mean
+## 2. The design conversation of 2026-08-16
 
-Three disambiguations, each of which would otherwise be a plausible
-misreading:
+### 2.1 The three requirements — this project's technical charter
 
-1. **The engine decision is open.** Track A (adopt Berry) versus
-   track B (grow our own) is decided by the automation-phase ADR
-   *backed by a measured prototype*, and that ADR does not exist. This
-   repository is where track B would live if it is chosen, and where
-   the measurement that decides it can be done without polluting
-   MCUHome. Berry remains the recorded safety net.
-2. **"DEV mode" in the build protocol is a different thing.** mcuhome
-   ADR 0019 uses `clean`/`incremental` build modes and notes: *"the
-   script 'DEV mode' this originally anticipated was overtaken by
-   ADR 0020's build methods"*. That is about warm build workspaces, not
-   about §1.5's DEV/LIVE device modes. The names collide; the concepts
-   do not touch.
-3. **Tier 1 filters are not scripting.** Predefined filters with
-   C-owned state are a component-registry feature of MCUHome and stay
-   there even if MCUScript never exists.
+**Decided.** The product owner's own numbering, paraphrased closely:
+
+1. **The user script is always compiled** — not to hardware machine
+   code but to hardware-independent binary code *"ähnlich wie java"*.
+   The stated purpose is to keep the on-MCU VM as small as possible.
+2. **Scripts must be transpilable to plain C** and compilable together
+   with the whole firmware — *"especially for Thread SEDs, but also
+   for efficiency in general"*. **Strictly optional**, because
+   during development, recompiling the whole firmware for a small
+   script change costs far too much time.
+3. **The language must be modular** — usable in parts, e.g. arithmetic
+   only, because in reality many scripts are just formulas and
+   mathematical expressions and need nothing like function calls.
+   Requirement 2 must still hold for the partial configurations.
+
+Plus the audience constraint, stated separately: *"a user of MCUHome should not have to be a
+developer and should still be able to write simple scripts."*
+
+Requirement 2 is the same mechanism as §1.5's DEV/LIVE split, seen from
+the language side. Requirement 3 is the same as §1.3's "VM assembled
+from feature modules". Requirement 1 is the same as §1.3's host-side
+compilation. The conversation restates the charter independently and
+adds the word **optional** to the C path, which §10 did not say
+explicitly.
+
+### 2.2 What else the product owner decided
+
+**Decided**, all 2026-08-16:
+
+| # | Decision | Note |
+|---|---|---|
+| a | Berry is *"not quite what I would like for the project, which is why I think I will develop a completely separate 'MCUScript'"* | Phrased as intent, not as a formal decision — see §3.3 |
+| b | **Python-style syntax is rejected** | Reason: it forces line breaks and indentation; in this use case one often wants 2–3 statements compactly on one line, and inside YAML that means indentation carries two meanings at once |
+| c | **The name stays MCUScript** | Because the units problem is solved by profiles, not by renaming — [ADR 0003](0003-name-organization-positioning.md) |
+| d | **Own GitHub organization `mcuscript-lang`, repo `mcuscript-lang/mcuscript`** | Verbatim, and the only German left in this document because the
+sentence is the decision: *"mcuscript-lang/mcuscript auf github, so soll
+es sein!"* — that is how it shall be. — [ADR 0003](0003-name-organization-positioning.md) |
+| e | Compiler, transpiler and later the profiles should be runnable as their own projects in that org | The topology is *not* settled — ADR 0003, Consequences |
+| f | **Start with the spec and the bytecode format**, not with the Level-0 prototype | Asked which to start with, he answered: the spec and the bytecode. Note this differs from the MVP advice he was given (§2.3) |
+| g | He cannot judge the non-developer perspective himself | *"things automatically seem simple and logical to me that may not be simple for non-developers, and I personally cannot see that"* — a standing constraint on how the language gets validated (§2.9) |
+
+He also confirmed one technical inference himself: units are irrelevant
+*inside* the bytecode, because by then everything is normalized to base
+units (§2.6).
+
+### 2.3 On the table: static typing and the two-backend invariant
+
+**On the table.** The argument that carries the whole project:
+
+- Requirement 2 dictates **static typing with type inference**. A
+  dynamically typed language (Berry, Lua) needs tagged values, boxing
+  and runtime dispatch, which transpiles to ugly, inefficient C and
+  destroys exactly the SED advantage the C path exists for. Static
+  typing gives a clean 1:1 mapping to C, a smaller VM, and errors at
+  compile time instead of on the device. For non-developers, inference
+  is *more* pleasant than dynamism, because errors appear earlier and
+  more comprehensibly. The user writes `x = temp * 1.8 + 32`; the types
+  are derived.
+- **The biggest trap is backend divergence.** Two backends means
+  identical semantics for integer overflow, float rounding, division by
+  zero and error handling. The proposal: **define the semantics to
+  match C exactly** (`int32_t` wraparound, IEEE-754) so that the VM
+  backend is the one that has to conform, and build **differential
+  testing from day one** — every test script runs through both
+  backends, results must be bit-identical.
+- The framing offered for effort: compiler and VM are *"vielleicht
+  20 % der Arbeit"*; the other 80 % are bindings, tooling, error
+  messages and documentation. *"Languages rarely fail on the technology;
+  they fail because nobody maintains the edges."*
+- **MVP advice** (not taken, see §2.2f): start with Level 0 only, both
+  backends, and the differential test harness — immediately useful and
+  it validates the two-backend architecture before control flow and
+  functions are added.
+- Strategic note: since the combination is unique, *"one source, two backends,
+  bit-identical behaviour"* is the project's central
+  distinguishing property.
+
+This is the argument that, if it holds, largely settles the
+build-versus-adopt question on architecture rather than on measurement.
+See §3.3.
+
+### 2.4 On the table: the level split
+
+**On the table.** Three levels, each a Kconfig option, the linker
+dropping unused opcodes:
+
+- **Level 0 — expressions**: pure expressions, no allocation, no
+  control flow. Compiles to a tiny stack evaluator (estimated
+  **< 1–2 KB**) or directly to a C expression.
+- **Level 1 — statements**: variables, if/else, loops with an
+  iteration limit.
+- **Level 2 — functions**, possibly arrays/strings.
+
+Rationale: *"90 % der Skripte sind Formeln."* Note this is a different
+axis from §1.2's filter tiers — see §3.1.
+
+Also on the table, as things to nail down before any compiler code:
+
+- **No GC, ideally no heap.** Value semantics, statically dimensioned
+  buffers; strings/arrays only with a fixed maximum size or a per-run
+  arena. *"a GC on an SED is a nightmare."*
+- **Execution budget**: an instruction limit per invocation so a user
+  script can never block a Zephyr thread or blow an SED's sleep period.
+- **Version the bytecode format and validate it on the device** (magic,
+  version, checksum, a verifier). Then scripts update over OTA/Matter
+  without flashing firmware — *"that is your actual killer feature
+  compared with ESPHome lambdas"*.
+- **Design the binding model before the language.** How scripts reach
+  entities/sensors/actuators should be generated declaratively from the
+  MCUHome config, with codegen for both backends, or bindings get
+  written twice.
+- **Error messages for non-developers are a feature of their own.**
+
+### 2.5 On the table: syntax
+
+**On the table**, after the product owner rejected Python-style syntax
+(§2.2b):
+
+- **Braces as block delimiters, whitespace meaningless**:
+  `if temp > 25 { fan.on() } else { fan.off() }` reads identically
+  single-line and multi-line, so YAML indentation cannot change the
+  meaning of a script. Home Assistant users know braces from Jinja.
+- **Newline *or* semicolon as statement separator**, equivalent.
+- **if/else is an expression**, Rust/Kotlin style:
+  `fan.speed = if temp > 28 { 3 } else if temp > 25 { 2 } else { 0 }`.
+  This dissolves the boundary between "formula" and "script": control
+  flow is itself an expression, which is what makes the Level-0/Level-1
+  split continuous rather than a cliff.
+- **No separate ternary `? :`** — an if-expression already *is* the
+  ternary, and two spellings for one thing confuse the audience;
+  `cond ? a : b` is the most cryptic syntax there is for a
+  non-developer. (Note this contradicts §1.2, which names the ternary
+  conditional as in-scope for tier 2 — see §3.2.)
+- **A `match` expression with guards** for the threshold pattern, which
+  is the common case:
+
+  ```
+  fan.speed = match temp { > 28 -> 3, > 25 -> 2, else -> 0 }
+  ```
+
+  It reads like a table, scales to five levels without becoming an
+  unreadable ternary chain, extends later to ranges (`20..25 -> 1`) and
+  enum matching without a syntax change, lets the compiler check
+  **exhaustiveness** (a missing `else` becomes a comprehensible error
+  instead of undefined behaviour), and lowers trivially to an if-chain
+  or jump table in C.
+- Python affinity is recovered through **vocabulary and semantics**
+  (`and`/`or`/`not` rather than `&&`/`||`, no mandatory type
+  declarations) rather than through whitespace rules.
+- **Embedding**: separate `.mcs` files with inline YAML reserved for
+  one-liners and formulas removes the YAML-indentation problem
+  entirely. Level 0 is syntax-neutral anyway — `(temp - 32) / 1.8`
+  looks the same in every language.
+
+### 2.6 On the table: units, dimensions and profiles
+
+**On the table**, and the richest single part of the conversation. The
+*profile* concept that came out of it is load-bearing for
+[ADR 0003](0003-name-organization-positioning.md).
+
+- A **pure compile-time feature**: the user writes units, the compiler
+  normalizes to one base unit per dimension, and at runtime — VM and C
+  alike — only bare integers exist. **Zero overhead**, which is what
+  makes it acceptable on an SED.
+- Syntax: suffix directly on the literal, no space — `delay 5min`,
+  `if runtime > 90s`, `timeout = 1h30min` (composable),
+  `brightness = 75%`, `if temp > 24.5°C`.
+- **Lexically one token** (number + suffix), so `5 min` versus `5min`
+  is not ambiguous and `%` does not collide with a modulo operator —
+  if modulo is wanted, spell it `mod`.
+- The gain is the **type system behind it**: a duration is its own type,
+  not a number. `delay 5` becomes *"delay needs a time — did you
+  mean 5s or 5min?"*; `if temp > 5min` becomes *"temp is a temperature,
+  5min is a time — those are not comparable"*;
+  `runtime + 30s` and `runtime * 2` are fine, `runtime * 30s` is not.
+- **Explicit design warning: do not build general dimensional
+  analysis** (F#/Boost.Units style, where m/s² arises automatically).
+  *"a rabbit hole your audience never needs."*
+  Instead a fixed, small list of domain dimensions, each with a fixed
+  base unit and permitted operations: `duration` → ms; `temperature` →
+  tenths of °C as an integer (`°C`, `°F`, where °F is offset *and*
+  factor, converted in the compiler); `percent`; later `lux`, `W`,
+  `kWh`, `V`, `A`.
+- **Temperature is a special case**: point temperature and temperature
+  *difference* are strictly different things (25°C + 25°C is nonsense,
+  25°C + 2°C as a delta is not). Modelling that fully is academic;
+  pragmatically — allow addition and subtraction, forbid multiplying
+  two temperatures, allow °F only on literals.
+- **Range checking matters**: `int32` in milliseconds overflows after
+  ~24 days, so either time gets `int64` or literals like `30d` are
+  rejected at compile time with a clear message.
+- **Units are invisible inside the bytecode** but belong in the spec in
+  two places:
+  1. **The base units are part of the ABI.** When a script reads
+     `sensor.temp`, the value the binding delivers at runtime must
+     arrive in the base unit the compiler assumed. VM backend, C
+     backend and the host must all rely on it, so the base-unit
+     definitions belong in the versioned profile, *not* in compiler
+     internals. Changing a base unit later (ms → µs) makes all existing
+     bytecode **and** all compiled C firmware silently wrong without
+     anything crashing.
+  2. **Profile ID and version go in the bytecode header**, so a
+     mismatch is a clean refusal rather than arithmetic on wrongly
+     scaled values — *"the most dangerous class of error there
+     is, because it is invisible"*.
+- **The dimension table belongs to the embedding, the mechanism to the
+  language.** This is what keeps the general positioning honest, and it
+  is where the profile layer of ADR 0001's boundary rule comes from.
+- The embedder's entity definitions declare the dimension
+  (`type: temperature`, `unit: °C`), so the compiler knows that
+  `sensor.wohnzimmer > 24°C` has matching sides — and can warn when a
+  humidity sensor is compared with °C. *"the point where units go from a nice
+  feature to real error prevention."*
+
+Two internal contradictions were left unresolved in the conversation
+and are carried into §8: the time base is given once as `int32` ms and
+once as `int64` ms, and the percent base unit is left open (0–100 vs.
+0–255 vs. 0–1000, *"depending on what your actuators expect"*).
+
+### 2.7 On the table: the bytecode container and the VM
+
+**On the table.** This is what the product owner chose to start with
+(§2.2f), so it is recorded in full detail.
+
+**Container format** (loosely ELF/WASM-shaped, minimal):
+
+```
+Header:  Magic "MCUS" | format version | flags
+         profile ID + profile version | CRC32
+Sections (each: type, length, data):
+  CONST  constant pool (values larger than the inline size)
+  CODE   instructions
+  ENTRY  entry points (script id → code offset, stack requirement)
+  HOST   import table (which host functions/entities the script needs)
+  DEBUG  optional: line mapping, strippable
+```
+
+Unknown section types are skipped — the extension path. The ENTRY
+section carries the **maximum stack requirement the compiler computed**,
+so the VM allocates statically and never checks or grows at runtime;
+that is possible only because of static typing *and* the absence of
+recursion.
+
+**Execution model: stack machine, untagged, typed opcodes.** Values on
+the stack are bare 32-bit cells with no type tag; the type is in the
+opcode (`ADD_I` vs. `ADD_F`, JVM-style), so the VM never dispatches on
+"what is this?" and each opcode is 5–15 lines of C. A register machine
+(Lua-style) would be faster but needs explicit operand fields — wider
+instructions, more decoding, more cases per opcode, plus register
+allocation in the compiler and a harder verifier. For a code-size
+priority, stack wins; for formulas its code density is better anyway.
+
+Instruction format: 1 byte opcode, 0–4 bytes of operands, variable
+length. Sketched set: `PUSH_I8`, `PUSH_CONST`, `LOAD_HOST`,
+`STORE_HOST`, `LOAD_L`/`STORE_L`, `ADD_I`/`SUB_I`/`MUL_I`/`DIV_I`/
+`ADD_F`…, `CMP_GT_I`/`CMP_EQ_I`…, `JMP`/`JMP_IF_FALSE`, `CALL_HOST`,
+`RET`. The worked `match` example above compiles to roughly **25 bytes**
+for the whole logic.
+
+Stack discipline: every opcode pops its inputs and pushes at most one
+result, so the stack breathes rather than grows; every opcode has a
+fixed known stack effect, which is what lets the compiler compute the
+exact maximum depth (2 cells in the worked example; typical formulas
+4–8, complex scripts rarely over 16–32). The invariant that gives
+safety: with a correct compiler the stack is empty at `RET`, and **a
+load-time verifier recomputes exactly that** — the same arithmetic as
+the compiler, run as a check.
+
+**The HOST table is the mechanism that makes scripts OTA-updatable.**
+The script references entities only by index; the section carries the
+symbolic names (`"fan.speed"`) plus expected type and dimension. On
+load the VM resolves the names once against the host registry
+("linking") and checks type and profile compatibility; after that,
+accesses are array indexing. This is what decouples a script from the
+concrete firmware version.
+
+**Opcode groups** (core-int, float, control flow, host calls, later
+strings) are declared in the spec, and the VM links only the groups
+selected by Kconfig — the mechanism behind requirement 3. A pure
+formula device without float and without loops is estimated at
+**1–2 KB flash** of VM.
+
+**The transpiler must not translate bytecode → C.** Both backends
+generate from the same typed intermediate representation: frontend →
+typed IR → backend A (bytecode) / backend B (C). From the IR, `match`
+becomes a plain if-chain that GCC optimizes through; from bytecode it
+would become spaghetti with stack simulation.
+
+### 2.8 On the table: calls, recursion and budgets
+
+**On the table.**
+
+- Arguments are pushed by the caller and *become* the callee's first
+  locals — no separate passing, just a shifted reference point. The VM
+  needs a frame pointer and a small call stack; `LOAD_L 0` is relative
+  to FP. `CALL` saves return address and old FP, points FP at the first
+  argument and reserves the extra local slots; `RET_V` pops the return
+  value, resets the stack pointer to FP (clearing arguments and locals
+  in one step), restores FP and PC, and pushes the result. Net effect
+  from the caller's view: *n* in, one out — so calls compose without
+  special cases.
+- `CALL_HOST` is the counterpart for C functions: pop the arguments per
+  the HOST-table signature, call the registered function pointer, push
+  the result. No frame, no call stack. It belongs in the **core**,
+  because every `fan.set_speed()` needs it — whereas `CALL`/`RET_V` and
+  the call stack simply do not exist below Level 2, so a formula device
+  carries zero bytes of call machinery.
+- **No recursion**, which keeps the call graph acyclic, which is what
+  lets the compiler compute the worst-case value-stack and call-stack
+  depth per entry point. A cycle in the call graph is a compile error.
+- Against the product owner's own suggestion of per-call malloc'd
+  frames: it would **break the two-backend invariant**, because in the
+  C backend the same functions run on a fixed-size Zephyr thread stack
+  — recursion that survives 500 levels in the VM would overflow after
+  50 as transpiled C, at best crashing and at worst corrupting memory
+  silently. Plus: malloc per call on every event trigger fragments the
+  heap, and a half-executed script that has already written two
+  entities has no rollback when an allocation fails. A user's typo (a
+  function accidentally calling itself) would become a sporadic runtime
+  death on a device nobody can reach, instead of a compile error saying
+  *"recursion is not supported, use a loop"*.
+- Middle ground if the door should stay open: **bounded recursion with
+  a declared maximum depth** (`@max_depth(8)`), which keeps the static
+  worst-case computation intact — stack requirement = frame size ×
+  depth.
+
+### 2.9 On the table: designing for non-developers, and how to validate it
+
+**On the table**, and the direct answer to §2.2g. Language ideas that
+come from how non-developers actually think:
+
+- **Units in the language** (§2.6) — nobody thinks in bare numbers, and
+  millisecond-versus-second bugs are among the most common errors
+  anywhere.
+- **`unavailable` as a language concept instead of `null`.** The most
+  common real failure in a smart home is a sensor with no current
+  value; Home Assistant templates crash on it constantly. Solve it in
+  the language — `temp else 20` as a fallback, or a defined "the
+  expression is skipped when a value is missing". An exposed `null`
+  with crash semantics is the opposite. (This is §1.2's null coalescing,
+  made concrete.)
+- **No silent wrong behaviour**: `=` versus `==` (forbid assignment
+  where a condition is expected, with an explaining compile error);
+  integer division (`3 / 2 = 1` is simply wrong to a layman — make `/`
+  always float and `//` or `div` integer); no silent coercions. The
+  error must **explain**, not just report.
+- **Error messages budgeted as a core feature**: *"Did you mean
+  `fan.speed`? There is no `fan.sped`"*, with a Levenshtein
+  suggestion drawn from the known entity names, is worth more to this
+  audience than any language feature. Elm and Rust are the models.
+
+And the methods for getting the view rather than guessing it:
+
+- **The first-guess test**: give people with no programming knowledge a
+  task in prose — *"write a rule: light at 50 % when it is dark
+  and somebody is home"* — **before** they have seen any syntax, and
+  look at what they write. Design goal: the first guess should be valid
+  syntax as often as possible. Called the single most productive
+  method; 3–4 people already expose the coarse patterns.
+- **Home Assistant and ESPHome forums as a corpus** of real
+  misunderstandings — read what beginners got wrong about Jinja and
+  lambdas, not just the answers.
+- **Existing research**: the *Natural Programming* studies by Pane &
+  Myers (CMU) examined exactly this. Reported core findings: laypeople
+  think in **event-condition-action**, use "and" for *enumerations of
+  actions* rather than boolean conjunction, and think in **sets rather
+  than loops**. The language *Quorum* came out of that line of work.
+- **Copy-paste is the real learning path**: non-developers do not read
+  a language reference, they copy an example and change the numbers. A
+  gallery of ~30 typical snippets shapes the perception of the language
+  more than the documentation does — and doubles as the test corpus for
+  both backends.
+- Priority given: **units, unavailable-handling and error messages**
+  are the three to plan before the first line of compiler code,
+  because all three are hard to add later.
+
+### 2.10 Prior art as surveyed in the conversation
+
+**On the table**, and explicitly *not re-verified here* — these are the
+conversation's characterizations, recorded so the survey is not
+repeated from zero. Anything acted on should be checked against the
+projects' current state first.
+
+| Project | As characterized |
+|---|---|
+| **Toit** | Closest on overall goal: an MCU-designed VM in the Java tradition, compiler + VM + standard libraries, live reload over WiFi in under two seconds. But garbage-collected, practically ESP32/FreeRTOS-bound rather than Zephyr, **no C transpile path**, and a full OO language aimed at developers. Its VM and container design called required reading |
+| **Nelua** | The other half: statically typed, Lua-like, compiles to plain C — requirement 2 exactly, but **no VM backend** |
+| **Pawn** | The proof for the VM side: curly-brace language, small-footprint VM, data as 4/8-byte cells, static, decades in embedded products — but no transpilation and dated syntax |
+| **Umka**, **Tiny** | Statically typed, GC-light embeddable VMs |
+| **q3vm** | C itself as the scripting language, compiled to bytecode for a tiny sandboxed VM. A thought model; C-writing end users are the thing being avoided |
+| **Berry**, **MicroPython** | The only ones from the smart-home world; both dynamic, both without a transpile option |
+| **ESPHome** | Has nothing beyond C++ lambdas |
+| **Nim**, **Cython**, **Mojo** | Existence proofs that Python-like syntax over static semantics compiles to C fine |
+
+The conclusion drawn: the exact combination — simple language for
+non-developers + always a bytecode VM + optional C transpilation from
+the same source + a modular expression subset — **does not exist as one
+project**, and the pragmatic path is not to start from zero but to
+borrow deliberately: Toit's VM and OTA architecture, Nelua's C codegen
+approach, Pawn's proof of how small a static VM can be, Berry's binding
+model from the Tasmota deployment.
 
 ---
 
-## 8. The state of the code today
+## 3. Reading the two sources together
+
+### 3.1 Tiers and levels are different axes
+
+The two sources both count to three, and they are not counting the
+same thing. Conflating them would be the first serious mistake this
+project could make.
+
+| | component-model.md §10 — **tiers** | the conversation — **levels** |
+|---|---|---|
+| What it classifies | what the **builder links** for a given configuration | what the **language** offers |
+| 1 / 0 | predefined filters: registry entries, C-owned state — **not a language at all** | Level 0: expressions, no allocation, no control flow |
+| 2 / 1 | expressions: no state, no heap, no GC | Level 1: statements — variables, if/else, loops with an iteration limit |
+| 3 / 2 | scripting engine: state, `on_boot` hooks, timers, actions | Level 2: functions, possibly arrays/strings |
+
+The mapping that actually holds:
+
+- **Tier 1 has no counterpart.** Predefined filters stay a MCUHome
+  registry feature and are not MCUScript, even if MCUScript is built.
+- **Tier 2 ≈ Level 0.**
+- **Tier 3 ≈ Level 1 + Level 2 + the host side.** Hooks, timers and
+  actions are not language levels at all — in the conversation's design
+  they are `CALL_HOST`, entry points in the ENTRY section, and the
+  embedder deciding when to run a script. They are an *embedding*
+  concern in the sense of ADR 0001's boundary rule.
+- **"Cheapest tier wins" and "Kconfig-selected opcode groups" are the
+  same idea** in two vocabularies. §10 says the builder picks the
+  cheapest tier that covers the configuration; the conversation says
+  the VM links only the opcode groups the scripts on this device
+  actually use. The second is the implementation of the first.
+
+### 3.2 Where they disagree
+
+Four real disagreements, none fatal, all needing a decision:
+
+1. **The ternary operator.** §1.2 names *"the ternary conditional"* as
+   in-scope for tier 2 and its worked example uses `? :`. §2.5 argues
+   explicitly against a separate `? :` — an if-expression is the same
+   thing, and two spellings confuse the audience. Both cannot survive.
+2. **Where variables live.** §1.2 says an expression has *"no state"*
+   and that *everything stateful* lives in tier 1 with C-owned state —
+   yet it also lists "variables" as in tier-2 scope. §2.4 puts
+   variables in Level 1. The reconciliation is probably that §10's
+   "variables" means named sub-expressions rather than assignable
+   storage, but the documents do not say so, and a language cannot be
+   specified on a probably.
+3. **Generated C control flow.** §1.8 says automations compile to a
+   static table read by a small interpreter, *"no generated C control
+   flow"*. §2.7's C backend generates exactly that. They are about
+   different mechanisms — the declarative automation table versus the
+   script transpiler — but a device could end up carrying both, and
+   nothing says which one owns a given piece of logic.
+4. **Sequencing.** §1.4 says the tier-2 expression engine is built
+   inside MCUHome first *"so it can be promoted into the standalone
+   project rather than rewritten"*. §2.2d/f start the standalone
+   project first, with the spec. The conversation's order won by
+   default; it should be said out loud rather than left as a
+   contradiction between two documents.
+
+One near-disagreement that turns out to be a **precision**: §1.6 says
+*"scripts work in user units"* with conversion in the C binding; §2.6
+says base units per dimension are part of the ABI. These agree, and
+§2.6 says what "user unit" means. The consequence for MCUHome is real
+and is §4's first item.
+
+### 3.3 The build-versus-adopt question, honestly
+
+§1.3 says the engine decision belongs to an automation-phase ADR backed
+by a **measured prototype**. §2.2a is the product owner saying he
+intends to build his own, and §2.2d is him founding an organization for
+it. So: is it decided?
+
+The honest reading, and the one this repository adopts:
+
+- **The direction is decided; the justification is not yet written.**
+  The product owner has committed enough to name the project, found an
+  organization and choose a starting point. Pretending that is still
+  open would be dishonest.
+- **The measurement is still owed, and it is owed for a different
+  reason than §10 imagined.** §10 expected a footprint comparison —
+  can Berry fit? The conversation supplies a much stronger argument
+  that is not about footprint at all: requirement 2 (transpile to C) is
+  incompatible with a dynamically typed engine, and Berry, Lua and
+  MicroPython are all dynamically typed. If that argument holds, no
+  measurement of Berry's flash usage could change the outcome, because
+  Berry fails on a requirement rather than on a number.
+- **So the measurement that is actually owed is of the argument, not
+  of Berry.** What must be demonstrated is that the two-backend
+  architecture works: one source, a VM and generated C, bit-identical
+  results. That is exactly the MVP proposed in §2.3 and not taken in
+  §2.2f. Whatever is measured first, the automation-phase ADR §1.3
+  calls for still has to be written, and it should record this
+  reasoning rather than a Berry benchmark.
+- **Berry remains the recorded fallback** (§1.3), and the argument
+  against it should be tested before it is treated as settled — a
+  hybrid where Berry serves the script tier and MCUHome owns only the
+  expression tier is not a novel idea, it is what §1.2 already
+  describes.
+
+---
+
+## 4. What this would require of MCUHome
+
+Nothing in this section is decided anywhere. These are obligations the
+conversation's design places on the embedder, and every one of them
+means changing a MCUHome document. They are listed here because they
+are invisible from inside MCUHome and would be discovered late.
+
+1. **The channel binding must deliver values in the profile's base
+   unit.** Today `channel.h` converts Zephyr's unit straight to the
+   Matter raw unit in one integer step (§1.9). With a script in
+   between, that conversion splits in two: sensor → profile base unit,
+   where the script operates, then → Matter raw unit. That is a change
+   to the channel contract, i.e. a contract-version bump under
+   mcuhome-sdk ADR 0014.
+2. **The entity registry must expose type and dimension per entity**,
+   because the HOST table is resolved against it at load time and the
+   check is what makes a wrong-profile script a refusal rather than a
+   wrong number.
+3. **The YAML configuration must declare dimensions**
+   (`type: temperature`, `unit: °C`). `yaml-schema.md` has no such
+   concept today.
+4. **MCUHome must publish and version a home profile as an artifact.**
+   A profile is part of the bytecode ABI (§2.6); it cannot be an
+   implementation detail of the builder. Nothing in MCUHome owns this
+   yet.
+5. **The script transport must carry the profile ID and version**, and
+   a mismatch must be a typed refusal. The transport is the CoAP
+   maintenance channel that mcuhome-sdk ADR 0010 deferred (§1.10).
+6. **Someone must sign pushed bytecode.** ADR 0015 records that
+   MCUboot's signature is the only payload trust anchor in the existing
+   path — and a script push deliberately does not go through MCUboot.
+   A CRC32 in the container header is an integrity check, not an
+   authenticity one, and §1.6 requires an authenticated channel. Whether
+   authenticity comes from the channel or from a signature in the
+   container is undecided, and it is MCUHome's decision because it owns
+   the transport.
+7. **The attachment point in the YAML schema must be decided.**
+   `yaml-schema.md` §8 reserves an `expression:` key; the conversation
+   assumes `.mcs` files with inline one-liners. Those are different
+   surfaces and both need a home.
+8. **The reserved script region gets a real format.** ADR 0015 reserved
+   it with size zero and said the format is decided in the scripting
+   phase (§1.10); §2.7 is the first sketch, and the two documents will
+   have to agree on framing, alignment and whether the region holds one
+   container or several.
+
+---
+
+## 5. What this repository's existence does not mean
+
+1. **That the language is specified.** Everything in §2.3 through §2.9
+   is a proposal that the product owner has not answered.
+2. **That "DEV mode" means what it means elsewhere.** mcuhome ADR 0019
+   uses `clean`/`incremental` build modes and notes that *"the script
+   'DEV mode' this originally anticipated was overtaken by ADR 0020's
+   build methods"*. That is about warm build workspaces, not about
+   §1.5's DEV/LIVE device modes. The names collide; the concepts do not
+   touch.
+3. **That tier-1 filters are scripting.** Predefined filters with
+   C-owned state stay a MCUHome registry feature even if MCUScript
+   never exists (§3.1).
+4. **That MCUHome is committed.** §1.3's fallback to Berry is still
+   recorded, and §3.3 says what would have to be true for it to be
+   discarded.
+
+---
+
+## 6. The state of MCUHome's code today
 
 `automations:` is parsed and refused, on purpose:
 
@@ -402,73 +943,65 @@ misreading:
   publishes it in the JSON schema as *"Automations. Not implemented in
   v0.1."*;
 - `tests_py/test_validate.py` and `tests_py/test_examples.py` pin that
-  refusal, the latter against the CO₂ example of §3.
+  refusal, the latter against the CO₂ example of §1.7.
 
 There is **no** filter, expression or script code anywhere in any
 MCUHome repository. The word "expression" appears in the C sources only
-as a prohibition (§5).
+as a prohibition (§1.9).
 
 ---
 
-## 9. Vocabulary already fixed for the product owner
+## 7. Vocabulary already fixed for the product owner
 
-`GLOSSAR.md` (German, workspace-level, untracked) already carries the
-terms this project will use, and its definitions are the product
-owner's mental model:
-
-- **VM** — *"der Interpreter-Kern einer Skriptsprache (MicroPython,
-  Lua, Berry), der Skript-Code auf dem Chip ausführt"*;
-- **GC** — *"Kostet RAM-Reserve und kurze Pausen; auf MCUs der
-  Hauptgrund, warum Skript-Engines mehr RAM brauchen als ihr Grundbedarf
-  vermuten lässt"*;
-- **Berry** — *"Kleine Skriptsprache speziell für MCUs (Kern < 40 KB
-  Flash). Tasmota nutzt sie als Automations-Sprache auf ESP32 — der
-  wichtigste Praxis-Präzedenzfall in unserem Umfeld"*;
-- **WASM** — evaluated and rejected for this purpose: *"Nutzer bräuchten
-  aber eine Compiler-Toolchain — für Endanwender-Automationen daher
-  unpraktisch"*.
-
-New MCUScript terminology gets added there when it is introduced.
+`GLOSSAR.md` (German, MCUHome workspace, untracked) carries the terms,
+and its definitions are the product owner's mental model: **VM** as "the
+interpreter core of a scripting language […] that runs script code on the
+chip"; **GC** as "on MCUs the main reason why script engines need more
+RAM than their baseline suggests"; **Berry** as "core < 40 KB flash […]
+the most important practical precedent in our field"; **WASM** as
+evaluated and rejected for this purpose because "users would need a
+compiler toolchain". Entries for
+MCUScript, profiles, the two-backend invariant and the stack machine
+were added on 2026-08-16.
 
 ---
 
-## 10. Open questions this project inherits
+## 8. Open questions
 
-None of these is answered anywhere, and each one is a real fork in the
-road:
-
-| # | Question | Where it came from |
+| # | Question | From |
 |---|---|---|
-| 1 | Adopt Berry, or build MCUScript? Decided by a *measured* prototype | §1.3 |
-| 2 | What is measured, and against what budget? No flash/RAM number has ever been stated for the engine on any target | §1.3, `ROADMAP.md` |
-| 3 | Syntax. §10 names semantics (ternary, null coalescing, method calls) but no grammar, and Symfony's ExpressionLanguage is a scope marker, not a syntax decision | §1.2 |
-| 4 | The bytecode container format — the thing draft ADR 0015 reserved a flash region for without a format | §6 |
-| 5 | The bytecode verifier: *"pushed bytecode must never crash a node"* — verify on device, sign on host, or both? | §1.3, §1.6 |
-| 6 | Bytecode/binding-API version handshake, mirroring `tables_version` | §1.6 |
+| 1 | The automation-phase ADR that formally settles build-versus-adopt is unwritten, and the thing that needs measuring has changed (§3.3) | §1.3, §3.3 |
+| 2 | No flash/RAM budget has ever been stated for the engine on any target. The 1–2 KB VM figure is an estimate, labelled as one | §1.3, §2.7 |
+| 3 | Syntax is directionally decided (braces, no `? :`, `match`, if-as-expression) but no grammar exists, and the ternary conflict with §1.2 is unresolved | §2.5, §3.2 |
+| 4 | The bytecode container is sketched, not specified — and it is the thing the product owner chose to start with | §2.2f, §2.7 |
+| 5 | The verifier: what it recomputes rather than trusts, and whether verification is mandatory or optional | §2.7 |
+| 6 | The binding-API/bytecode version handshake, mirroring `tables_version` | §1.6, §2.6 |
 | 7 | The C API toward embedders — the thing that makes this standalone rather than a subdirectory | §1.4 |
-| 8 | Numeric model. Wren was rejected partly for double-only numbers on single-precision-FPU targets, which implies integers and/or 32-bit floats matter, but nothing is decided | §1.3 |
-| 9 | Host-side compiler implementation language. MCUHome's builder is Python; a compiler usable by non-Python embedders may not be | §1.4 |
-| 10 | Whether tier 2 ships first inside MCUHome (as §1.4's *"built with this API discipline from day one"* allows) or immediately here | §1.4 |
-
-## 11. Not yet incorporated
-
-An earlier conversation about this project exists as a claude.ai share
-link (product owner, 2026-08-16). Its content could not be read — the
-share page renders client-side and its API refuses unauthenticated
-reads — so **nothing from it is in this record**. When the content is
-available, whatever it decided belongs in §1 or §10 of this document,
-or in its own ADR.
+| 8 | The numeric model. 32-bit cells with typed opcodes, but the time base may need 64 bits; how a 64-bit value sits in a 32-bit-cell stack is unaddressed | §2.6, §2.7 |
+| 9 | The time base contradicts itself in the source: `int32` ms overflows after ~24 days, `int64` ms was also stated | §2.6 |
+| 10 | The percent base unit is open (0–100 / 0–255 / 0–1000). Note MCUHome is a Matter project and Matter has its own conventions | §2.6 |
+| 11 | The host compiler's implementation language. MCUHome's builder is Python; a compiler for non-Python embedders may not want to be | §1.4 |
+| 12 | Repository topology inside `mcuscript-lang`, and where profiles live | ADR 0003 |
+| 13 | Whether the first artifact is the spec (the product owner's choice) or the Level-0 end-to-end MVP (the advice), and what the spec can be worth before either backend exists | §2.2f, §2.3 |
+| 14 | Execution-budget semantics: what happens when a script is cut off after it has already written entities. The same "there is no rollback" objection raised against heap frames applies here | §2.4, §2.8 |
+| 15 | Whether the language exposes `unavailable` as a value, a skip semantics, or both | §2.9 |
+| 16 | How the non-developer validation actually gets done, given that the product owner has said he cannot judge it himself | §2.2g, §2.9 |
+| 17 | The prior-art survey of §2.10 is unverified, and so are the name/domain availability checks (ADR 0003) | §2.10 |
 
 ## Consequences
 
-- A reader starting here needs to read no MCUHome document to know what
-  is already settled — but every claim names the document that owns it,
-  so the authoritative text is one link away and this record can be
-  audited against it.
-- This document is a **living draft** in the strongest sense: it is
-  correct only as long as its sources say what it says they say. When
-  the automation-phase ADR is written, most of §1 stops being inherited
-  context and becomes a real MCUScript decision — at which point those
-  sections shrink to citations.
-- The distinction that matters most is §7: nothing here commits MCUHome
-  to building its own engine.
+- A reader starting here needs no MCUHome document and no chat log to
+  know what exists — but every claim names its source, so the
+  authoritative text is one link away and this record can be audited
+  against it.
+- The bucket marking is the load-bearing part. A future contributor who
+  implements something from §2.5 or §2.7 as though it were decided has
+  misread this document, and the buckets are what make that a
+  misreading rather than an honest mistake.
+- This is a **living draft** in the strongest sense: it is correct only
+  as long as its sources say what it says they say, and one of its
+  sources is a chat export that exists in no repository. As real
+  MCUScript ADRs get written, the corresponding sections here shrink to
+  citations.
+- §4 is a bill MCUHome has not seen. It should be read there, not only
+  here.
