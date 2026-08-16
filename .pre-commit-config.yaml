@@ -1,0 +1,39 @@
+# SPDX-FileCopyrightText: 2026 The MCUHome Contributors
+# SPDX-License-Identifier: Apache-2.0
+#
+# Install: pre-commit install --install-hooks
+#          pre-commit install --hook-type commit-msg
+# Update pins periodically with: pre-commit autoupdate
+#
+# Language-specific hooks (a formatter, a linter) are added in the same
+# commit that introduces the first source file — the implementation
+# language is an open question (docs/adr/draft/0002-inherited-context.md).
+# Pinned versions are kept in step with the mcuhome repository.
+
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: check-yaml
+      - id: check-toml
+      - id: check-merge-conflict
+      - id: mixed-line-ending
+        args: [--fix=lf]
+
+  - repo: https://github.com/codespell-project/codespell
+    rev: v2.3.0
+    hooks:
+      - id: codespell
+
+  - repo: https://github.com/fsfe/reuse-tool
+    rev: v5.0.2
+    hooks:
+      - id: reuse
+
+  - repo: https://github.com/compilerla/conventional-pre-commit
+    rev: v3.4.0
+    hooks:
+      - id: conventional-pre-commit
+        stages: [commit-msg]

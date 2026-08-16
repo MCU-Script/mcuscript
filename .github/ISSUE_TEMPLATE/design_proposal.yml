@@ -1,0 +1,51 @@
+# SPDX-FileCopyrightText: 2026 The MCUHome Contributors
+# SPDX-License-Identifier: Apache-2.0
+
+name: Design proposal
+description: Propose a concrete answer to an open design question
+labels: ["design"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        MCUScript is in its design phase; the open questions are listed
+        in [ADR 0002 §10](https://github.com/mcu-home/mcuscript/blob/main/docs/adr/draft/0002-inherited-context.md).
+        Use this form for a **concrete, scoped** proposal — open-ended
+        ideas belong in
+        [Discussions](https://github.com/mcu-home/mcuscript/discussions).
+  - type: input
+    id: question
+    attributes:
+      label: Which open question does this answer?
+      placeholder: e.g. ADR 0002 §10 #4 — the bytecode container format
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What has to be decided, and what breaks while it is undecided?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposal
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Including "adopt an existing engine instead", where that applies.
+  - type: textarea
+    id: cost
+    attributes:
+      label: Cost on a microcontroller
+      description: |
+        Flash, RAM, and whether it needs a heap or a garbage collector.
+        Measured numbers beat estimates; estimates beat nothing — say
+        which one this is.
+  - type: textarea
+    id: prior-art
+    attributes:
+      label: Prior art
+      description: Which existing engine does this, and how did it work out?

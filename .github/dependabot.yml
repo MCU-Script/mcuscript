@@ -1,0 +1,16 @@
+# SPDX-FileCopyrightText: 2026 The MCUHome Contributors
+# SPDX-License-Identifier: Apache-2.0
+#
+# No package ecosystem yet — the implementation language is undecided,
+# so there is no manifest to watch. Add the matching ecosystem in the
+# same commit that introduces one.
+#
+# The actions in .github/workflows/ are pinned to commit SHAs, not tags,
+# so dependabot can bump them with a reviewable diff.
+
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly

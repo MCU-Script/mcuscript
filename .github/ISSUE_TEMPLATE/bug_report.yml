@@ -1,0 +1,61 @@
+# SPDX-FileCopyrightText: 2026 The MCUHome Contributors
+# SPDX-License-Identifier: Apache-2.0
+
+name: Bug report
+description: Report a defect in MCUScript
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        MCUScript has **no implementation yet**, so today this form fits
+        defects in the documentation, the ADRs or the repository setup —
+        a decision recorded here that contradicts its cited source, for
+        instance. Design questions belong in
+        [Discussions](https://github.com/mcu-home/mcuscript/discussions).
+  - type: dropdown
+    id: component
+    attributes:
+      label: Component
+      options:
+        - Documentation / ADR
+        - Repository setup (CI, licensing, templates)
+        - Compiler
+        - Bytecode format
+        - VM / runtime
+        - Embedder C API
+        - Other
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: MCUScript version
+      placeholder: e.g. git commit hash (there are no releases yet)
+    validations:
+      required: true
+  - type: input
+    id: target
+    attributes:
+      label: Target / toolchain (if applicable)
+      placeholder: e.g. nRF52840, arm-zephyr-eabi 0.17.4 — or "host"
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened, and what did you expect?
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Reproduction
+      description: The smallest script, input or command that shows the problem.
+    validations:
+      required: false
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Checklist
+      options:
+        - label: I searched existing issues and this is not a duplicate.
+          required: true
