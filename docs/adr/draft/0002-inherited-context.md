@@ -1319,35 +1319,28 @@ were added on 2026-08-16.
 
 ## 8. Open questions
 
-Questions 1, 12, 23 and the time-base half of 8/9 were answered on
-2026-08-16 and have moved into the text; what is listed here is what is
-still open, renumbered.
+Fourteen of the earlier entries were answered by the specification
+(`spec/`, all five chapters in draft since 2026-08-16) and are gone
+from this list rather than marked: the container and its ten gaps, the
+verifier's duties, how a 64-bit value lives in the machine, the
+mechanism behind `invalid`, how the recursion cap is enforced in the C
+backend, the execution budget, read-back of a script's own writes,
+whether a script may hold state between invocations, and the
+spec-versus-prototype sequencing. What is left:
 
 | # | Question | From |
 |---|---|---|
-| 1 | No flash/RAM budget has ever been stated for the engine on any target. The 1–2 KB VM figure is an estimate for the expression level only; a VM with control flow and calls is a different number | §1.3, §2.7 |
-| 2 | Syntax is directionally decided (braces, no `? :`, `match`, if-as-expression) but no grammar exists, and the ternary conflict with §1.2 is unresolved | §2.5, §3.2 |
-| 3 | The bytecode container is sketched, not specified — and it is the thing the product owner chose to start with | §2.2f, §2.7 |
-| 4 | The verifier: what it recomputes rather than trusts | §2.7, §2.11 |
-| 5 | The binding-API/bytecode version handshake, mirroring `tables_version` | §1.6, §2.6 |
-| 6 | The C API toward embedders — the contract that makes this a language rather than a component | §1.4, §4 |
-| 7 | **How a 64-bit value lives in a 32-bit-cell stack machine.** The time base is decided as `int64` ms, so this is now a design problem rather than a choice: two cells and a changed stack-effect rule, or a wider cell and more RAM per script | §2.6, §2.11 |
-| 8 | The percent base unit (0–100 / 0–255 / 0–1000). A profile question, but the first profile still has to answer it — Matter uses 0–254 for level and 0–10000 for percent100ths | §2.6 |
-| 9 | Float is in and single-precision; what remains is the exact flag list the specification names, and how the differential harness pins host precision | §2.12 |
-| 10 | The host compiler's implementation language. A compiler that only Python embedders can run is a different product from one anybody can | §1.4 |
-| 11 | Whether the first artifact is the spec (the product owner's choice) or the expression-level end-to-end MVP (the advice), and what a spec is worth before either backend exists | §2.2f, §2.3 |
-| 12 | Execution-budget semantics: what happens when a script is cut off after it has already written entities | §2.4, §2.8, §2.11 |
-| 13 | `invalid` propagates like NaN — but integers have no NaN, so the mechanism is open: sentinel value, validity bit, or per-evaluation flag. Plus what `else` catches, and what `invalid > 5` evaluates to | §2.9 |
-| 14 | The recursion cap's default number, how the C backend enforces it on an ordinary thread stack, and what happens when it is reached | §2.8 |
-| 15 | How the non-developer validation actually gets done, given that the product owner has said he cannot judge it himself | §2.2g, §2.9 |
-| 16 | Endianness, alignment, total length, must-understand sections, opcode-group declaration — the container gaps of §2.11, all of which the first spec must answer | §2.11 |
-| 17 | Whether load-time verification is mandatory. If the VM sizes its stack from a number in an untrusted file, it cannot be a build option | §2.11 |
-| 18 | Nothing — authenticity is the embedder's (§4). The language-side residue is only that the CRC must be labelled as corruption detection and the section mechanism must admit a signature section | §2.11, §4 |
-| 19 | Whether a script may observe its own write. Recommended resolution: **the language guarantees it can**, and commit *timing* stays the embedder's — the two are orthogonal, since a buffering host need only consult its own staging buffer on reads. That keeps scripts portable and still lets an embedder commit atomically at the end | §2.11, §4 |
-| 20 | Whether a script may hold state that survives an invocation. §1.2 implies not; nothing says it | §3.2 |
-| 21 | Whether the spec and the first profile get their own repositories inside the organization | ADR 0003 |
-| 22 | "Static inference is more pleasant for non-developers" is unevidenced, and sits oddly beside Pane & Myers, who found laypeople think in events and sets rather than in types | §2.3, §2.9 |
-| 23 | The "90 % of scripts are formulas" figure has no source. It decides how much of the language most users ever meet | §2.4 |
+| 1 | No flash/RAM budget has ever been measured for the engine on any target. The 1–2 KB figure for an expression-only VM is an estimate and always was | §1.3, §2.7 |
+| 2 | **The C API toward embedders** — now the largest open item. The specification says what a program is; nothing says how a host offers a registry, invokes an entry point or receives a fault | §1.4, §4 |
+| 3 | The grammar. The specification deliberately does not cover syntax, and the ternary conflict of §3.2 is still unresolved | §2.5, §3.2 |
+| 4 | The recursion cap's default number. The mechanism is specified (spec §5.4); the number is not | §2.8 |
+| 5 | The counted-loop construct, reserved as a group but undesigned — and it must keep termination provable | spec §3.8 |
+| 6 | The percent base unit (0–100 / 0–255 / 0–1000). A profile question, but the first profile must answer it; Matter uses 0–254 for level and 0–10000 for percent100ths | §2.6 |
+| 7 | The exact compiler-flag list the specification names for float, and how the differential harness pins host precision | §2.12, spec §1.5 |
+| 8 | The host compiler's implementation language. A compiler only Python embedders can run is a different product from one anybody can | §1.4 |
+| 9 | How the non-developer validation actually gets done, given that the product owner has said he cannot judge it himself | §2.2g, §2.9 |
+| 10 | "Static inference is more pleasant for non-developers" is unevidenced, and sits oddly beside Pane & Myers, who found laypeople think in events and sets rather than in types | §2.3, §2.9 |
+| 11 | The "90 % of scripts are formulas" figure has no source. It decides how much of the language most users ever meet | §2.4 |
 
 ## Consequences
 

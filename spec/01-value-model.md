@@ -74,9 +74,14 @@ The rule survives literally instead:
 > Every instruction pops a statically known number of slots and pushes
 > at most one.
 
-That single sentence is what makes the compiler's stack-depth
-computation, the verifier's recomputation of it, and the static
-allocation of the stack all straightforward. It is worth more than the
+`DUP` is the single exception, pushing two where it popped one, and it
+is written down as one (§3.3) rather than quietly widening the rule.
+Its effect is still statically known, which is all the arithmetic below
+actually needs.
+
+That sentence is what makes the compiler's stack-depth computation, the
+verifier's recomputation of it, and the static allocation of the stack
+all straightforward. It is worth more than the
 bytes. eBPF makes the same trade for the same reason, on hosts that are
 frequently 32-bit.
 
@@ -139,7 +144,7 @@ not reach a decision:
 
 > **An instruction that consumes a `bool` to choose control flow
 > requires that `bool` to be `valid`.** If it is not, the script faults
-> (§2.7).
+> (§5.5).
 
 `if temp > 25 { … }` with an unread sensor does not silently take the
 false branch. Silently taking a branch is how an absent reading becomes

@@ -133,11 +133,17 @@ refuses the container at load.
 
 | Bit | Group | Contents |
 |---|---|---|
-| 0 | `core` | stack, locals, `i32` arithmetic and comparison, branches, host access. Every implementation has it |
-| 1 | `i64` | 64-bit arithmetic and comparison |
+| 0 | `core` | stack, locals, `i32` arithmetic and comparison, branches, host access, validity. Every implementation has it |
+| 1 | `i64` | 64-bit arithmetic, comparison and conversion |
 | 2 | `float` | `f32` arithmetic, comparison and conversion |
-| 3 | `call` | user-defined functions: `CALL`, `RET_V`, the frame machinery |
-| 4–31 | reserved | must be zero in version 1 |
+| 3 | `call` | user-defined function calls and the frame machinery |
+| 4 | `bits` | bitwise operations and shifts on `i32` |
+| 5 | `loop` | reserved — counted loops (§3.8) |
+| 6–31 | reserved | must be zero in version 1 |
+
+`RET` and `RET_V` are in `core`, not in `call`: an entry point has to
+return whether or not the program has functions. Only calling belongs
+to `call`, so an expression-only device carries no call apparatus.
 
 This is what makes an expression-only device honest rather than
 hopeful. Without the declaration, a build with no float support that
@@ -200,8 +206,7 @@ partial load and never a silent degradation. The full error taxonomy —
 including the eight distinct ways `HOST` resolution can fail — is
 chapter 4.
 
-A **fault** is different: it happens during execution, and the only one
-this document has defined so far is §1.3.1, a control-flow instruction
-reaching a value that is not `valid`. A fault ends the script. What
-that means for writes the script had already made is the embedder's
-policy and is discussed in §1.6, not here.
+A **fault** is different: it happens during execution rather than
+before it, there are exactly three of them, and they are §5.5. A fault
+ends the invocation. What that means for writes the script had already
+made is the embedder's policy (§1.6), not this chapter's.

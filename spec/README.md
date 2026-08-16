@@ -6,7 +6,9 @@ SPDX-License-Identifier: Apache-2.0
 # The MCUScript specification
 
 - Specification version: **0.1.0-draft**
-- Status: **in progress** — see the document map below for what exists
+- Status: **complete in draft, unimplemented** — all five chapters
+  exist; none has been tested against a compiler, because there is not
+  one yet
 
 This is the contract. Everything else in this repository is an
 implementation of it, including the reference compiler, the VM and the
@@ -78,17 +80,19 @@ An implementation conforms if it:
 
 ## Document map
 
-| Document | Contents | Status |
-|---|---|---|
-| [01-value-model.md](01-value-model.md) | Types, slots, validity states, numeric semantics | written |
-| [02-container.md](02-container.md) | The binary format, sections, verification, loading | written |
-| 03-instructions.md | The instruction table and per-instruction semantics | not written |
-| 04-linking.md | The host interface, name resolution, the error taxonomy | not written |
-| 05-execution.md | Entry points, frames, termination, faults | not written |
+| Document | Contents |
+|---|---|
+| [01-value-model.md](01-value-model.md) | Types, slots, validity states, numeric semantics |
+| [02-container.md](02-container.md) | The binary format, sections, verification |
+| [03-instructions.md](03-instructions.md) | The instruction set, group by group, with a worked example |
+| [04-linking.md](04-linking.md) | The constant, entry-point and import tables; name resolution; every error |
+| [05-execution.md](05-execution.md) | Invocation, frames, recursion, faults, termination |
 
-Chapters 3 to 5 are next. Nothing in 1 and 2 is expected to survive
-untouched until they exist — a value model is only as good as the
-instructions that turn out to need it.
+All five exist in draft. Writing 3 to 5 changed 1 and 2 twice, which
+was expected: `DUP` turned out to be the one instruction that pushes
+more than it pops, and the group table gained two entries. It will
+happen again — the first compiler will find what no amount of writing
+does.
 
 ## Versioning
 
