@@ -22,16 +22,15 @@ never heard of MCUHome is a design goal, not a side effect.
 
 ## Status
 
-**Nothing is implemented.** There is no language, no compiler, no VM
-and no C API. What exists is the design record: the requirements, the
-constraints and the decisions taken so far, collected in
-[docs/adr/](docs/adr/) with every claim traced to its source.
+**Nothing is implemented.** There is no compiler, no VM and no C API.
+What exists is [the specification](spec/), two chapters in of five, and
+the design record behind it in [docs/adr/](docs/adr/) with every claim
+traced to its source.
 
-Do not depend on this repository. Read
-[ADR 0002](docs/adr/draft/0002-inherited-context.md) before assuming
-anything — it marks each item as **decided**, **recorded direction** or
-**on the table**, because most of what is written down is still the
-third of those.
+Do not depend on this repository. The specification is at
+`0.1.0-draft` and says so; ADR 0002 marks each remaining item as
+**decided**, **recorded direction** or **on the table**, and a good deal
+is still the third of those.
 
 ## The idea
 
@@ -94,6 +93,14 @@ language knows the mechanism (suffix → dimension → base unit); a
 **profile** supplies the table. `°C`, `%` and `lux` come from a home
 profile that an embedder ships — which is what keeps a general language
 from quietly becoming a home-automation one.
+
+## The specification
+
+[spec/](spec/) is the contract: the value model, the container format,
+and — once written — the instruction set, linking and execution. It is
+deliberately separable from the implementation that does not exist yet,
+and a third party should be able to write a conforming VM from it
+alone.
 
 ## Design decisions
 

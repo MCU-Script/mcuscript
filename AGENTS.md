@@ -31,12 +31,15 @@ to prevent.
 
 | Path | Role |
 |---|---|
+| `spec/` | **The specification** — the contract every implementation answers to. Its own version number, and deliberately its own top-level directory so it can be split into `mcuscript-lang/spec` in one cut if a second implementation ever justifies it |
 | `docs/adr/` | Architecture decision records — living drafts in `draft/`, immutable finals at the top level once something real exists |
 | `.github/` | CI, issue templates, CODEOWNERS |
 
-That is the whole repository. Source directories are deliberately
-absent: the host compiler's implementation language is an open question
-(ADR 0002 §8), and an empty `src/` would answer it by accident.
+There is no source directory yet: the host compiler's implementation
+language is an open question (ADR 0002 §8), and an empty `src/` would
+answer it by accident. The specification comes first on purpose — the
+product owner's choice, and the right one for a project whose central
+promise is that two backends agree.
 
 ## Where the decisions live: three layers
 
