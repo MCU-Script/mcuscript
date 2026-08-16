@@ -10,14 +10,19 @@ SPDX-License-Identifier: Apache-2.0
 
 ## Context
 
-MCUScript is a new repository for an old idea, and it inherits two
-bodies of thinking that live nowhere a contributor could find them.
+MCUScript is a new project for an old idea, and it inherits two bodies
+of thinking that live nowhere a contributor could find them. Both come
+from [MCUHome](https://github.com/mcu-home/mcuhome) — not because
+MCUScript belongs to it, but because MCUHome is where the first
+embedder's requirements were worked out, and it happened to be the only
+place with a document to write them in.
 
-**The MCUHome design record**, 2026-08-03 to 2026-08-11: while MCUHome
-was designed and built, decisions about scripting were taken and
-written down — never in one place, because there was no such place.
-They sit in one design document, five ADRs, a validation gate, a C
-header, a glossary and a roadmap entry, spread over two repositories.
+**The requirements the first embedder wrote down**, 2026-08-03 to
+2026-08-11: while MCUHome was designed and built, decisions about
+scripting were taken and recorded — never in one place, because there
+was no such place. They sit in one design document, five ADRs, a
+validation gate, a C header, a glossary and a roadmap entry, spread
+over two repositories.
 
 **A design conversation** between the product owner and Claude,
 2026-08-16, supplied as a chat export. It is where the name, the
@@ -65,7 +70,15 @@ wrong and gets rewritten. Sources:
 
 ---
 
-## 1. The MCUHome design record
+## 1. Where the requirements came from
+
+Everything in this section is a MCUHome document. It is recorded here
+because it is the origin of the requirements, **not because MCUHome has
+authority over this project** — MCUScript is developed independently of
+it (ADR 0003), and MCUHome's own decisions about what to embed are its
+own (§3.3). Read this section as "what the first embedder needs and
+why", which is exactly the kind of thing a language project wants
+written down.
 
 ### 1.1 The principle: a script is never the data path
 
@@ -361,11 +374,17 @@ prototype has not been written.
 1. **The user script is always compiled** — not to hardware machine
    code but to hardware-independent binary code *"ähnlich wie java"*.
    The stated purpose is to keep the on-MCU VM as small as possible.
-2. **Scripts must be transpilable to plain C** and compilable together
-   with the whole firmware — *"especially for Thread SEDs, but also
-   for efficiency in general"*. **Strictly optional**, because
-   during development, recompiling the whole firmware for a small
-   script change costs far too much time.
+2. **Every program must be expressible both ways, always.** Bytecode
+   for the VM and transpiled plain C compiled into the firmware are
+   **two alternatives, not a feature and an extra** — *"especially for
+   Thread SEDs, but also for efficiency in general"*. What is optional
+   is the *choice per deployment*, not the capability: during
+   development nobody wants to rebuild the whole firmware for a
+   one-line change, so the VM path exists; on a battery device the
+   VM is the wrong trade, so the C path exists. A construct that only
+   one of the two backends can express is therefore **not a language
+   feature — it is a bug** (product-owner clarification, 2026-08-16,
+   sharpening what "strictly optional" meant in the conversation).
 3. **The language must be modular** — usable in parts, e.g. arithmetic
    only, because in reality many scripts are just formulas and
    mathematical expressions and need nothing like function calls.
@@ -663,24 +682,34 @@ would become spaghetti with stack simulation.
   because every `fan.set_speed()` needs it — whereas `CALL`/`RET_V` and
   the call stack simply do not exist below Level 2, so a formula device
   carries zero bytes of call machinery.
-- **No recursion**, which keeps the call graph acyclic, which is what
-  lets the compiler compute the worst-case value-stack and call-stack
-  depth per entry point. A cycle in the call graph is a compile error.
-- Against the product owner's own suggestion of per-call malloc'd
-  frames: it would **break the two-backend invariant**, because in the
-  C backend the same functions run on a fixed-size Zephyr thread stack
-  — recursion that survives 500 levels in the VM would overflow after
-  50 as transpiled C, at best crashing and at worst corrupting memory
-  silently. Plus: malloc per call on every event trigger fragments the
-  heap, and a half-executed script that has already written two
-  entities has no rollback when an allocation fails. A user's typo (a
-  function accidentally calling itself) would become a sporadic runtime
-  death on a device nobody can reach, instead of a compile error saying
-  *"recursion is not supported, use a loop"*.
-- Middle ground if the door should stay open: **bounded recursion with
-  a declared maximum depth** (`@max_depth(8)`), which keeps the static
-  worst-case computation intact — stack requirement = frame size ×
-  depth.
+- The conversation argued for **no recursion at all**, which keeps the
+  call graph acyclic and lets the compiler compute the worst-case
+  value-stack and call-stack depth per entry point, and it argued hard
+  against the product owner's suggestion of per-call malloc'd frames:
+  those **break the two-backend invariant**, because in the C backend
+  the same functions run on a fixed-size Zephyr thread stack —
+  recursion that survives 500 levels in the VM would overflow after 50
+  as transpiled C, at best crashing and at worst corrupting memory
+  silently. Malloc per call also fragments the heap on every event
+  trigger, and a half-executed script that has already written two
+  entities has no rollback when an allocation fails.
+- **Decided (product owner, 2026-08-16): recursion is allowed, and it
+  is hard-capped.** Not "no recursion" and not unbounded frames, but
+  the bounded middle: a small fixed maximum depth, on the order of
+  **five self-calls**. That keeps everything the no-recursion argument
+  was protecting — the worst case stays statically computable (stack
+  requirement = frame size × cap), both backends can honour the same
+  number, and a runaway script is a compile-time or load-time refusal
+  rather than a dead device — while not forbidding a construct users
+  may reasonably reach for.
+- What the decision does not yet settle, and the spec must: the exact
+  cap and whether it is fixed by the language or declarable per
+  function; whether the cap counts **self-calls only** or any cycle in
+  the call graph, since mutual recursion (`a` → `b` → `a`) has the same
+  stack cost and would otherwise slip through; how the C backend
+  enforces it, given that C has no recursion counter of its own; and
+  what happens when the cap is hit at runtime — refusal, clamp, or
+  script abort with the §2.11 rollback question attached.
 
 ### 2.9 On the table: designing for non-developers, and how to validate it
 
@@ -697,6 +726,23 @@ come from how non-developers actually think:
   expression is skipped when a value is missing". An exposed `null`
   with crash semantics is the opposite. (This is §1.2's null coalescing,
   made concrete.)
+- **Decided (product owner, 2026-08-16): `invalid` exists alongside
+  `unavailable`, as a second explicit concept.** One absence is not
+  like the other. *Unavailable* is "there is no value right now" — the
+  sensor has not been read yet, the device is asleep, the remote node
+  is unreachable; it is expected, it is temporary, and a fallback is
+  usually the right answer. *Invalid* is "there is a value and it must
+  not be used" — a sensor reporting a fault, a reading outside the
+  physical range, the result of a division by zero; it is a defect, not
+  a wait, and silently substituting a fallback would hide it. Collapsing
+  both into one `null` is what makes template languages fragile: the
+  user cannot write different handling for "not yet" and "broken"
+  because the language does not distinguish them.
+  Still to define: whether `invalid` propagates through arithmetic the
+  way NaN does or stops the expression; whether `else` catches both or
+  only `unavailable`; how each maps onto the embedder's own notion of
+  a faulted reading; and what the two become when a value crosses into
+  the C backend, where neither has a natural representation.
 - **No silent wrong behaviour**: `=` versus `==` (forbid assignment
   where a condition is expected, with an explaining compile error);
   integer division (`3 / 2 = 1` is simply wrong to a layman — make `/`
@@ -817,16 +863,21 @@ things that would otherwise be discovered by writing them wrong first.
    whatever is next to it. The JVM makes verification mandatory for
    exactly this reason. If the VM allocates from a number in the file,
    recomputing that number cannot be a build option.
-7. **A 64-bit time base does not fit a 32-bit cell.** §2.6 gives the
-   time base as `int32` milliseconds in one place and `int64` in
-   another; §2.7 says stack cells are 32 bits and every opcode pushes
-   at most one result. Those three statements cannot all hold. `int32`
-   milliseconds overflow after ~24.9 days, which a device that runs for
-   years cannot use; `int64` means either two-cell values — which
-   changes the stack-effect arithmetic the verifier and the compiler
-   both depend on — or a wider cell. Seconds as `int32` would last 68
-   years and sidestep it entirely. This is the first thing the spec has
-   to answer.
+7. **The time base is `int64` milliseconds — and it does not fit a
+   32-bit cell.** The conversation gave the base as `int32` ms in one
+   place and `int64` in another; the product owner settled it on
+   2026-08-16: **milliseconds as `int64`**. Millisecond resolution is
+   kept, and the ~24.9-day overflow of `int32` ms is gone.
+   The consequence is now the spec's problem rather than an open
+   choice: §2.7 says stack cells are 32 bits and every opcode pushes at
+   most one result, and a 64-bit value satisfies neither. Either
+   64-bit values occupy **two cells** — which changes the stack-effect
+   arithmetic that the compiler's depth computation and the verifier
+   both rest on, and needs its own opcode set (`ADD_I64`, …) and a rule
+   for how a two-cell value is addressed as a local — or the cell
+   widens, which costs RAM on every script. The C backend has neither
+   problem, which makes this a place where the two backends could
+   diverge if the VM's rules are left implicit.
 8. **The HOST table's failure modes are unnamed.** Name not in the
    registry, type mismatch, dimension mismatch, duplicate name, a write
    to a read-only entity, an opcode from a group this build did not
@@ -922,19 +973,28 @@ says base units per dimension are part of the ABI. These agree, and
 §2.6 says what "user unit" means. The consequence for MCUHome is real
 and is §4's first item.
 
-### 3.3 The build-versus-adopt question, honestly
+### 3.3 The build-versus-adopt question belongs to the embedder
 
-§1.3 says the engine decision belongs to an automation-phase ADR backed
-by a **measured prototype**. §2.2a is the product owner saying he
-intends to build his own, and §2.2d is him founding an organization for
-it. So: is it decided?
+§1.3 says an engine decision belongs to a MCUHome automation-phase ADR
+backed by a **measured prototype**. It is easy to read that as a
+question about whether MCUScript exists. It is not, and separating the
+two is what makes this project's position coherent:
 
-The honest reading, and the one this repository adopts:
+| Question | Whose | Status |
+|---|---|---|
+| Is MCUScript built? | **This project's** | Yes. It has a name, an organization, a domain and a starting point, and it is developed independently of any embedder's schedule (ADR 0003) |
+| Does MCUHome embed MCUScript, or Berry, or a hybrid? | **MCUHome's** | Open. That is the automation-phase ADR §1.3 calls for, and it is written in MCUHome's repository, not here |
 
-- **The direction is decided; the justification is not yet written.**
-  The product owner has committed enough to name the project, found an
-  organization and choose a starting point. Pretending that is still
-  open would be dishonest.
+Nothing below changes the first row. It is about the second, and it is
+recorded here only because the argument was made in the conversation
+that seeded this project — and because an argument that would decide
+against this project's first embedder is one this project should state
+accurately rather than quietly.
+
+- **The direction of MCUHome's choice is evident; the justification is
+  not yet written.** The product owner has committed enough to name the
+  project and found an organization for it. Pretending MCUHome's choice
+  is wide open would be dishonest.
 - **The reason has moved, and it is weaker than it looks.** §10
   expected a footprint comparison — can Berry fit? The conversation
   supplies a different argument, not about footprint at all:
@@ -961,9 +1021,9 @@ The honest reading, and the one this repository adopts:
     precision and hardware, not on whether the source language had
     types. Static typing does not deliver §2.3's invariant; disciplined
     backend design does.
-  - **No recursion** (§2.8) is a sound constraint, but it is not an
-    argument for a new language — MISRA C forbids recursion outright,
-    and Berry or Lua could be restricted the same way.
+  - **The recursion cap** (§2.8) is a sound constraint, but it is not
+    an argument for a new language — MISRA C forbids recursion
+    outright, and Berry or Lua could be restricted the same way.
 
   What survives is real but smaller: a statically typed language makes
   the analyzable subset the *default* rather than something the user
@@ -991,12 +1051,18 @@ The honest reading, and the one this repository adopts:
 
 ---
 
-## 4. What this would require of MCUHome
+## 4. What this requires of an embedder
 
-Nothing in this section is decided anywhere. These are obligations the
-conversation's design places on the embedder, and every one of them
-means changing a MCUHome document. They are listed here because they
-are invisible from inside MCUHome and would be discovered late.
+Nothing in this section is decided anywhere. These are the obligations
+the design places on **whoever embeds MCUScript** — the reason the C
+API of §8 #7 is not just a header file but a contract. They are written
+against MCUHome because it is the only embedder there is and its
+documents are readable; each one generalizes, and the generalization is
+the part that belongs to this project.
+
+They are listed here for two reasons: a second embedder would need the
+same list, and MCUHome cannot see most of it from inside — nothing in
+its documents says any of this yet.
 
 1. **The channel binding must deliver values in the profile's base
    unit.** Today `channel.h` converts Zephyr's unit straight to the
@@ -1057,36 +1123,34 @@ are invisible from inside MCUHome and would be discovered late.
 3. **That tier-1 filters are scripting.** Predefined filters with
    C-owned state stay a MCUHome registry feature even if MCUScript
    never exists (§3.1).
-4. **That MCUHome is committed.** §1.3's fallback to Berry is still
-   recorded, and §3.3 says what would have to be true for it to be
-   discarded.
+4. **That MCUHome is committed to embedding it.** That is MCUHome's
+   decision, made in MCUHome's repository (§3.3). This project proceeds
+   either way.
+5. **That MCUHome governs it.** The requirements came from there, the
+   process was adopted from there, and the first embedder is there.
+   None of that is ownership: the organization, the ADR sequence, the
+   release cadence, the copyright line and the domain are this
+   project's own (ADR 0003).
 
 ---
 
-## 6. The state of MCUHome's code today
+## 6. How much of this exists as code
 
-`automations:` is parsed and refused, on purpose:
+**None of it.** Not here, and not on the embedder's side either:
+MCUHome parses an `automations:` block only in order to refuse it —
+*`"automations:" is not implemented yet`*, a refusal pinned by its own
+tests — and it contains no filter, expression or script code at all.
+The word "expression" appears in its C sources exclusively as a
+prohibition (§1.9).
 
-- [`mcuhome/workbench/schema.py`](https://github.com/mcu-home/mcuhome/blob/main/mcuhome/workbench/schema.py)
-  has a `RawAutomation` that reads exactly one field (`id`), and
-  `automations` is one of the five allowed top-level keys;
-- [`mcuhome/workbench/validate.py`](https://github.com/mcu-home/mcuhome/blob/main/mcuhome/workbench/validate.py)
-  gates it in `_check_scope_gates`: *`"automations:" is not implemented
-  yet.`* with the hint *"the automation engine is designed but not
-  built yet — remove the automations: section for now"*;
-- [`mcuhome/workbench/configschema.py`](https://github.com/mcu-home/mcuhome/blob/main/mcuhome/workbench/configschema.py)
-  publishes it in the JSON schema as *"Automations. Not implemented in
-  v0.1."*;
-- `tests_py/test_validate.py` and `tests_py/test_examples.py` pin that
-  refusal, the latter against the CO₂ example of §1.7.
-
-There is **no** filter, expression or script code anywhere in any
-MCUHome repository. The word "expression" appears in the C sources only
-as a prohibition (§1.9).
+That deserves one paragraph rather than a survey, and it is worth
+saying because it means nothing in this record is load-bearing for
+running software yet. Every constraint above is a promise about code
+that does not exist, on both sides of the boundary.
 
 ---
 
-## 7. Vocabulary already fixed for the product owner
+## 7. Vocabulary the first embedder already fixed
 
 `GLOSSAR.md` (German, MCUHome workspace, untracked) carries the terms,
 and its definitions are the product owner's mental model: **VM** as "the
@@ -1103,33 +1167,35 @@ were added on 2026-08-16.
 
 ## 8. Open questions
 
+Questions 1, 12, 23 and the time-base half of 8/9 were answered on
+2026-08-16 and have moved into the text; what is listed here is what is
+still open, renumbered.
+
 | # | Question | From |
 |---|---|---|
-| 1 | The automation-phase ADR that formally settles build-versus-adopt is unwritten, and the thing that needs measuring has changed (§3.3) | §1.3, §3.3 |
-| 2 | No flash/RAM budget has ever been stated for the engine on any target. The 1–2 KB VM figure is an estimate, labelled as one | §1.3, §2.7 |
-| 3 | Syntax is directionally decided (braces, no `? :`, `match`, if-as-expression) but no grammar exists, and the ternary conflict with §1.2 is unresolved | §2.5, §3.2 |
-| 4 | The bytecode container is sketched, not specified — and it is the thing the product owner chose to start with | §2.2f, §2.7 |
-| 5 | The verifier: what it recomputes rather than trusts, and whether verification is mandatory or optional | §2.7 |
-| 6 | The binding-API/bytecode version handshake, mirroring `tables_version` | §1.6, §2.6 |
-| 7 | The C API toward embedders — the thing that makes this standalone rather than a subdirectory | §1.4 |
-| 8 | The numeric model. 32-bit cells with typed opcodes, but the time base may need 64 bits; how a 64-bit value sits in a 32-bit-cell stack is unaddressed | §2.6, §2.7 |
-| 9 | The time base contradicts itself in the source: `int32` ms overflows after ~24 days, `int64` ms was also stated | §2.6 |
-| 10 | The percent base unit is open (0–100 / 0–255 / 0–1000). Note MCUHome is a Matter project and Matter has its own conventions | §2.6 |
-| 11 | The host compiler's implementation language. MCUHome's builder is Python; a compiler for non-Python embedders may not want to be | §1.4 |
-| 12 | Repository topology inside `mcuscript-lang`, and where profiles live | ADR 0003 |
-| 13 | Whether the first artifact is the spec (the product owner's choice) or the Level-0 end-to-end MVP (the advice), and what the spec can be worth before either backend exists | §2.2f, §2.3 |
-| 14 | Execution-budget semantics: what happens when a script is cut off after it has already written entities. The same "there is no rollback" objection raised against heap frames applies here | §2.4, §2.8 |
-| 15 | Whether the language exposes `unavailable` as a value, a skip semantics, or both | §2.9 |
-| 16 | How the non-developer validation actually gets done, given that the product owner has said he cannot judge it himself | §2.2g, §2.9 |
-| 17 | Endianness, alignment, total length, must-understand sections, opcode-group declaration — the container gaps of §2.11, all of which must be answered by the first spec | §2.11 |
-| 18 | Whether load-time verification is mandatory. If the VM allocates a stack from a number in an untrusted file, it cannot be a build option | §2.11 |
-| 19 | Authenticity of pushed bytecode: channel-level, a signature in the container, or both. CRC32 answers neither | §2.11, §4 |
-| 20 | Script atomicity: buffered writes with a commit point, or documented non-atomicity | §2.11 |
-| 21 | Whether a script may hold state that survives an invocation. §1.2 implies not; nothing says it | §3.2 |
-| 22 | Which of `automations:` and scripts owns a given piece of user logic, and whether a device may carry both | §3.2 |
-| 23 | The hybrid — adopt for the script tier, own the expression tier — has never been costed against building everything | §3.3 |
-| 24 | "Static inference is more pleasant for non-developers" is unevidenced, and sits oddly beside Pane & Myers, who found laypeople think in events and sets rather than in types | §2.3, §2.9 |
-| 25 | The "90 % of scripts are formulas" figure has no source. It decides how much of the language most users ever meet | §2.4 |
+| 1 | No flash/RAM budget has ever been stated for the engine on any target. The 1–2 KB VM figure is an estimate for the expression level only; a VM with control flow and calls is a different number | §1.3, §2.7 |
+| 2 | Syntax is directionally decided (braces, no `? :`, `match`, if-as-expression) but no grammar exists, and the ternary conflict with §1.2 is unresolved | §2.5, §3.2 |
+| 3 | The bytecode container is sketched, not specified — and it is the thing the product owner chose to start with | §2.2f, §2.7 |
+| 4 | The verifier: what it recomputes rather than trusts | §2.7, §2.11 |
+| 5 | The binding-API/bytecode version handshake, mirroring `tables_version` | §1.6, §2.6 |
+| 6 | The C API toward embedders — the contract that makes this a language rather than a component | §1.4, §4 |
+| 7 | **How a 64-bit value lives in a 32-bit-cell stack machine.** The time base is decided as `int64` ms, so this is now a design problem rather than a choice: two cells and a changed stack-effect rule, or a wider cell and more RAM per script | §2.6, §2.11 |
+| 8 | The percent base unit (0–100 / 0–255 / 0–1000). A profile question, but the first profile still has to answer it — Matter uses 0–254 for level and 0–10000 for percent100ths | §2.6 |
+| 9 | Float: which width, and how bit-identity across the two backends is actually achieved given compiler flags and intermediate precision | §2.3, §2.7 |
+| 10 | The host compiler's implementation language. A compiler that only Python embedders can run is a different product from one anybody can | §1.4 |
+| 11 | Whether the first artifact is the spec (the product owner's choice) or the expression-level end-to-end MVP (the advice), and what a spec is worth before either backend exists | §2.2f, §2.3 |
+| 12 | Execution-budget semantics: what happens when a script is cut off after it has already written entities | §2.4, §2.8, §2.11 |
+| 13 | `unavailable` and `invalid` are decided as two concepts; their semantics are not — propagation, what `else` catches, and what each becomes in the C backend | §2.9 |
+| 14 | Recursion is capped, but the cap is not fixed: the exact number, self-calls versus any call-graph cycle, how the C backend enforces it, and what happens when it is hit | §2.8 |
+| 15 | How the non-developer validation actually gets done, given that the product owner has said he cannot judge it himself | §2.2g, §2.9 |
+| 16 | Endianness, alignment, total length, must-understand sections, opcode-group declaration — the container gaps of §2.11, all of which the first spec must answer | §2.11 |
+| 17 | Whether load-time verification is mandatory. If the VM sizes its stack from a number in an untrusted file, it cannot be a build option | §2.11 |
+| 18 | Authenticity of pushed bytecode: channel-level, a signature in the container, or both. CRC32 answers neither | §2.11, §4 |
+| 19 | Script atomicity: buffered writes with a commit point, or documented non-atomicity | §2.11 |
+| 20 | Whether a script may hold state that survives an invocation. §1.2 implies not; nothing says it | §3.2 |
+| 21 | Whether the spec and the first profile get their own repositories inside the organization | ADR 0003 |
+| 22 | "Static inference is more pleasant for non-developers" is unevidenced, and sits oddly beside Pane & Myers, who found laypeople think in events and sets rather than in types | §2.3, §2.9 |
+| 23 | The "90 % of scripts are formulas" figure has no source. It decides how much of the language most users ever meet | §2.4 |
 
 ## Consequences
 

@@ -80,12 +80,32 @@ subdirectory:
 - nothing here may depend on MCUHome. The dependency arrow points one
   way, always.
 
-The product owner's stated reason for the organization is that the
-compiler, the transpiler and later the profiles can be run as their own
-projects inside it. **How the code is actually cut into repositories is
-a separate, open question** — see below.
+### 4. One repository to start with: a monorepo
 
-### 4. Apache-2.0
+Product owner, 2026-08-16. The organization exists so that the
+compiler, the transpiler and later the profiles *can* become their own
+projects — but they do not start that way.
+
+Compiler, transpiler and VM share an AST, a type system, the dimension
+mechanism and the bytecode definition. Split across repositories from
+day one, that buys version skew ("compiler 0.4 needs spec 0.3, the VM
+only speaks 0.2") and turns every semantic change into three pull
+requests. It also breaks the one practice the project cannot do
+without: differential testing needs **both backends tested against the
+same spec in the same commit**. Splitting later is always possible;
+re-merging is not.
+
+So `mcuscript-lang/mcuscript` holds the compiler, both backends, the VM
+and the test harness. Two candidates for their own repositories remain
+open rather than decided: a `spec` repository, on the argument that the
+language and bytecode definition is the contract for third-party
+implementations and benefits from being citable on its own, and
+`profile-home` as the first profile and the template for others. The
+VM as a Zephyr module is the first sensible split once it is stable —
+an embedder should be able to pull it through `west.yml` without the
+compiler.
+
+### 5. Apache-2.0
 
 Product owner, 2026-08-16 — closing the question component-model.md §10
 deliberately left open *"at project creation"*, which is now. Weighed
@@ -95,7 +115,7 @@ Apache-2.0 is not. Apache-2.0 won on consistency with the rest of the
 product owner's work (mcuhome ADR 0003) and on its explicit patent
 grant; the GPLv2 incompatibility is the accepted price.
 
-### 5. The README carries the positioning, not the name
+### 6. The README carries the positioning, not the name
 
 Perceived independence comes from the first paragraph a visitor reads,
 not from the repository path. The README states plainly that MCUScript
@@ -114,20 +134,10 @@ MCUHome.
 - MCUHome gains an obligation it does not have yet: it must publish and
   version a home profile as an artifact, because a profile is part of
   the bytecode ABI (see [ADR 0002](0002-inherited-context.md) §4).
-- **Open — the repository topology inside the organization.** The
-  product owner wants compiler, transpiler and profiles as separate
-  projects. The counter-argument on the table is that compiler,
-  transpiler and VM share an AST, a type system, the dimension
-  mechanism and the bytecode definition, so splitting them early buys
-  version skew and three-PR semantic changes, and specifically breaks
-  differential testing, which needs both backends tested against the
-  same spec in the same commit. The shape suggested against that: a
-  monorepo `mcuscript-lang/mcuscript`, an early `mcuscript-lang/spec`
-  because the spec is the contract for third-party implementations, and
-  `mcuscript-lang/profile-home` as the first profile and the template
-  for others, with the VM as a Zephyr module the first sensible split
-  once it is stable. The product owner has not answered this, so
-  nothing here is decided beyond the one repository that exists.
+- **Still open inside the monorepo decision:** whether the spec gets
+  its own repository, and where the first profile lives. Both are
+  additions to the monorepo rather than splits of it, so neither
+  blocks anything.
 - The name survives the collision check the conversation recommended
   and never performed (carried out 2026-08-16): **the namespace is
   clear.** Verified by direct lookup — no `mcuscript` or
@@ -141,7 +151,7 @@ MCUHome.
   Intel MCS-86 hex objects, not with any live language. The nearest
   neighbour is `mcscript`, a Minecraft datapack compiler — one letter
   away, but a different audience, and dormant.
-- **Open — the domain.** MCUHome publishes under `mcuhome.org`; a
-  project in its own organization needs its own, and none is
-  registered. Availability of `mcuscript.org`/`.dev`/`.io` could not be
-  established by search and needs a real WHOIS lookup.
+- **`mcuscript.org` is registered** (product owner, 2026-08-16). The
+  project has its own domain, separate from `mcuhome.org`, which is the
+  last piece of the standalone posture: own organization, own name, own
+  domain, own license header.

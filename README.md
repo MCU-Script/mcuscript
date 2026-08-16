@@ -10,12 +10,15 @@ SPDX-License-Identifier: Apache-2.0
 
 **A small scripting language for microcontrollers. One source, two
 backends: a compact bytecode for a tiny on-device VM, or plain C
-compiled into the firmware — with the same behaviour either way.**
+compiled into the firmware — every program expressible both ways, with
+the same behaviour either way.**
 
-MCUScript is a standalone project. [MCUHome](https://github.com/mcu-home/mcuhome),
-which turns YAML device descriptions into Zephyr firmware, is its first
-and reference embedder — not its owner. Being useful to projects that
-have never heard of MCUHome is a design goal, not a side effect.
+MCUScript is a standalone project in its own organization,
+[`mcuscript-lang`](https://github.com/mcuscript-lang), developed
+independently. [MCUHome](https://github.com/mcu-home/mcuhome), which
+turns YAML device descriptions into Zephyr firmware, is its first and
+reference embedder — not its owner. Being useful to projects that have
+never heard of MCUHome is a design goal, not a side effect.
 
 ## Status
 
@@ -44,27 +47,29 @@ Three requirements shape everything else:
 1. **Always compiled.** A script becomes hardware-independent bytecode
    on the host, never machine code, so the device carries a VM and not
    a compiler.
-2. **Optionally transpiled to C** and built into the firmware, for
-   sleepy battery devices where a VM is the wrong trade — *optional*,
-   because rebuilding the whole firmware for a one-line change is not
-   an iteration loop.
+2. **Always transpilable to C** as well, and built into the firmware
+   that way instead. The two are *alternatives*, not a feature and an
+   extra: during development you push bytecode and iterate in seconds,
+   and on a sleepy battery device you bake the same script into the
+   image and link no VM at all. Which one a deployment uses is a
+   choice; being able to do both is not.
 3. **Modular**, because most scripts are formulas. A device that only
    evaluates expressions should link only an expression evaluator.
 
-Requirement 2 is the interesting one: it means two backends generating
-from one typed intermediate representation, and it is why the language
-is statically typed — a dynamically typed language transpiles to C full
-of tagged values and runtime dispatch, which throws away the reason for
-having a C path at all.
+Requirement 2 is what shapes the rest. Two backends generate from one
+typed intermediate representation, and a construct only one of them can
+express is a bug rather than a feature — which is why the language is
+statically typed, why the compiler and not the runtime computes stack
+depth, and why recursion is capped rather than open-ended.
 
 What that buys, and what nothing else currently offers in one package:
 **one source, two backends, identical behaviour**, held to it by
 differential tests.
 
-## Sketches, not decisions
+## Mostly sketches
 
-To make the above concrete — none of this is settled, and all of it is
-recorded as *on the table* in
+To make the above concrete. The two kinds of absence below are decided;
+everything else here is a proposal, recorded as *on the table* in
 [ADR 0002 §2](docs/adr/draft/0002-inherited-context.md):
 
 ```
@@ -78,6 +83,11 @@ ternary operator to learn. Units are part of the type system — `5min`
 and `24.5°C` are single tokens, normalized to a base unit at compile
 time, costing nothing at runtime — and comparing a temperature to a
 duration is a compile error, in words rather than in jargon.
+
+Two kinds of absence, not one: a sensor that has no reading yet is
+`unavailable` and usually wants a fallback, while a sensor reporting a
+fault is `invalid` and must not be quietly papered over. Collapsing
+them into a single `null` is what makes template languages fragile.
 
 Which units exist is deliberately **not** the language's business. The
 language knows the mechanism (suffix → dimension → base unit); a

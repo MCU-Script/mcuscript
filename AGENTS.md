@@ -7,11 +7,16 @@ repository.
 
 MCUScript is a small scripting language for microcontrollers:
 statically typed, compiled on a host to a compact bytecode for a tiny
-on-device VM, and *optionally* transpiled to plain C and built into the
-firmware instead — one source, two backends, identical behaviour. It is
-a **standalone project** in its own organization
-(`mcuscript-lang`); [MCUHome](https://github.com/mcu-home/mcuhome) is
-its first and reference embedder, not its owner.
+on-device VM, and transpilable to plain C to be built into the firmware
+instead — one source, two backends, identical behaviour, and **every
+program expressible both ways**. It is a **standalone project** in its
+own organization,
+[`mcuscript-lang`](https://github.com/mcuscript-lang), with its own ADR
+sequence, release cadence, copyright line and domain
+(`mcuscript.org`), developed independently of any embedder's schedule.
+[MCUHome](https://github.com/mcu-home/mcuhome) is its first and
+reference embedder, not its owner — do not let its requirements read as
+governance.
 
 **Nothing is implemented.** No language, no compiler, no VM, no C API.
 Most of what is written down is a *proposal*, not a decision. Before
@@ -67,19 +72,24 @@ changelog. Foreign ADR numbers are always prefixed (`mcuhome ADR 0014`,
 These are constraints on the language, not implementation preferences.
 Sources and status in ADR 0002.
 
-- **Two backends, one behaviour.** Bytecode and generated C must
-  produce bit-identical results, held to it by differential tests. Any
-  construct whose two lowerings could diverge — integer overflow, float
-  rounding, division by zero, recursion depth — is a language problem,
-  not a backend detail. The semantics follow C (`int32_t` wraparound,
-  IEEE-754), so the VM is the side that conforms.
+- **Two backends, one behaviour.** Every program must be expressible
+  as bytecode *and* as C, and the two must produce bit-identical
+  results, held to it by differential tests. A construct only one
+  backend can express is a bug, not a feature. Any construct whose two
+  lowerings could diverge — integer overflow, float rounding, division
+  by zero, recursion depth — is a language problem, not a backend
+  detail. The semantics follow C (`int32_t` wraparound, IEEE-754), so
+  the VM is the side that conforms.
 - **No GC, and ideally no heap.** Value semantics, statically
   dimensioned buffers. This is what makes the language linkable into a
   battery device.
 - **The compiler computes what the VM would otherwise check.** Maximum
-  stack depth, call-graph acyclicity, exhaustiveness. That only works
-  while the language stays statically analyzable — and it is also why
-  recursion is excluded.
+  stack depth, worst-case call depth, exhaustiveness. That only works
+  while the language stays statically analyzable — which is also why
+  recursion is **capped at a small fixed depth** rather than either
+  forbidden or left open: bounded recursion keeps the worst case
+  computable (frame size × cap) and keeps both backends able to honour
+  the same number.
 - **Bytecode is untrusted input.** A pushed script must never crash a
   node: a load-time verifier recomputes what the compiler claimed
   rather than trusting the header, and a profile mismatch is a refusal

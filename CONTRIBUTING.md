@@ -7,7 +7,8 @@ first, because it changes what a useful contribution looks like here.
 
 **Nothing is implemented, and most of what is written down is a
 proposal rather than a decision.** The requirements are settled — always
-compiled to bytecode, optionally transpiled to C, modular — and so are
+compiled to bytecode, always transpilable to C as the alternative,
+modular — and so are
 the name, the organization and the license. The language is not: there
 is no grammar, no bytecode specification and no C API, and
 [ADR 0002](docs/adr/draft/0002-inherited-context.md) marks every item as
@@ -24,9 +25,11 @@ So the most valuable contributions right now are **not code**:
   **measured** flash/RAM numbers most of all, because this project has
   none;
 - prior art we have missed. The claim that nothing combines "one
-  source, bytecode VM *and* optional C transpilation, statically typed,
-  MCU-sized" has not been independently verified, and a counterexample
-  would be genuinely valuable.
+  source, both a bytecode VM *and* a C backend, statically typed,
+  MCU-sized" survived a search but was not proved, and a counterexample
+  would be genuinely valuable. The closest found so far are Cyber
+  (both backends, wrong audience) and WAMR with wasm2c (both backends,
+  but the source is WebAssembly).
 
 A pull request implementing a parser is likely to be closed — not
 because it is bad, but because the language it parses has not been
