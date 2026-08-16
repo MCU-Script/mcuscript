@@ -8,7 +8,12 @@
 #   tools  — the host toolchain's test suite, on the oldest and the
 #            newest Python the project supports. Both, because the
 #            oldest is what the floor in pyproject.toml claims and the
-#            newest is what a contributor will actually have.
+#            newest is what a contributor will actually have. It builds
+#            the C runtime too and drives it, which is where the two
+#            implementations meet.
+#   runtime — the runtime on its own, under gcc and clang, warnings as
+#            errors. Two compilers because a C99 runtime that only
+#            builds under one of them is not portable, it is lucky.
 #
 # All actions are pinned to commit SHAs, not tags.
 
@@ -65,3 +70,25 @@ jobs:
 
       - name: pytest
         run: python -m pytest tools/tests -q
+
+  runtime:
+    name: Runtime (${{ matrix.compiler }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        compiler: [gcc, clang]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Configure
+        env:
+          CC: ${{ matrix.compiler }}
+        run: cmake -S runtime -B build -DCMAKE_BUILD_TYPE=Debug
+
+      - name: Build
+        run: cmake --build build
+
+      - name: ctest
+        run: ctest --test-dir build --output-on-failure

@@ -33,6 +33,7 @@ to prevent.
 |---|---|
 | `spec/` | **The specification** — the contract every implementation answers to. Its own version number, and deliberately its own top-level directory so it can be split into `mcu-script/spec` in one cut if a second implementation ever justifies it |
 | `tools/` | The **host toolchain**, Python: container reader/writer, assembler, verifier, and later the compiler and the C backend |
+| `runtime/` | The **device runtime**, C99: loader, verifier, VM. No dependencies, never allocates |
 | `docs/adr/` | Architecture decision records — living drafts in `draft/`, immutable finals at the top level once something real exists |
 | `.github/` | CI, issue templates, CODEOWNERS |
 
