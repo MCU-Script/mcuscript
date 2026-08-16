@@ -9,9 +9,9 @@ SPDX-License-Identifier: Apache-2.0
 - Status: **complete in draft, and executed.** All five chapters have
   an implementation: two verifiers, an interpreter and a C backend, and
   a differential test that runs the same container through both
-  backends and compares the bytes. The `core`, `i64` and `float`
-  instruction groups work end to end; `call` and `bits` are specified
-  and not lowered.
+  backends and compares the bytes. The `core`, `i64`, `float` and
+  `call` instruction groups work end to end; `bits` is specified and
+  not lowered.
 
 This is the contract. Everything else in this repository is an
 implementation of it, including the reference compiler, the VM and the
@@ -120,8 +120,33 @@ list is worth keeping because it is what the exercise is for:
 
 None of those is a change of design. Every one of them is a place where
 the document read as though it said something and did not, and no
-amount of re-reading had found them. The VM and the C backend will find
-the next set.
+amount of re-reading had found them.
+
+Then the VM and the C backend found the next set, which is the one the
+prediction above was about. Writing `call` found four more, and the
+first two are the interesting kind — a chapter that had been read many
+times and still did not say the thing it was about:
+
+- **a function had no arity.** §3.6 said arguments become the callee's
+  first locals and §4.3's record did not say how many there were, so a
+  caller's pushes could not be counted and every local had to be an
+  argument. `param_count` is now in the record;
+- **`max_call_depth` was over-estimated.** The verifier took a cycle's
+  worst case to be its cap times its member count, and the runtime
+  counter §5.4 specifies counts entries into the component — so the
+  bound is the cap, whatever the cycle's shape. The two numbers had
+  never met because nothing executed a cycle;
+- entry points had to be forbidden parameters, which nothing had said,
+  because the host has no argument channel and the two backends would
+  have disagreed about what an unsupplied one holds;
+- a function no entry point reaches had to become `unreachable_code`,
+  for the reason §2.6.1 already gives about dead bytes, plus one more:
+  it is a container only one backend can express.
+
+The corresponding defect in the code is worth naming too, because it is
+what the exercise buys. The C loader's check that code regions tile
+`CODE` was wrong in a way that made every two-function container
+`malformed_section` — and every container until now had one function.
 
 ## Versioning
 

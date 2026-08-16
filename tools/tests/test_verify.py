@@ -336,13 +336,29 @@ def test_one_cycle_may_not_declare_two_different_caps():
 def test_a_capped_cycle_is_accepted_and_bounds_the_depth():
     container = _two_functions(b"\x80\x01" + RET, b"\x80\x00" + RET, cap_a=5, cap_b=5)
     container.functions = [
-        Function("a", 0, max_call_depth=9, recursion_cap=5),
-        Function("b", 3, max_call_depth=9, recursion_cap=5),
+        Function("a", 0, max_call_depth=4, recursion_cap=5),
+        Function("b", 3, max_call_depth=4, recursion_cap=5),
     ]
     facts = verify(container, implemented=ALL_GROUPS)
-    # cap 5 over a two-function cycle: at most ten frames, nine below.
-    assert facts["a"].max_call_depth == 9
+    # The cap counts frames, not round trips (§5.4): one counter for the
+    # whole component, incremented on entry to either member, so five is
+    # five — `a b a b a` and `a a a a a` hit the same wall. Four below.
+    assert facts["a"].max_call_depth == 4
     assert facts["a"].recursion_cap == 5
+    assert facts["a"].component == facts["b"].component
+
+
+def test_a_cap_on_a_function_in_no_cycle_is_refused():
+    # A number that bounds nothing reads as a safeguard and is not.
+    container = _two_functions(b"\x80\x01" + RET, RET, cap_a=5)
+    expect(Refusal.RECURSION_CAP_MISMATCH, container)
+
+
+def test_a_function_no_entry_point_reaches_is_refused():
+    container = _two_functions(RET, RET)
+    container.functions[1] = Function("b", 1, invocable=False)
+    error = expect(Refusal.UNREACHABLE_CODE, container)
+    assert "b" in str(error)
 
 
 # -- code regions ---------------------------------------------------------

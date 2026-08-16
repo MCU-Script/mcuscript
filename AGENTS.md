@@ -18,9 +18,15 @@ sequence, release cadence, copyright line and domain
 reference embedder, not its owner — do not let its requirements read as
 governance.
 
-**Nothing is implemented.** No language, no compiler, no VM, no C API.
-Most of what is written down is a *proposal*, not a decision. Before
-writing anything, read
+**The back end exists; the language does not.** The container format,
+both verifiers, the VM and the C backend are written and tested
+(`core`, `i64`, `float`, `call`; `bits` is specified and not lowered).
+There is no surface syntax and no compiler — programs are written in
+the assembler in `tools/src/mcuscript/asm.py`.
+
+So the split to keep in mind is: everything below the container is
+**decided and executed**, and everything above it is still a
+*proposal*. Before writing anything in the second half, read
 [docs/adr/draft/0002-inherited-context.md](docs/adr/draft/0002-inherited-context.md)
 — it marks every item as **decided**, **recorded direction** or **on
 the table**, and implementing something from the third bucket as though
@@ -32,7 +38,7 @@ to prevent.
 | Path | Role |
 |---|---|
 | `spec/` | **The specification** — the contract every implementation answers to. Its own version number, and deliberately its own top-level directory so it can be split into `mcu-script/spec` in one cut if a second implementation ever justifies it |
-| `tools/` | The **host toolchain**, Python: container reader/writer, assembler, verifier, and later the compiler and the C backend |
+| `tools/` | The **host toolchain**, Python: container reader/writer, assembler, verifier, C backend, and later the compiler |
 | `runtime/` | The **device runtime**, C99: loader, verifier, VM. No dependencies, never allocates |
 | `docs/adr/` | Architecture decision records — living drafts in `draft/`, immutable finals at the top level once something real exists |
 | `.github/` | CI, issue templates, CODEOWNERS |

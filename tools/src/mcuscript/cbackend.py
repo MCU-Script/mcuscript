@@ -28,6 +28,13 @@ at run time, because for a compiled-in program the embedder's registry
 is known at build time — so a script referring to something that is not
 there is a link error, at the moment the firmware is built, which is
 strictly earlier than the load-time refusal the VM would give.
+
+**Calls become C calls, and the recursion cap becomes a counter.** C has
+no cap of its own, so the transpiler emits one per call-graph cycle
+(§5.4) — increment on entry, decrement on every path out including the
+one a fault takes. Without it the transpiled program would recurse until
+the thread stack ran out, which on a device with no MMU is not a crash
+but silent corruption, and it would behave differently from the VM.
 """
 
 from __future__ import annotations
@@ -38,7 +45,7 @@ from dataclasses import dataclass
 
 from .container import Container, Function, ImportKind
 from .opcodes import BY_CODE, Operand, ValType
-from .verify import stack_shapes
+from .verify import analyze, stack_shapes
 
 _C_TYPE = {
     ValType.I32: "i32",
@@ -65,16 +72,24 @@ def mangle(name: str) -> str:
 
 @dataclass(frozen=True, slots=True)
 class Symbols:
-    """The extern functions a generated translation unit expects."""
+    """The C names a generated translation unit uses.
+
+    ``reads``, ``writes`` and ``calls`` are the extern functions the
+    embedder must supply; ``entries`` are what it may call; ``functions``
+    are the file's own ``static`` ones, one per record and entry points
+    included — an entry point is a function with a wrapper, not a
+    different thing.
+    """
 
     reads: tuple[tuple[str, str], ...]  # (entity name, C symbol)
     writes: tuple[tuple[str, str], ...]
     calls: tuple[tuple[str, str], ...]
     entries: tuple[tuple[str, str], ...]
+    functions: tuple[tuple[str, str], ...] = ()
 
 
 def symbols(container: Container) -> Symbols:
-    reads, writes, calls, entries = [], [], [], []
+    reads, writes, calls, entries, functions = [], [], [], [], []
     seen: dict[str, str] = {}
 
     def claim(prefix: str, name: str) -> str:
@@ -95,18 +110,19 @@ def symbols(container: Container) -> Symbols:
         if imp.access & 0x02:
             writes.append((imp.name, claim("write", imp.name)))
     for fn in container.functions:
+        functions.append((fn.name, claim("fn", fn.name)))
         if fn.invocable:
             entries.append((fn.name, claim("entry", fn.name)))
-    return Symbols(tuple(reads), tuple(writes), tuple(calls), tuple(entries))
+    return Symbols(
+        tuple(reads), tuple(writes), tuple(calls), tuple(entries), tuple(functions)
+    )
 
 
 def generate(container: Container, *, source: str = "a container") -> str:
     """Lower a verified container to one C translation unit."""
-    if len(container.functions) != sum(1 for f in container.functions if f.invocable):
-        raise UnsupportedProgram("the call group is not lowered yet")
-
     names = symbols(container)
     shapes = stack_shapes(container)
+    facts = analyze(container)
     out: list[str] = []
     w = out.append
 
@@ -152,11 +168,46 @@ def generate(container: Container, *, source: str = "a container") -> str:
     if names.reads or names.writes or names.calls:
         w("")
 
-    entry_symbol = dict(names.entries)
-    for fn in container.functions:
-        out.extend(_function(container, fn, shapes[fn.name], entry_symbol[fn.name]))
+    inner = dict(names.functions)
+
+    # One counter per capped call-graph cycle (§5.4). A counter is
+    # static because the cycle is: the same functions are involved
+    # whoever called them, and scripts never nest (§5.1), so there is
+    # nothing for a per-invocation counter to distinguish.
+    counters = _counters(container, facts)
+    for _, (counter, cap, members) in sorted(counters.items()):
+        w(f"/* recursion cap {cap} over {', '.join(members)} */")
+        w(f"static unsigned {counter};")
+    if counters:
         w("")
+
+    if len(container.functions) > 1:
+        for fn in container.functions:
+            w(_prototype(fn, inner[fn.name]) + ";")
+        w("")
+
+    for fn in container.functions:
+        out.extend(_function(container, fn, shapes[fn.name], inner, facts, counters))
+        w("")
+    for fn in container.functions:
+        if fn.invocable:
+            out.extend(_entry_wrapper(fn, dict(names.entries)[fn.name], inner[fn.name]))
+            w("")
     return "\n".join(out).rstrip() + "\n"
+
+
+def _counters(container: Container, facts) -> dict[int, tuple[str, int, list[str]]]:
+    """Component -> (C identifier, cap, member names), capped ones only."""
+    out: dict[int, tuple[str, int, list[str]]] = {}
+    for fn in container.functions:
+        f = facts[fn.name]
+        if not f.recursion_cap:
+            continue
+        entry = out.setdefault(
+            f.component, (f"mcuscript_recursion__{f.component}", f.recursion_cap, [])
+        )
+        entry[2].append(fn.name)
+    return out
 
 
 def header(container: Container, *, source: str = "a container") -> str:
@@ -272,8 +323,35 @@ _COMPARE = {
 }
 
 
+def _prototype(fn: Function, symbol: str) -> str:
+    """The signature every function gets, entry points included.
+
+    Parameters are the first locals (§3.6), so they *are* the C
+    parameters — no copy, no second index space. The return value
+    travels as a raw slot rather than as a ``mcuscript_value`` because
+    that is what the VM carries too; converting happens once, at the
+    host boundary, in the wrapper.
+    """
+    arguments = []
+    for i in range(fn.param_count):
+        value, state = _local(i)
+        arguments.append(f"uint64_t {value}")
+        arguments.append(f"uint8_t {state}")
+    arguments += [
+        "uint64_t *result_value",
+        "uint8_t *result_state",
+        "mcuscript_fault *fault",
+    ]
+    return f"static bool {symbol}({', '.join(arguments)})"
+
+
 def _function(
-    container: Container, fn: Function, shapes: dict, symbol: str
+    container: Container,
+    fn: Function,
+    shapes: dict,
+    inner: dict[str, str],
+    facts: dict,
+    counters: dict[int, tuple[str, int, list[str]]],
 ) -> list[str]:
     start = fn.code_offset
     end = start + _region_length(container, fn)
@@ -289,15 +367,14 @@ def _function(
             body.append(f"{targets[pc]}:")
         body.extend(
             "\t" + line
-            for line in _instruction(container, fn, op, code, pc, stack, targets)
+            for line in _instruction(container, fn, op, code, pc, stack, targets, inner)
         )
         pc += op.size
 
-    lines = [
-        f"bool {symbol}(mcuscript_value *result, mcuscript_fault *fault)",
-        "{",
-    ]
+    lines = [_prototype(fn, inner[fn.name]), "{"]
     for i, type_ in enumerate(fn.local_types):
+        if i < fn.param_count:
+            continue  # a parameter is already declared, as a parameter
         value, state = _local(i)
         lines.append(f"\t/* local {i}: {type_} */")
         lines.append(f"\tuint64_t {value} = 0;")
@@ -306,14 +383,73 @@ def _function(
         value, state = _slot(i)
         lines.append(f"\tuint64_t {value} = 0;")
         lines.append(f"\tuint8_t {state} = MCUSCRIPT_VALID;")
-    # Both are unused in a program with no branch, no host call and no
-    # return value; casting them away unconditionally is cheaper than
-    # working out which.
-    lines.append("\t(void)result;")
+    lines.append("\tbool ok = false;")
+    # Any of these can go unread — a function with no branch, no host
+    # call and no return value touches none of them, and a parameter it
+    # ignores is legal too. Casting them away unconditionally is cheaper
+    # than working out which.
+    lines.append("\t(void)result_value;")
+    lines.append("\t(void)result_state;")
     lines.append("\t(void)fault;")
+    for i in range(fn.param_count):
+        value, state = _local(i)
+        lines.append(f"\t(void){value};")
+        lines.append(f"\t(void){state};")
     lines.append("")
+
+    counter = counters.get(facts[fn.name].component)
+    if counter is not None:
+        name, cap, _ = counter
+        lines += [
+            f"\tif (++{name} > {cap}u) {{",
+            "\t\t*fault = MCUSCRIPT_RECURSION_LIMIT;",
+            "\t\tgoto done;",
+            "\t}",
+            "",
+        ]
+
     lines.extend(body)
+    # Every path out of the body arrives here, which is what keeps the
+    # counter balanced even when a fault is unwinding through it.
+    lines.append("done:")
+    if counter is not None:
+        lines.append(f"\t--{counter[0]};")
+    lines.append("\treturn ok;")
     lines.append("}")
+    return lines
+
+
+def _entry_wrapper(fn: Function, symbol: str, inner: str) -> list[str]:
+    """What the embedder calls: the same three things `mcuscript_invoke`
+    gives it, over a function that speaks in slots."""
+    lines = [
+        f"/* {fn.name} */",
+        f"bool {symbol}(mcuscript_value *result, mcuscript_fault *fault)",
+        "{",
+        "\tuint64_t value = 0;",
+        "\tuint8_t state = MCUSCRIPT_UNAVAILABLE;",
+        "\tmcuscript_fault raised = MCUSCRIPT_NO_FAULT;",
+        "",
+        f"\tif (!{inner}(&value, &state, &raised)) {{",
+        "\t\tif (fault != NULL)",
+        "\t\t\t*fault = raised;",
+        "\t\treturn false;",
+        "\t}",
+    ]
+    if fn.return_type is not ValType.VOID:
+        lines += [
+            "\tif (result != NULL) {",
+            "\t\tresult->as.i64 = 0;",
+            f"\t\tresult->as.{_C_TYPE[fn.return_type]} = "
+            f"{_read_slot('value', fn.return_type)};",
+            "\t\tresult->validity = state;",
+            "\t}",
+        ]
+    else:
+        # A void entry point leaves `result` untouched, exactly as
+        # `mcuscript_invoke` does when it reaches `RET`.
+        lines.append("\t(void)result;")
+    lines += ["\treturn true;", "}"]
     return lines
 
 
@@ -345,6 +481,7 @@ def _instruction(
     pc: int,
     stack: tuple[ValType, ...],
     targets: dict[int, str],
+    inner: dict[str, str],
 ) -> list[str]:
     depth = len(stack)
     top, top_state = _slot(depth - 1) if depth else ("", "")
@@ -440,9 +577,8 @@ def _instruction(
         lines.append("\tproduced.validity = MCUSCRIPT_UNAVAILABLE;")
         argument_list = "arguments" if imp.param_types else "NULL"
         lines.append(f"\tif (!{symbol}({argument_list}, &produced)) {{")
-        lines.append("\t\tif (fault != NULL)")
-        lines.append("\t\t\t*fault = MCUSCRIPT_HOST_FAULT;")
-        lines.append("\t\treturn false;")
+        lines.append("\t\t*fault = MCUSCRIPT_HOST_FAULT;")
+        lines.append("\t\tgoto done;")
         lines.append("\t}")
         if imp.type is not ValType.VOID:
             value, state = _slot(base)
@@ -542,25 +678,47 @@ def _instruction(
         return [
             # An absent reading must not become a wrong action (§1.3.1).
             f"if ({top_state} != MCUSCRIPT_VALID) {{",
-            "\tif (fault != NULL)",
-            "\t\t*fault = MCUSCRIPT_ABSENT_CONDITION;",
-            "\treturn false;",
+            "\t*fault = MCUSCRIPT_ABSENT_CONDITION;",
+            "\tgoto done;",
             "}",
             f"if ({test})",
             f"\tgoto {label};",
         ]
 
+    if name == "call":
+        callee = container.functions[index]
+        base = depth - callee.param_count
+        arguments = []
+        for p in range(callee.param_count):
+            value, state = _slot(base + p)
+            arguments += [value, state]
+        arguments += ["&call_value", "&call_state", "fault"]
+        lines = [
+            "{",
+            "\tuint64_t call_value = 0;",
+            "\tuint8_t call_state = MCUSCRIPT_UNAVAILABLE;",
+            f"\tif (!{inner[callee.name]}({', '.join(arguments)}))",
+            # The callee already said which fault; saying it again here
+            # would overwrite the deeper, truer one.
+            "\t\tgoto done;",
+        ]
+        if callee.return_type is not ValType.VOID:
+            value, state = _slot(base)
+            lines.append(f"\t{value} = call_value;")
+            lines.append(f"\t{state} = call_state;")
+        lines.append("}")
+        return lines
+
     if name == "ret":
-        return ["return true;"]
+        return ["ok = true;", "goto done;"]
     if name == "ret_v":
+        # The slot already holds the return type's bit pattern, so this
+        # is a copy and not a conversion — the same thing the VM does.
         return [
-            "if (result != NULL) {",
-            "\tresult->as.i64 = 0;",
-            f"\tresult->as.{_C_TYPE[fn.return_type]} = "
-            f"{_read_slot(top, fn.return_type)};",
-            f"\tresult->validity = {top_state};",
-            "}",
-            "return true;",
+            f"*result_value = {top};",
+            f"*result_state = {top_state};",
+            "ok = true;",
+            "goto done;",
         ]
 
     raise UnsupportedProgram(f"{name} is not lowered yet")

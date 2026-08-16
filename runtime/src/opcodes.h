@@ -25,8 +25,9 @@
 
 /* What this build implements. Everything else is refused at load, by
  * name, before anything runs. */
-#define MCUSCRIPT_GROUPS_IMPLEMENTED \
-	(MCUSCRIPT_GROUP_CORE | MCUSCRIPT_GROUP_I64 | MCUSCRIPT_GROUP_FLOAT)
+#define MCUSCRIPT_GROUPS_IMPLEMENTED                                        \
+	(MCUSCRIPT_GROUP_CORE | MCUSCRIPT_GROUP_I64 | MCUSCRIPT_GROUP_FLOAT | \
+	 MCUSCRIPT_GROUP_CALL)
 
 enum {
 	/* constants */
@@ -104,7 +105,10 @@ enum {
 	OP_GT_F32 = 0x6C,    /* gt.f32 */
 	OP_GE_F32 = 0x6D,    /* ge.f32 */
 	OP_CONVERT_I32_F32 = 0x70, /* convert.i32_f32 */
-	OP_TRUNC_F32_I32 = 0x71    /* trunc.f32_i32 */
+	OP_TRUNC_F32_I32 = 0x71,   /* trunc.f32_i32 */
+
+	/* -- the call group -- */
+	OP_CALL = 0x80 /* call */
 };
 
 #endif /* MCUSCRIPT_OPCODES_H */

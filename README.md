@@ -6,7 +6,7 @@ SPDX-License-Identifier: Apache-2.0
 # MCUScript
 
 [![License: Apache-2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
-[![Status: design phase](https://img.shields.io/badge/status-design_phase-lightgrey.svg)](#status)
+[![Status: pre-1.0](https://img.shields.io/badge/status-pre--1.0-orange.svg)](#status)
 
 **A small scripting language for microcontrollers. One source, two
 backends: a compact bytecode for a tiny on-device VM, or plain C
@@ -22,10 +22,18 @@ never heard of MCUHome is a design goal, not a side effect.
 
 ## Status
 
-**Nothing is implemented.** There is no compiler, no VM and no C API.
-What exists is [the specification](spec/), two chapters in of five, and
-the design record behind it in [docs/adr/](docs/adr/) with every claim
-traced to its source.
+**The back end works; there is no language yet.** All five chapters of
+[the specification](spec/) are written and implemented — the container
+format, two verifiers, the VM in C, and the C backend — and a
+differential test runs the same container through both backends and
+compares the bytes. The `core`, `i64`, `float` and `call` instruction
+groups work end to end; `bits` is specified and lowered by neither.
+
+What does **not** exist is the part a user would see: there is no
+surface syntax and no compiler. Programs are written in an assembler,
+on purpose — it lets the format, the verifiers, the VM and the C
+backend be built against each other before anybody argues about how an
+`if` should look. The sketches below are still sketches.
 
 Do not depend on this repository. The specification is at
 `0.1.0-draft` and says so; ADR 0002 marks each remaining item as
@@ -97,10 +105,11 @@ from quietly becoming a home-automation one.
 ## The specification
 
 [spec/](spec/) is the contract: the value model, the container format,
-and — once written — the instruction set, linking and execution. It is
-deliberately separable from the implementation that does not exist yet,
-and a third party should be able to write a conforming VM from it
-alone.
+the instruction set, linking and execution. A third party should be
+able to write a conforming VM from it alone — and the implementation in
+this repository is how that claim gets checked, because writing it has
+corrected the document a dozen times and the list is kept in
+[spec/README.md](spec/README.md).
 
 ## Design decisions
 
@@ -116,6 +125,8 @@ from the real result.
   inherited, with sources; its §8 is the open-questions list
 - [0003](docs/adr/draft/0003-name-organization-positioning.md) — the
   name, the organization, the positioning, the license
+- [0004](docs/adr/draft/0004-two-backends-one-container.md) — how the
+  two backends are kept identical, decided while writing them
 
 ## Contributing
 

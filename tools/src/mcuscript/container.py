@@ -15,7 +15,7 @@ from __future__ import annotations
 
 import struct
 import zlib
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 
 from .errors import Refusal, refuse
 from .opcodes import Group, ValType, group_names
@@ -73,6 +73,15 @@ class Function:
     #: or 0 when it is in no cycle (§5.4). Written by the compiler,
     #: recomputed by the verifier.
     recursion_cap: int = 0
+    #: Arguments the caller pushes. They *are* the first locals (§3.6),
+    #: so this is a prefix length into ``local_types`` rather than a
+    #: second list — the caller and the callee cannot then disagree
+    #: about the types of the same slots.
+    param_count: int = 0
+
+    @property
+    def param_types(self) -> tuple[ValType, ...]:
+        return self.local_types[: self.param_count]
 
 
 @dataclass(frozen=True, slots=True)
@@ -489,6 +498,7 @@ def _encode_functions(functions: list[Function]) -> bytes:
         out.append(fn.max_stack)
         out.append(fn.max_call_depth)
         out.append(fn.recursion_cap)
+        out.append(fn.param_count)
         out.append(len(fn.local_types))
         out += bytes(int(t) for t in fn.local_types)
     return bytes(out) + area
@@ -497,58 +507,73 @@ def _encode_functions(functions: list[Function]) -> bytes:
 def _decode_functions(data: bytes) -> list[Function]:
     cur = _Cursor(data, "ENTR")
     count = cur.u8()
-    raw = []
+    name_offsets: list[int] = []
+    records: list[Function] = []
     for i in range(count):
-        name_offset = cur.u16()
+        where = f"ENTR record {i}"
+        name_offsets.append(cur.u16())
         code_offset = cur.u32()
         flags = cur.u8()
         return_type = cur.type_code(allow_void=True)
         max_stack = cur.u8()
         max_call_depth = cur.u8()
         recursion_cap = cur.u8()
+        param_count = cur.u8()
         local_count = cur.u8()
         locals_ = tuple(cur.type_code() for _ in range(local_count))
         if flags & ~ENTRY_INVOCABLE:
             raise refuse(
                 Refusal.RESERVED_FIELD_SET,
-                where=f"ENTR record {i}",
+                where=where,
                 detail=f"flags 0x{flags:02X}",
             )
-        raw.append(
-            (
-                name_offset,
-                code_offset,
-                flags,
-                return_type,
-                max_stack,
-                max_call_depth,
-                recursion_cap,
-                locals_,
+        if param_count > local_count:
+            raise refuse(
+                Refusal.MALFORMED_SECTION,
+                where=where,
+                detail=f"{param_count} parameters over {local_count} locals; "
+                "the parameters are the first locals",
+            )
+        if flags & ENTRY_INVOCABLE and param_count:
+            raise refuse(
+                Refusal.ENTRY_TAKES_PARAMETERS,
+                where=where,
+                detail=f"{param_count}; the host invokes by name and passes nothing",
+            )
+        records.append(
+            Function(
+                name="",  # filled in from the string area below
+                code_offset=code_offset,
+                return_type=return_type,
+                max_stack=max_stack,
+                max_call_depth=max_call_depth,
+                local_types=locals_,
+                invocable=bool(flags & ENTRY_INVOCABLE),
+                recursion_cap=recursion_cap,
+                param_count=param_count,
             )
         )
+
     area = data[cur.pos :]
-    return [
-        Function(
-            name=_read_string(area, name_offset, f"ENTR record {i}"),
-            code_offset=code_offset,
-            return_type=return_type,
-            max_stack=max_stack,
-            max_call_depth=max_call_depth,
-            local_types=locals_,
-            invocable=bool(flags & ENTRY_INVOCABLE),
-            recursion_cap=recursion_cap,
-        )
-        for i, (
-            name_offset,
-            code_offset,
-            flags,
-            return_type,
-            max_stack,
-            max_call_depth,
-            recursion_cap,
-            locals_,
-        ) in enumerate(raw)
+    named = [
+        replace(fn, name=_read_string(area, offset, f"ENTR record {i}"))
+        for i, (fn, offset) in enumerate(zip(records, name_offsets, strict=True))
     ]
+
+    # Names must be distinct. Indices are what the bytecode uses, so the
+    # VM would not care — but a name is what the host invokes by and what
+    # the C backend turns into a symbol, and two functions sharing one
+    # would be a program only one backend can express.
+    seen: set[str] = set()
+    for fn in named:
+        if fn.name in seen:
+            raise refuse(
+                Refusal.MALFORMED_SECTION,
+                where="ENTR",
+                detail=f"two functions are named {fn.name!r}",
+            )
+        seen.add(fn.name)
+    return named
 
 
 # -- HOST -----------------------------------------------------------------

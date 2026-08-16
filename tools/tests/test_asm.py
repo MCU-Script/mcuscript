@@ -78,10 +78,48 @@ def test_round_trip_of_a_decoded_container():
     assert again.encode() == blob
 
 
+CALLS = """.profile 1 0.0
+.entry go -> i32
+        const.i32.s8 4
+        call countdown
+        ret_v
+.fn countdown -> i32
+        .param n i32
+        .local scratch i32
+        .cap 5
+        load.l n
+        const.i32.s8 0
+        gt.i32
+        jmp_if_false bottom
+        load.l n
+        const.i32.s8 1
+        sub.i32
+        call countdown
+        ret_v
+bottom: const.i32.s8 0
+        ret_v
+"""
+
+
+def test_round_trip_of_calls_parameters_and_a_cap():
+    """Everything the `call` group added to a record at once.
+
+    Round-tripping is the cheapest check that the encoder and the
+    decoder agree about a new field: `param_count` is a prefix length
+    into the local table, so getting it wrong turns a parameter into
+    scratch and the bytes come back different."""
+    original = assemble(CALLS)
+    text = disassemble(original)
+    assert "  .param v0 i32" in text
+    assert "  .local v1 i32" in text
+    assert "  .cap 5" in text
+    assert assemble(text).encode() == original.encode()
+
+
 def test_a_function_that_is_not_invocable():
     container = assemble(
         ".profile 0 0.0\n"
-        ".entry go\n  ret\n"
+        ".entry go\n  call helper\n  drop\n  ret\n"
         ".fn helper -> i32\n  const.i32.s8 1\n  ret_v\n"
     )
     assert [f.invocable for f in container.functions] == [True, False]

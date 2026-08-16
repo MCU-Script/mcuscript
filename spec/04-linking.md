@@ -66,6 +66,7 @@ Each record:
 | 1 | `max_stack` | slots |
 | 1 | `max_call_depth` | frames below this one, `0` when it calls nothing |
 | 1 | `recursion_cap` | the cap of the call-graph cycle this belongs to, `0` for none (§5.4) |
+| 1 | `param_count` | arguments the caller pushes; at most `local_count` |
 | 1 | `local_count` | |
 | `local_count` | `local_types` | one type code per local, in index order |
 
@@ -74,6 +75,12 @@ length and then that many UTF-8 bytes, with no terminator. A record's
 `name_offset` addresses the length byte and is relative to the start of
 the area, so a name is at most 255 bytes and the area at most 64 KiB.
 Identical names are stored once.
+
+**No two records name the same function** (`malformed_section`). The
+bytecode addresses functions by index and a VM would not notice, but a
+name is what the host invokes by and what a C backend turns into a
+symbol — so two records sharing one would be a program only one backend
+can express, which is the thing this specification exists to prevent.
 
 `max_stack` and `max_call_depth` are what the VM allocates from, and
 they are **recomputed by the verifier and compared** rather than
@@ -84,7 +91,25 @@ neither should reach a running device.
 `recursion_cap` is the one number the verifier cannot derive: a cap is a
 *decision* the author made, not a property of the code (§5.4). What the
 verifier does derive is which functions form a cycle, and it refuses a
-cycle whose members declare no cap, or declare different ones.
+cycle whose members declare no cap, or declare different ones — and it
+refuses a cap on a function that is in no cycle
+(`recursion_cap_mismatch`), because a number that changes nothing is a
+compiler bug or an attempt to make one look harmless.
+
+`param_count` is what makes a call checkable. Arguments become the
+callee's first locals (§3.6) and the record does not otherwise
+distinguish them, so without a declared arity a caller's pushes could
+not be counted and every local would have to be an argument. The first
+`param_count` entries of `local_types` are therefore the signature; the
+rest are scratch and begin `unavailable`.
+
+**An invocable record declares no parameters** (`entry_takes_parameters`).
+The host has no typed argument channel — it communicates with a script
+through entities (§5.2) — and inventing one would put the two backends
+at odds: the VM would start the unsupplied locals `unavailable` while
+the transpiled C would take whatever its caller passed. A trigger value
+that a script needs is an entity, which is also where the script can
+read it more than once.
 
 Function definitions — the targets of `CALL` (§3.6) — use the same
 record layout in the same section. An entry point is a function the
@@ -172,6 +197,7 @@ the loader can only say "invalid".
 | `missing_section` | one of the four critical sections is absent |
 | `duplicate_section` | a critical section appears more than once |
 | `reserved_field_set` | a field this version reserves is not zero — the header's `flags`, an `ENTR` record's unused flag bits |
+| `entry_takes_parameters` | an `ENTR` record has the invocable flag and a non-zero `param_count` (§4.3) |
 
 ### Compatibility errors
 
@@ -188,7 +214,7 @@ the loader can only say "invalid".
 | `truncated_instruction` | an instruction's operands extend past `CODE` |
 | `bad_branch_target` | a target outside the function's code region, or not on an instruction boundary (§2.6.1) |
 | `backward_branch` | a backward jump (§3.8) |
-| `unreachable_code` | a byte of a function's region that no path reaches (§2.6.1) |
+| `unreachable_code` | a byte of a function's region that no path reaches (§2.6.1), or a function no entry point can reach |
 | `type_mismatch` | an instruction receives an operand type it does not take |
 | `stack_underflow` | an instruction pops from an empty stack on some path |
 | `inconsistent_join` | two paths reach the same instruction with different stack shapes |
@@ -196,6 +222,7 @@ the loader can only say "invalid".
 | `stack_depth_mismatch` | the recomputed `max_stack` differs from the declared one |
 | `call_depth_mismatch` | the recomputed `max_call_depth` differs from the declared one |
 | `uncapped_recursion` | a cycle in the call graph without a declared cap, or whose members declare different ones (§5.4) |
+| `recursion_cap_mismatch` | a `recursion_cap` on a function that is in no cycle |
 | `index_out_of_range` | an index into `CNST`, `HOST`, the locals or the function table is past its count |
 
 ### Linking errors

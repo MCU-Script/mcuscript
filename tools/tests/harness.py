@@ -35,7 +35,7 @@ class Run:
     code: int
 
 
-def _shim(container, entry_name: str) -> str:
+def _shim(container, entry_name: str, repeat: int = 1) -> str:
     """The extern functions the generated code expects, onto the same
     world the VM runner uses, plus a `main` that prints the same lines.
 
@@ -91,15 +91,20 @@ def _shim(container, entry_name: str) -> str:
         "{",
         "\tif (argc < 2 || !hostfile_load(argv[1]))",
         "\t\treturn 2;",
-        "\tmcuscript_value result = mcuscript_absent(MCUSCRIPT_UNAVAILABLE);",
-        "\tmcuscript_fault fault = MCUSCRIPT_NO_FAULT;",
-        f"\tif (!{entry_symbol}(&result, &fault)) {{",
-        "\t\thostfile_print_fault(fault);",
-        "\t\treturn 3;",
+        "\tint code = 0;",
+        f"\tfor (int round = 0; round < {repeat}; round++) {{",
+        "\t\tmcuscript_value result = mcuscript_absent(MCUSCRIPT_UNAVAILABLE);",
+        "\t\tmcuscript_fault fault = MCUSCRIPT_NO_FAULT;",
+        f"\t\tif (!{entry_symbol}(&result, &fault)) {{",
+        "\t\t\thostfile_print_fault(fault);",
+        "\t\t\tcode = 3;",
+        "\t\t\tcontinue;",
+        "\t\t}",
+        f"\t\thostfile_print_result({kind}, result);",
+        "\t\thostfile_print_done();",
+        "\t\tcode = 0;",
         "\t}",
-        f"\thostfile_print_result({kind}, result);",
-        "\thostfile_print_done();",
-        "\treturn 0;",
+        "\treturn code;",
         "}",
     ]
     return "\n".join(lines) + "\n"
@@ -127,10 +132,14 @@ class Compiled:
         self.workdir = workdir
         self.round = 0
 
-    def __call__(self, host: str) -> tuple[Run, Run]:
+    def _host_file(self, host: str) -> Path:
         self.round += 1
-        host_file = self.workdir / f"host{self.round}.txt"
-        host_file.write_text(host, encoding="utf-8")
+        path = self.workdir / f"host{self.round}.txt"
+        path.write_text(host, encoding="utf-8")
+        return path
+
+    def __call__(self, host: str) -> tuple[Run, Run]:
+        host_file = self._host_file(host)
         interpreted = subprocess.run(
             [str(self.vm), str(self.blob), str(host_file)],
             capture_output=True,
@@ -151,9 +160,31 @@ class Compiled:
     def agree(self, host: str = "") -> Run:
         return _same(*self(host))
 
+    def compiled_only(self, host: str = "") -> Run:
+        """The compiled side alone.
+
+        For the one property the comparison cannot see: the generated C
+        keeps its recursion counters in static storage, so what a second
+        invocation finds is a question the VM — whose counters are frame
+        locals — does not have.
+        """
+        compiled = subprocess.run(
+            [str(self.binary), str(self._host_file(host))],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        return Run(compiled.stdout, compiled.returncode)
+
 
 def compile_once(
-    vm: Path, cc: str, tmp_path: Path, source: str, *, flags: list[str] | None = None
+    vm: Path,
+    cc: str,
+    tmp_path: Path,
+    source: str,
+    *,
+    flags: list[str] | None = None,
+    repeat: int = 1,
 ) -> Compiled:
     container = assemble(source)
     entry = next(f.name for f in container.functions if f.invocable)
@@ -161,7 +192,7 @@ def compile_once(
     blob = tmp_path / "program.mcs"
     blob.write_bytes(container.encode())
     (tmp_path / "program.c").write_text(generate(container), encoding="utf-8")
-    (tmp_path / "shim.c").write_text(_shim(container, entry), encoding="utf-8")
+    (tmp_path / "shim.c").write_text(_shim(container, entry, repeat), encoding="utf-8")
     binary = tmp_path / "compiled"
     build = subprocess.run(
         [

@@ -50,11 +50,19 @@ extern "C" {
 #define MCUSCRIPT_MAX_PARAMETERS 4
 #endif
 
-/* Slots for one invocation: the entry point's locals and its operand
- * stack. One buffer serves the whole device, because scripts run to
- * completion and never nest (spec §5.1). */
+/* Slots for one invocation: every live frame's locals and operand
+ * stack, summed along the deepest call chain (spec §5.3). One buffer
+ * serves the whole device, because scripts run to completion and never
+ * nest (spec §5.1). The loader computes what a container needs and
+ * refuses one that needs more than this. */
 #ifndef MCUSCRIPT_MAX_SLOTS
 #define MCUSCRIPT_MAX_SLOTS 64
+#endif
+
+/* Frames live at once. This costs C stack during an invocation — the
+ * return addresses the VM keeps — and nothing else. */
+#ifndef MCUSCRIPT_MAX_CALL_DEPTH
+#define MCUSCRIPT_MAX_CALL_DEPTH 8
 #endif
 
 /* Deepest operand stack the verifier will track. */
@@ -141,6 +149,7 @@ typedef enum {
 	MCUSCRIPT_MISSING_SECTION,
 	MCUSCRIPT_DUPLICATE_SECTION,
 	MCUSCRIPT_RESERVED_FIELD_SET,
+	MCUSCRIPT_ENTRY_TAKES_PARAMETERS,
 
 	MCUSCRIPT_PROFILE_MISMATCH,
 	MCUSCRIPT_UNSUPPORTED_GROUP,
@@ -157,6 +166,7 @@ typedef enum {
 	MCUSCRIPT_STACK_DEPTH_MISMATCH,
 	MCUSCRIPT_CALL_DEPTH_MISMATCH,
 	MCUSCRIPT_UNCAPPED_RECURSION,
+	MCUSCRIPT_RECURSION_CAP_MISMATCH,
 	MCUSCRIPT_INDEX_OUT_OF_RANGE,
 
 	MCUSCRIPT_UNKNOWN_IMPORT,
@@ -266,6 +276,9 @@ typedef struct {
 	uint8_t max_stack;
 	uint8_t max_call_depth;
 	uint8_t recursion_cap;
+	/* Arguments the caller pushes; they are the first locals (§3.6), so
+	 * this is a prefix length into `local_types`. */
+	uint8_t param_count;
 	uint8_t local_count;
 	const uint8_t *local_types;
 } mcuscript_function;
@@ -290,6 +303,14 @@ typedef struct {
 
 	mcuscript_function functions[MCUSCRIPT_MAX_FUNCTIONS];
 	uint8_t function_count;
+
+	/* The call graph, condensed at load. Two functions share a
+	 * recursion counter exactly when they share a component (§5.4). A
+	 * component is named by its lowest member, so the id is already a
+	 * bounded index and `component_cap` is addressed by it; the cap is
+	 * zero for a component that is not a cycle. */
+	uint8_t component[MCUSCRIPT_MAX_FUNCTIONS];
+	uint8_t component_cap[MCUSCRIPT_MAX_FUNCTIONS];
 
 	const mcuscript_host *host;
 } mcuscript_program;

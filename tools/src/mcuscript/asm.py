@@ -22,9 +22,8 @@ Syntax::
     .hostfn i32 clamp i32 i32      ; return type, name, parameter types
     .const big i32 100000          ; a named constant-pool entry
 
-    .entry on_temp -> i32          ; host-invocable
+    .entry on_temp -> i32          ; host-invocable, and takes no arguments
       .local previous i32
-      .cap 5                       ; recursion cap for this cycle
       load.h temp
       const.i32.s16 280
       gt.i32
@@ -35,7 +34,10 @@ Syntax::
       const.i32.s8 0
       ret_v
 
-    .fn helper -> i32              ; not invocable from the host
+    .fn countdown -> i32           ; not invocable from the host
+      .param n i32                 ; parameters first; they are locals too
+      .local scratch i32
+      .cap 5                       ; recursion cap for this cycle
 
 Everything an instruction refers to is written by name: a constant, a
 local, an import, a function, a branch target. Indices exist only in the
@@ -81,7 +83,10 @@ class _Func:
     name: str
     invocable: bool
     return_type: ValType
+    #: Parameters first, then the rest — they share one index space
+    #: because a parameter *is* a local (§3.6).
     locals: list[tuple[str, ValType]]
+    param_count: int
     cap: int
     insns: list[_Insn]
     labels: dict[str, int]
@@ -152,13 +157,8 @@ class _Parser:
             self._const(args, lineno)
         elif head in (".entry", ".fn"):
             self._function(head == ".entry", args, lineno)
-        elif head == ".local":
-            fn = self._need_function(lineno, ".local")
-            if len(args) != 2:
-                raise AsmError(lineno, ".local takes a name and a type")
-            if any(name == args[0] for name, _ in fn.locals):
-                raise AsmError(lineno, f"local '{args[0]}' is already declared")
-            fn.locals.append((args[0], _type(args[1], lineno)))
+        elif head in (".param", ".local"):
+            self._slot(head, args, lineno)
         elif head == ".cap":
             fn = self._need_function(lineno, ".cap")
             if len(args) != 1:
@@ -166,6 +166,27 @@ class _Parser:
             fn.cap = _int(args[0], lineno)
         else:
             raise AsmError(lineno, f"unknown directive '{head}'")
+
+    def _slot(self, head: str, args: list[str], lineno: int) -> None:
+        fn = self._need_function(lineno, head)
+        if len(args) != 2:
+            raise AsmError(lineno, f"{head} takes a name and a type")
+        if any(name == args[0] for name, _ in fn.locals):
+            raise AsmError(lineno, f"'{args[0]}' is already declared")
+        if head == ".param":
+            # Parameters are the callee's *first* locals, so a parameter
+            # after a plain local would need the record to carry a second
+            # index space. It does not, and does not need to.
+            if fn.param_count != len(fn.locals):
+                raise AsmError(lineno, ".param must come before every .local")
+            if fn.invocable:
+                raise AsmError(
+                    lineno,
+                    f"'{fn.name}' is host-invocable and cannot take parameters; "
+                    "a script reads what triggered it from an entity",
+                )
+            fn.param_count += 1
+        fn.locals.append((args[0], _type(args[1], lineno)))
 
     def _entity(self, args: list[str], lineno: int) -> None:
         dimension = 0
@@ -225,7 +246,7 @@ class _Parser:
         name = args[0]
         if any(fn.name == name for fn in self.functions):
             raise AsmError(lineno, f"'{name}' is already defined")
-        self.current = _Func(name, invocable, return_type, [], 0, [], {}, lineno)
+        self.current = _Func(name, invocable, return_type, [], 0, 0, [], {}, lineno)
         self.functions.append(self.current)
 
     def _instruction(self, tokens: list[str], lineno: int) -> None:
@@ -277,6 +298,7 @@ class _Parser:
                     local_types=tuple(t for _, t in fn.locals),
                     invocable=fn.invocable,
                     recursion_cap=fn.cap,
+                    param_count=fn.param_count,
                 )
             )
 
@@ -460,8 +482,8 @@ def _disassemble_function(
         head += f" -> {fn.return_type}"
     lines = [head]
     local_names = [f"v{i}" for i in range(len(fn.local_types))]
-    for name, type_ in zip(local_names, fn.local_types, strict=True):
-        lines.append(f"  .local {name} {type_}")
+    for i, (name, type_) in enumerate(zip(local_names, fn.local_types, strict=True)):
+        lines.append(f"  {'.param' if i < fn.param_count else '.local'} {name} {type_}")
     if fn.recursion_cap:
         lines.append(f"  .cap {fn.recursion_cap}")
 

@@ -154,6 +154,8 @@ unsigned mcuscript_instruction_size(uint8_t opcode)
 	case OP_CONST_I64:
 	case OP_CONST_F32:
 		return 2;
+	case OP_CALL:
+		return 2;
 	case OP_CONST_I32_S16:
 	case OP_JMP:
 	case OP_JMP_IF_FALSE:
@@ -411,10 +413,13 @@ static bool load_functions(mcuscript_program *program, section table, uint32_t c
 		return fail(diagnostic, MCUSCRIPT_BUILD_LIMIT, count);
 	program->function_count = count;
 
+	/* The fixed part of an ENTR record (§4.3), before `local_types`. */
+#define RECORD_SIZE 13u
+
 	uint32_t offset = 1;
 	uint16_t name_offsets[MCUSCRIPT_MAX_FUNCTIONS];
 	for (uint8_t i = 0; i < count; i++) {
-		if (offset + 12u > table.length)
+		if (offset + RECORD_SIZE > table.length)
 			return fail(diagnostic, MCUSCRIPT_MALFORMED_SECTION, offset);
 		const uint8_t *record = table.data + offset;
 		mcuscript_function *fn = &program->functions[i];
@@ -425,19 +430,27 @@ static bool load_functions(mcuscript_program *program, section table, uint32_t c
 		fn->max_stack = record[8];
 		fn->max_call_depth = record[9];
 		fn->recursion_cap = record[10];
-		fn->local_count = record[11];
+		fn->param_count = record[11];
+		fn->local_count = record[12];
 		if (fn->flags & (uint8_t)~MCUSCRIPT_ENTRY_INVOCABLE)
 			return fail(diagnostic, MCUSCRIPT_RESERVED_FIELD_SET, i);
 		if (!is_type_code(fn->return_type, true))
 			return fail(diagnostic, MCUSCRIPT_MALFORMED_SECTION, offset);
-		if (offset + 12u + fn->local_count > table.length)
+		if (fn->param_count > fn->local_count)
 			return fail(diagnostic, MCUSCRIPT_MALFORMED_SECTION, offset);
-		fn->local_types = record + 12;
+		/* The host invokes by name and passes nothing (§4.3). */
+		if ((fn->flags & MCUSCRIPT_ENTRY_INVOCABLE) && fn->param_count != 0)
+			return fail(diagnostic, MCUSCRIPT_ENTRY_TAKES_PARAMETERS, i);
+		if (offset + RECORD_SIZE + fn->local_count > table.length)
+			return fail(diagnostic, MCUSCRIPT_MALFORMED_SECTION, offset);
+		fn->local_types = record + RECORD_SIZE;
 		for (uint8_t l = 0; l < fn->local_count; l++)
 			if (!is_type_code(fn->local_types[l], false))
 				return fail(diagnostic, MCUSCRIPT_MALFORMED_SECTION, offset);
-		offset += 12u + fn->local_count;
+		offset += RECORD_SIZE + fn->local_count;
 	}
+
+#undef RECORD_SIZE
 
 	const uint8_t *area = table.data + offset;
 	uint32_t area_length = table.length - offset;
@@ -446,44 +459,54 @@ static bool load_functions(mcuscript_program *program, section table, uint32_t c
 			       &program->functions[i].name))
 			return fail(diagnostic, MCUSCRIPT_MALFORMED_SECTION, i);
 
+	/* Names must be distinct: the bytecode calls by index and would not
+	 * care, but the host invokes by name and a C backend makes a symbol
+	 * of it, so two records sharing one is a program only one backend
+	 * can express (§4.3). */
+	for (uint8_t i = 0; i < count; i++) {
+		for (uint8_t j = 0; j < i; j++) {
+			mcuscript_str a = program->functions[i].name;
+			mcuscript_str b = program->functions[j].name;
+			if (a.length == b.length && memcmp(a.bytes, b.bytes, a.length) == 0)
+				return fail_named(diagnostic, MCUSCRIPT_MALFORMED_SECTION, i,
+						  a);
+		}
+	}
+
 	/* Code regions tile CODE exactly (§2.6.1): sorted by offset, the
 	 * first starts at zero, each ends where the next begins. That is
 	 * what makes "a branch outside this function" decidable. */
 	if (count == 0)
 		return code_length == 0 ? true
 					: fail(diagnostic, MCUSCRIPT_MALFORMED_SECTION, 0);
-	uint32_t expected = 0;
-	for (uint8_t placed = 0; placed < count; placed++) {
-		uint8_t next = 0xFF;
-		uint32_t best = 0;
-		for (uint8_t i = 0; i < count; i++) {
-			uint32_t start = program->functions[i].code_offset;
-			if (start < expected)
-				continue;
-			if (next == 0xFF || start < best) {
-				next = i;
-				best = start;
-			}
-		}
-		if (next == 0xFF || best != expected)
-			return fail(diagnostic, MCUSCRIPT_MALFORMED_SECTION, expected);
-		/* The end is the next start, found on the following pass; fill
-		 * it with the section end and correct it below. */
-		program->functions[next].code_end = code_length;
-		expected = best + 1; /* at least one byte */
-	}
+
+	/*
+	 * Each region runs from its own start to the next one up, or to the
+	 * end of the section. Three conditions make that a tiling, and each
+	 * is checked here rather than assumed: some function starts at zero,
+	 * every start is inside CODE, and no two share a start — a shared
+	 * one would produce an empty region, which is how the third is
+	 * caught without a sort.
+	 */
+	bool starts_at_zero = false;
 	for (uint8_t i = 0; i < count; i++) {
 		uint32_t start = program->functions[i].code_offset;
+		if (start == 0)
+			starts_at_zero = true;
+		if (start >= code_length)
+			return fail(diagnostic, MCUSCRIPT_MALFORMED_SECTION, start);
 		uint32_t end = code_length;
 		for (uint8_t j = 0; j < count; j++) {
 			uint32_t other = program->functions[j].code_offset;
+			if (j != i && other == start)
+				return fail(diagnostic, MCUSCRIPT_MALFORMED_SECTION, start);
 			if (other > start && other < end)
 				end = other;
 		}
-		if (end <= start || start >= code_length)
-			return fail(diagnostic, MCUSCRIPT_MALFORMED_SECTION, start);
 		program->functions[i].code_end = end;
 	}
+	if (!starts_at_zero)
+		return fail(diagnostic, MCUSCRIPT_MALFORMED_SECTION, 0);
 	return true;
 }
 
@@ -790,6 +813,20 @@ static bool verify_function(const mcuscript_program *program, section imports,
 		case OP_TRUNC_F32_I32:
 			ok = unary(&w, MCUSCRIPT_F32, MCUSCRIPT_I32);
 			break;
+		case OP_CALL: {
+			if (index >= program->function_count)
+				return fail(diagnostic, MCUSCRIPT_INDEX_OUT_OF_RANGE, pc);
+			const mcuscript_function *callee = &program->functions[index];
+			/* The arguments are the callee's first locals (§3.6), so
+			 * its signature is a prefix of its local table. */
+			for (uint8_t p = callee->param_count; p > 0; p--)
+				if (!pop_type(&w, callee->local_types[p - 1], NULL))
+					return false;
+			ok = (callee->return_type == MCUSCRIPT_VOID)
+				     ? true
+				     : push_type(&w, callee->return_type);
+			break;
+		}
 		case OP_NOT:
 			ok = pop_type(&w, MCUSCRIPT_BOOL, NULL) && push_type(&w, MCUSCRIPT_BOOL);
 			break;
@@ -856,6 +893,185 @@ static bool verify_function(const mcuscript_program *program, section imports,
 				    w.pending[i].target);
 
 	*computed_stack = w.high_water;
+	return true;
+}
+
+/* ------------------------------------------------------------------
+ * The call graph (§5.4)
+ *
+ * The host verifier uses Tarjan's algorithm; this one does not, and the
+ * difference is on purpose. Tarjan needs an explicit stack whose depth
+ * is the graph's, and a device cannot have one that grows. What it can
+ * have is a reachability matrix: `MCUSCRIPT_MAX_FUNCTIONS` is small by
+ * design, one bit per pair fits in bytes, and everything below falls out
+ * of it — `i` and `j` share a component when each reaches the other, and
+ * a component is a cycle when a member reaches itself.
+ *
+ * Cubic in the function count, over a count that is eight. Two methods
+ * over one specification, again.
+ */
+
+#define ROW_BYTES ((MCUSCRIPT_MAX_FUNCTIONS + 7u) / 8u)
+
+typedef uint8_t adjacency[MCUSCRIPT_MAX_FUNCTIONS][ROW_BYTES];
+
+static bool bit_get(const uint8_t *row, uint8_t i)
+{
+	return ((row[i / 8u] >> (i % 8u)) & 1u) != 0u;
+}
+
+static void bit_set(uint8_t *row, uint8_t i)
+{
+	row[i / 8u] = (uint8_t)(row[i / 8u] | (1u << (i % 8u)));
+}
+
+static uint32_t frame_slots(const mcuscript_function *fn)
+{
+	return (uint32_t)fn->local_count + fn->max_stack;
+}
+
+static bool analyze_calls(mcuscript_program *program, mcuscript_diagnostic *diagnostic)
+{
+	uint8_t n = program->function_count;
+	adjacency edge;
+	adjacency reach;
+	memset(edge, 0, sizeof edge);
+
+	for (uint8_t i = 0; i < n; i++) {
+		const mcuscript_function *fn = &program->functions[i];
+		uint32_t pc = fn->code_offset;
+		while (pc < fn->code_end) {
+			if (program->code[pc] == OP_CALL)
+				bit_set(edge[i], program->code[pc + 1]);
+			unsigned size = mcuscript_instruction_size(program->code[pc]);
+			/* Verification already refused an undefined opcode, so
+			 * this cannot fire — but a zero step here would be a
+			 * device hanging in its loader, and that is worth two
+			 * lines even when it is unreachable. */
+			if (size == 0)
+				return fail(diagnostic, MCUSCRIPT_UNDEFINED_OPCODE, pc);
+			pc += size;
+		}
+	}
+	memcpy(reach, edge, sizeof reach);
+
+	/* Warshall: reach[i][j] becomes "some path of one or more calls". */
+	for (uint8_t k = 0; k < n; k++)
+		for (uint8_t i = 0; i < n; i++)
+			if (bit_get(reach[i], k))
+				for (uint8_t b = 0; b < ROW_BYTES; b++)
+					reach[i][b] = (uint8_t)(reach[i][b] | reach[k][b]);
+
+	/* A function nothing can reach is `unreachable_code` one level up
+	 * (§2.6.1): it cannot run, and a container should mean one thing. */
+	for (uint8_t i = 0; i < n; i++) {
+		if (program->functions[i].flags & MCUSCRIPT_ENTRY_INVOCABLE)
+			continue;
+		bool reached = false;
+		for (uint8_t j = 0; j < n && !reached; j++)
+			if ((program->functions[j].flags & MCUSCRIPT_ENTRY_INVOCABLE) &&
+			    bit_get(reach[j], i))
+				reached = true;
+		if (!reached)
+			return fail_named(diagnostic, MCUSCRIPT_UNREACHABLE_CODE, i,
+					  program->functions[i].name);
+	}
+
+	/* A component is named by its lowest member, which is an index into
+	 * the function table and therefore already a bounded array index. */
+	for (uint8_t i = 0; i < n; i++) {
+		uint8_t representative = i;
+		for (uint8_t j = 0; j < i; j++) {
+			if (bit_get(reach[i], j) && bit_get(reach[j], i)) {
+				representative = program->component[j];
+				break;
+			}
+		}
+		program->component[i] = representative;
+	}
+
+	/* Per component: what it costs on its own, and what an invocation
+	 * entering it costs in total — its own cost plus the deepest chain
+	 * it can call into. */
+	uint32_t own_frames[MCUSCRIPT_MAX_FUNCTIONS];
+	uint32_t own_slots[MCUSCRIPT_MAX_FUNCTIONS];
+	uint32_t total_frames[MCUSCRIPT_MAX_FUNCTIONS];
+	uint32_t total_slots[MCUSCRIPT_MAX_FUNCTIONS];
+	memset(own_frames, 0, sizeof own_frames);
+	memset(own_slots, 0, sizeof own_slots);
+	memset(program->component_cap, 0, sizeof program->component_cap);
+
+	for (uint8_t r = 0; r < n; r++) {
+		if (program->component[r] != r)
+			continue;
+		bool cyclic = bit_get(reach[r], r);
+		uint8_t cap = 0;
+		uint32_t widest = 0;
+		bool first = true;
+		for (uint8_t i = 0; i < n; i++) {
+			if (program->component[i] != r)
+				continue;
+			if (first) {
+				cap = program->functions[i].recursion_cap;
+				first = false;
+			} else if (program->functions[i].recursion_cap != cap) {
+				return fail_named(diagnostic, MCUSCRIPT_UNCAPPED_RECURSION, i,
+						  program->functions[i].name);
+			}
+			if (frame_slots(&program->functions[i]) > widest)
+				widest = frame_slots(&program->functions[i]);
+		}
+		if (cyclic && cap == 0)
+			return fail_named(diagnostic, MCUSCRIPT_UNCAPPED_RECURSION, r,
+					  program->functions[r].name);
+		if (!cyclic && cap != 0)
+			return fail_named(diagnostic, MCUSCRIPT_RECURSION_CAP_MISMATCH, r,
+					  program->functions[r].name);
+		program->component_cap[r] = cap;
+		/* One counter per component, incremented on entry to any of its
+		 * members, so a capped component contributes `cap` frames however
+		 * the cycle is spelled (§5.4). Which member fills those frames is
+		 * data, so the slots go by the widest of them. */
+		own_frames[r] = cyclic ? cap : 1u;
+		own_slots[r] = own_frames[r] * widest;
+	}
+	memcpy(total_frames, own_frames, sizeof total_frames);
+	memcpy(total_slots, own_slots, sizeof total_slots);
+
+	/* Longest path over the condensation, by relaxation. The graph is
+	 * acyclic once components are collapsed, so `n` passes converge —
+	 * and there is no recursion here to blow a device's stack while
+	 * checking a program that cannot recurse. */
+	for (uint8_t pass = 0; pass < n; pass++) {
+		for (uint8_t i = 0; i < n; i++) {
+			uint8_t from = program->component[i];
+			for (uint8_t j = 0; j < n; j++) {
+				uint8_t to = program->component[j];
+				if (to == from || !bit_get(edge[i], j))
+					continue;
+				if (own_frames[from] + total_frames[to] > total_frames[from])
+					total_frames[from] =
+						own_frames[from] + total_frames[to];
+				if (own_slots[from] + total_slots[to] > total_slots[from])
+					total_slots[from] = own_slots[from] + total_slots[to];
+			}
+		}
+	}
+
+	for (uint8_t i = 0; i < n; i++) {
+		uint8_t r = program->component[i];
+		if (total_frames[r] - 1u != program->functions[i].max_call_depth)
+			return fail_named(diagnostic, MCUSCRIPT_CALL_DEPTH_MISMATCH,
+					  total_frames[r] - 1u, program->functions[i].name);
+		if (total_frames[r] > MCUSCRIPT_MAX_CALL_DEPTH)
+			return fail_named(diagnostic, MCUSCRIPT_BUILD_LIMIT, total_frames[r],
+					  program->functions[i].name);
+		/* The slot buffer is one for the whole device (§5.1), so what
+		 * has to fit is the deepest chain, not one frame. */
+		if (total_slots[r] > MCUSCRIPT_MAX_SLOTS)
+			return fail_named(diagnostic, MCUSCRIPT_BUILD_LIMIT, total_slots[r],
+					  program->functions[i].name);
+	}
 	return true;
 }
 
@@ -969,15 +1185,13 @@ bool mcuscript_load(mcuscript_program *program, const uint8_t *bytes, size_t len
 		if (computed != fn->max_stack)
 			return fail_named(diagnostic, MCUSCRIPT_STACK_DEPTH_MISMATCH, computed,
 					  fn->name);
-		/* No `call` group in this build, so nothing can call anything
-		 * and the only honest call depth is zero. */
-		if (fn->max_call_depth != 0)
-			return fail_named(diagnostic, MCUSCRIPT_CALL_DEPTH_MISMATCH,
-					  fn->max_call_depth, fn->name);
-		if ((uint32_t)fn->local_count + fn->max_stack > MCUSCRIPT_MAX_SLOTS)
-			return fail_named(diagnostic, MCUSCRIPT_BUILD_LIMIT,
-					  (uint32_t)fn->local_count + fn->max_stack, fn->name);
 	}
+
+	/* Only now: the call graph reads every function's verified
+	 * `max_stack`, and it walks the code by instruction length, which
+	 * the pass above is what makes safe. */
+	if (!analyze_calls(program, diagnostic))
+		return false;
 
 	if (!link_imports(program, imports, host, diagnostic))
 		return false;

@@ -198,8 +198,9 @@ instruction runs:
    instruction receives the types it takes;
 4. the stack is empty at `RET`, or holds exactly the return value;
 5. the maximum stack depth and call depth, recomputed, match `ENTR`;
-6. the call graph's cycles all carry a declared depth cap, and the
-   worst-case call depth follows from it;
+6. the call graph's cycles all carry a declared depth cap, no function
+   outside a cycle carries one, and the worst-case call depth follows
+   from it;
 7. every index into `CNST`, `HOST`, the local slots and the function
    table is in range.
 
@@ -231,6 +232,13 @@ neither zero nor twice is allowed:
   It cannot execute, so this is not a safety rule; it is a rule that a
   container means one thing. Dead bytes are an encoder bug or something
   smuggled in, and neither should be quietly accepted.
+
+The same rule applies one level up: **a function no entry point can
+reach, directly or through calls, is `unreachable_code` too.** Same
+argument, and one more — a container with a dead function is a program
+the two backends disagree about, because a C backend turns functions
+into file-local symbols and a C compiler rejects one that nobody calls,
+while a VM would never notice.
 
 ## 2.7 Load and fault behaviour
 

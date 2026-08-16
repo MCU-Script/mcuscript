@@ -49,12 +49,28 @@ A frame is: the callee's locals, then its operand stack. Arguments
 pushed by the caller become the first locals (§3.6); remaining locals
 begin `unavailable`.
 
+That sentence is meant literally, and it is what makes a call cheap. The
+arguments are already on the caller's stack, in order, at the top —
+which is exactly where the callee's locals have to be. So a frame
+**overlaps its caller's by `param_count` slots** and nothing is copied:
+the callee's frame begins `param_count` slots below the caller's stack
+pointer, and returning restores the pointer to that same place, which
+removes the arguments as a side effect of leaving.
+
 Because the value stack and the locals are all slots (§1.2), a frame is
-`(local_count + max_stack)` slots, and the whole requirement for an
-invocation is that summed along the deepest call chain. The verifier
-computed it (§4.3), so the VM allocates once and never checks a bound
-at runtime. There is no stack growth, no guard page, no overflow test
-in the interpreter loop.
+`(local_count + max_stack)` slots, and the requirement for an
+invocation is that summed along the deepest call chain — the overlap
+above makes the sum an over-estimate, which is the right direction for a
+number a device sizes a buffer from. The verifier computes it, so the VM
+allocates once and never checks a bound at runtime. There is no stack
+growth, no guard page, no overflow test in the interpreter loop.
+
+`max_call_depth` in the record (§4.3) counts *frames*, not slots, and it
+is there to be recomputed and compared rather than to be allocated from:
+frames are not a resource, slots are. A container whose declared frame
+count is wrong is refused for the same reason a wrong `max_stack` is —
+the file and its code disagree, and that is either a compiler bug or an
+attack.
 
 `RET_V` pops the return value, discards the frame, and pushes the value
 into the caller's stack. `RET` discards the frame. Neither can leave
@@ -74,19 +90,33 @@ graph and each one carries a cap, because `a → b → a` consumes the
 stack exactly as `a → a` does and a self-call-only rule would let the
 harder-to-notice case through.
 
+**A cap is a number of frames, not of round trips.** With a cap of 5,
+`a → a → a → a → a` is the limit and so is `a → b → a → b → a`: five
+activations of that component's members, however they are spelled. This
+follows from the counter below rather than being an extra rule, and it
+is the only reading both backends can implement without knowing the
+cycle's shape.
+
 The verifier rejects any cycle without a cap (`uncapped_recursion`),
-and computes the worst case as the cycle's frame cost times its cap,
-which is what makes §5.3's single allocation possible.
+and takes the worst case to be the cap times the largest frame in the
+cycle, which is what makes §5.3's single allocation possible.
 
 **Both backends enforce it the same way, at runtime.** A cap is a
 static bound on the *worst case*, but whether a particular run recurses
 that deep is data. So each cycle carries a counter, incremented on
 entry to any of its members and decremented on return; exceeding the
-cap is a fault (§5.5). In the VM the counter lives beside the frame
-machinery. In generated C — where MCUScript functions become ordinary C
-functions on the embedder's thread stack, and the VM's frame apparatus
-does not exist — it is a static counter with the same increment,
-decrement and test. The C compiler will often prove it away.
+cap is a fault (§5.5). Being invoked counts as an entry, so an entry
+point inside a cycle occupies the first of its cap.
+
+In the VM the counter lives beside the frame machinery, so it is per
+invocation and unwinding a fault cannot leave it wrong. In generated C
+— where MCUScript functions become ordinary C functions on the
+embedder's thread stack, and the VM's frame apparatus does not exist —
+it is a static counter with the same increment, decrement and test, and
+the decrement is on **every** path out of the function including the one
+a fault takes. A counter that leaked on the error path would refuse the
+next invocation for something the previous one did. The C compiler will
+often prove the whole thing away.
 
 This is the answer to the question the C backend otherwise leaves open:
 C has no recursion counter, so the transpiler emits one. Without it the

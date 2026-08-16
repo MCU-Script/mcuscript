@@ -1,8 +1,8 @@
 # The MCUScript host toolchain
 
 Everything that runs on a developer's machine rather than on a device:
-the container reader and writer, the assembler, the verifier, and — as
-they arrive — the compiler and the C backend. The VM that executes a
+the container reader and writer, the assembler, the verifier, the C
+backend, and — when it arrives — the compiler. The VM that executes a
 container is C and lives in `runtime/`.
 
 The split is not cosmetic. A host tool may allocate, may take a second,
@@ -61,8 +61,16 @@ the opcode table, the refusal names and the fault names are compared
 against the specification's own tables, so a change to one that is not a
 change to the other fails the build.
 
-`test_differential.py` is the one that matters most. It runs the same
-container through the VM and through the compiled C output and asserts
-the two produce **byte-identical** output — not that each matches a
-written expectation, which would only test the expectation. It needs
-`cmake` and a C compiler and skips without them.
+`test_differential.py`, `test_float_agreement.py` and `test_call.py`
+are the ones that matter most. They run the same container through the
+VM and through the compiled C output and assert the two produce
+**byte-identical** output — not that each matches a written
+expectation, which would only test the expectation. They need `cmake`
+and a C compiler and skip without them.
+
+Two of their assertions are deliberately not comparisons, and each says
+why in place: the float suite has the only test in this repository that
+asserts the backends **disagree** (under a non-conforming build flag,
+so the requirement cannot quietly stop mattering), and the call suite
+invokes the compiled program twice in one process, because the VM has
+no static recursion counter to get wrong and the generated C does.

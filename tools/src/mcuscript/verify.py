@@ -41,6 +41,17 @@ class FunctionFacts:
     max_call_depth: int
     #: The recursion cap of the call-graph cycle this function is in, or 0.
     recursion_cap: int
+    #: Slots an invocation starting here needs: this frame plus every
+    #: frame that can be live below it (§5.3). This is the number a
+    #: device sizes a buffer from; ``max_call_depth`` counts frames, and
+    #: frames are not a resource.
+    max_slots: int = 0
+    #: Which strongly connected component of the call graph the function
+    #: belongs to. Two functions share a runtime recursion counter
+    #: exactly when they share this (§5.4). Only the *grouping* means
+    #: anything — the numbering is this implementation's, and the
+    #: runtime's condensation numbers the same components differently.
+    component: int = 0
 
 
 def verify(
@@ -49,19 +60,7 @@ def verify(
     """Verify a container. Raises :class:`~mcuscript.errors.Refused`, or
     returns the facts it computed, per function name."""
     container.check_groups(implemented)
-    regions = _code_regions(container)
-    facts = {}
-    for index, fn in enumerate(container.functions):
-        stack_depth = _walk(container, fn, index, regions[index])
-        facts[fn.name] = FunctionFacts(stack_depth, 0, 0)
-
-    call_depths, caps = _call_graph(container, regions)
-    for fn in container.functions:
-        facts[fn.name] = replace(
-            facts[fn.name],
-            max_call_depth=call_depths[fn.name],
-            recursion_cap=caps[fn.name],
-        )
+    facts = analyze(container)
 
     for fn in container.functions:
         computed = facts[fn.name]
@@ -83,16 +82,29 @@ def verify(
 def analyze(container: Container) -> dict[str, FunctionFacts]:
     """Compute the resource numbers without checking them against the
     container's own. This is what an encoder calls to fill them in; a
-    loader calls :func:`verify`."""
+    loader calls :func:`verify`.
+
+    The cycle checks of §5.4 run here rather than in :func:`verify`,
+    because they are not a comparison against a declared number — an
+    uncapped cycle has no worst case for an encoder to write down.
+    """
     regions = _code_regions(container)
     facts = {}
     for index, fn in enumerate(container.functions):
         facts[fn.name] = FunctionFacts(
             _walk(container, fn, index, regions[index]), 0, 0
         )
-    call_depths, caps = _call_graph(container, regions)
+    graph = _call_graph(
+        container, regions, {name: f.max_stack for name, f in facts.items()}
+    )
     return {
-        name: replace(f, max_call_depth=call_depths[name], recursion_cap=caps[name])
+        name: replace(
+            f,
+            max_call_depth=graph.call_depth[name],
+            recursion_cap=graph.cap[name],
+            max_slots=graph.slots[name],
+            component=graph.component[name],
+        )
         for name, f in facts.items()
     }
 
@@ -389,8 +401,8 @@ def _apply(
         return rest if imp.type is ValType.VOID else (*rest, imp.type)
     if op.poly is Poly.CALL:
         callee = _function(container, operand, where)
-        rest, taken = _pop(stack, len(callee.local_types[: _arity(callee)]), where, op)
-        _expect(taken, tuple(callee.local_types[: _arity(callee)]), where, op)
+        rest, taken = _pop(stack, callee.param_count, where, op)
+        _expect(taken, callee.param_types, where, op)
         return (
             rest if callee.return_type is ValType.VOID else (*rest, callee.return_type)
         )
@@ -446,14 +458,6 @@ def _apply(
     raise AssertionError(f"unhandled {op.poly}")  # pragma: no cover
 
 
-def _arity(fn: Function) -> int:
-    """Arguments become the callee's first locals (§3.6); the record does
-    not distinguish them, so a function's arity is carried by the caller's
-    expectation. Until the ``call`` group is implemented end to end this
-    is every local, which is the conservative reading."""
-    return len(fn.local_types)
-
-
 def _local(fn: Function, index: int, where: str) -> ValType:
     if index >= len(fn.local_types):
         raise refuse(
@@ -503,17 +507,27 @@ def _pool(container: Container, index: int, want: ValType, where: str) -> None:
 # -- the call graph -------------------------------------------------------
 
 
+@dataclass(frozen=True, slots=True)
+class _Graph:
+    call_depth: dict[str, int]
+    cap: dict[str, int]
+    slots: dict[str, int]
+    component: dict[str, int]
+
+
 def _call_graph(
-    container: Container, regions: list[tuple[int, int]]
-) -> tuple[dict[str, int], dict[str, int]]:
-    """Worst-case call depth per function, and the cap of the cycle each
-    one belongs to.
+    container: Container, regions: list[tuple[int, int]], stacks: dict[str, int]
+) -> _Graph:
+    """Worst-case call depth and slot use per function, and the cap of
+    the cycle each one belongs to.
 
     A cap belongs to a **cycle**, not to a function (§5.4): ``a → b → a``
     consumes the stack exactly as ``a → a`` does, and a rule about
     self-calls would let the harder-to-notice case through. So the graph
     is condensed into its strongly connected components, and every
-    component that is a cycle needs a cap.
+    component that is a cycle needs a cap — and only a cycle may have
+    one, because a cap that bounds nothing is a number that reads as a
+    safeguard and is not.
     """
     n = len(container.functions)
     edges: list[set[int]] = [set() for _ in range(n)]
@@ -525,17 +539,45 @@ def _call_graph(
                 edges[index].add(container.code[pc + 1])
             pc += op.size
 
+    # A function nothing can reach is the defect `unreachable_code`
+    # catches inside a function, one level up: it cannot execute, so it
+    # is not a safety problem, but it is either an encoder bug or
+    # something smuggled in. It is also a program the two backends do
+    # not agree on — a C compiler rejects a static function nobody
+    # calls, and a VM never notices.
+    reached: set[int] = set()
+    work = [i for i, fn in enumerate(container.functions) if fn.invocable]
+    while work:
+        node = work.pop()
+        if node in reached:
+            continue
+        reached.add(node)
+        work.extend(edges[node])
+    for index, fn in enumerate(container.functions):
+        if index not in reached:
+            raise refuse(
+                Refusal.UNREACHABLE_CODE,
+                where=fn.name,
+                detail="no entry point reaches this function",
+            )
+
     components = _tarjan(edges)
     component_of = {node: i for i, comp in enumerate(components) for node in comp}
 
     caps: dict[int, int] = {}
     for i, comp in enumerate(components):
         cyclic = len(comp) > 1 or any(node in edges[node] for node in comp)
-        if not cyclic:
-            caps[i] = 0
-            continue
         declared = {container.functions[node].recursion_cap for node in comp}
         names = ", ".join(container.functions[node].name for node in comp)
+        if not cyclic:
+            caps[i] = 0
+            if declared != {0}:
+                raise refuse(
+                    Refusal.RECURSION_CAP_MISMATCH,
+                    where=names,
+                    detail="declares a cap but is in no cycle",
+                )
+            continue
         if declared == {0}:
             raise refuse(
                 Refusal.UNCAPPED_RECURSION,
@@ -551,32 +593,63 @@ def _call_graph(
             )
         caps[i] = declared.pop()
 
-    # Frames occupied by a component: one for an ordinary function, and
-    # for a cycle a sound upper bound of cap × members.
+    def frame(node: int) -> int:
+        fn = container.functions[node]
+        return len(fn.local_types) + stacks[fn.name]
+
+    # A component's cost, in frames and in slots. The counter of §5.4
+    # is per component and counts entries into *any* member, so a capped
+    # component contributes at most `cap` frames however the cycle is
+    # spelled — `a → b → a → b → a` is five, exactly as `a → a → a → a →
+    # a` is. Slots take the largest member, since which of them fills
+    # those frames is data.
     def frames(i: int) -> int:
-        return caps[i] * len(components[i]) if caps[i] else len(components[i])
+        return caps[i] if caps[i] else 1
+
+    def component_slots(i: int) -> int:
+        return frames(i) * max(frame(node) for node in components[i])
 
     depth: dict[int, int] = {}
+    slots: dict[int, int] = {}
+
+    def below(i: int, of) -> int:
+        return max(
+            (
+                of(component_of[callee])
+                for node in components[i]
+                for callee in edges[node]
+                if component_of[callee] != i
+            ),
+            default=0,
+        )
 
     def component_depth(i: int) -> int:
-        if i in depth:
-            return depth[i]
-        below = 0
-        for node in components[i]:
-            for callee in edges[node]:
-                j = component_of[callee]
-                if j != i:
-                    below = max(below, component_depth(j))
-        depth[i] = frames(i) + below
+        if i not in depth:
+            depth[i] = frames(i) + below(i, component_depth)
         return depth[i]
 
-    result_depth = {}
-    result_caps = {}
-    for index, fn in enumerate(container.functions):
-        i = component_of[index]
-        result_depth[fn.name] = component_depth(i) - 1
-        result_caps[fn.name] = caps[i]
-    return result_depth, result_caps
+    def component_slot_total(i: int) -> int:
+        if i not in slots:
+            slots[i] = component_slots(i) + below(i, component_slot_total)
+        return slots[i]
+
+    return _Graph(
+        call_depth={
+            fn.name: component_depth(component_of[index]) - 1
+            for index, fn in enumerate(container.functions)
+        },
+        cap={
+            fn.name: caps[component_of[index]]
+            for index, fn in enumerate(container.functions)
+        },
+        slots={
+            fn.name: component_slot_total(component_of[index])
+            for index, fn in enumerate(container.functions)
+        },
+        component={
+            fn.name: component_of[index] for index, fn in enumerate(container.functions)
+        },
+    )
 
 
 def _tarjan(edges: list[set[int]]) -> list[list[int]]:

@@ -261,11 +261,11 @@ a faulty sensor produces.
 | `0x80` | `CALL idx8` | 2 | `T… → T?` — calls function `idx8` |
 
 Arguments are pushed leftmost-first and **become the callee's first
-locals**; there is no separate transfer. The callee's remaining locals
-are `unavailable` on entry (§3.3). `RET_V` yields one value to the
-caller; `RET` yields none. From the caller's side a call has the stack
-effect of a single instruction, which is why calls compose without
-special cases.
+locals**; there is no separate transfer. How many there are is the
+callee's declared `param_count` (§4.3), and the remaining locals are
+`unavailable` on entry (§3.3). `RET_V` yields one value to the caller;
+`RET` yields none. From the caller's side a call has the stack effect of
+a single instruction, which is why calls compose without special cases.
 
 `RET` and `RET_V` are in `core`, not here: an entry point needs to
 return, and an expression-only device that has no functions still has

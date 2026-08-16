@@ -102,7 +102,8 @@ def _verify(args: argparse.Namespace) -> int:
     facts = verify(container)
     for name, fact in facts.items():
         print(
-            f"{name}: stack {fact.max_stack}, call depth {fact.max_call_depth}"
+            f"{name}: stack {fact.max_stack}, call depth {fact.max_call_depth}, "
+            f"{fact.max_slots} slots"
             + (f", recursion cap {fact.recursion_cap}" if fact.recursion_cap else "")
         )
     return EXIT_OK
@@ -156,8 +157,13 @@ def _info(args: argparse.Namespace) -> int:
     for fn in container.functions:
         kind = "entry" if fn.invocable else "fn"
         returns = "" if fn.return_type is ValType.VOID else f" -> {fn.return_type}"
+        signature = (
+            "(" + ", ".join(str(t) for t in fn.param_types) + ")"
+            if fn.param_count
+            else ""
+        )
         print(
-            f"{kind:16s} {fn.name}{returns} at {fn.code_offset}, "
+            f"{kind:16s} {fn.name}{signature}{returns} at {fn.code_offset}, "
             f"stack {fn.max_stack}, locals {len(fn.local_types)}"
         )
     for section in container.ancillary:

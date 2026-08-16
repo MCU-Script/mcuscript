@@ -442,6 +442,129 @@ def test_a_flipped_bit_is_refused_before_anything_runs(runner, tmp_path):
     assert result.refusal == "bad_checksum"
 
 
+# -- refusals the call graph produces -------------------------------------
+#
+# The host verifier refuses these too, and by the same names — but it
+# does so with Tarjan's algorithm over a worklist, and this one with a
+# reachability matrix in fixed memory. Two methods over one
+# specification is only worth something if both are asked.
+
+
+def _handmade(functions, code: bytes, **fields) -> bytes:
+    from mcuscript.container import Container
+    from mcuscript.opcodes import Group
+
+    container = Container(
+        code=code,
+        functions=functions,
+        required_groups=Group.CORE.mask | Group.CALL.mask,
+        profile_id=1,
+        **fields,
+    )
+    return container.encode(required_groups=container.required_groups)
+
+
+def test_the_c_loader_refuses_an_uncapped_cycle(runner, tmp_path):
+    from mcuscript.container import Function
+
+    blob = _handmade([Function("go", 0, max_call_depth=0)], b"\x80\x00\x23")
+    result = run(runner, tmp_path, "", "", blob=blob)
+    assert result.refusal == "uncapped_recursion"
+
+
+def test_the_c_loader_refuses_a_cap_on_a_function_in_no_cycle(runner, tmp_path):
+    from mcuscript.container import Function
+
+    blob = _handmade([Function("go", 0, recursion_cap=5)], b"\x23")
+    result = run(runner, tmp_path, "", "", blob=blob)
+    assert result.refusal == "recursion_cap_mismatch"
+
+
+def test_the_c_loader_refuses_a_function_no_entry_point_reaches(runner, tmp_path):
+    from mcuscript.container import Function
+
+    blob = _handmade(
+        [Function("go", 0), Function("orphan", 1, invocable=False)], b"\x23\x23"
+    )
+    result = run(runner, tmp_path, "", "", blob=blob)
+    assert result.refusal == "unreachable_code"
+    assert result.refusal_subject == "orphan"
+
+
+def test_the_c_loader_refuses_a_call_to_a_function_that_is_not_there(runner, tmp_path):
+    from mcuscript.container import Function
+
+    blob = _handmade([Function("go", 0)], b"\x80\x07\x23")
+    result = run(runner, tmp_path, "", "", blob=blob)
+    assert result.refusal == "index_out_of_range"
+
+
+def test_the_c_loader_refuses_an_entry_point_with_parameters(runner, tmp_path):
+    from mcuscript.container import Function
+    from mcuscript.opcodes import ValType
+
+    blob = _handmade(
+        [Function("go", 0, local_types=(ValType.I32,), param_count=1)], b"\x23"
+    )
+    result = run(runner, tmp_path, "", "", blob=blob)
+    assert result.refusal == "entry_takes_parameters"
+
+
+def test_the_c_loader_refuses_two_functions_with_one_name(runner, tmp_path):
+    from mcuscript.container import Function
+
+    blob = _handmade(
+        [Function("go", 0), Function("go", 1, invocable=False)], b"\x23\x23"
+    )
+    result = run(runner, tmp_path, "", "", blob=blob)
+    # A VM addresses functions by index and would not care; a C backend
+    # would emit one symbol twice (§4.3).
+    assert result.refusal == "malformed_section"
+
+
+def test_a_cap_deeper_than_this_build_allows_is_refused(runner, tmp_path):
+    # MCUSCRIPT_MAX_CALL_DEPTH is 8 by default, and `go` plus nine
+    # frames of `down` is ten. This is not a malformed container — it is
+    # one this build cannot run, and the two are different refusals on
+    # purpose, because the fix is a rebuild and not a recompile.
+    container = assemble(
+        PROFILE + ".entry go\n  call down\n  ret\n"
+        ".fn down\n  .cap 9\n  call down\n  ret\n"
+    )
+    result = run(runner, tmp_path, "", "", blob=container.encode())
+    assert result.refusal == "build_limit"
+    assert result.out.split()[3] == "10"
+
+
+def test_a_chain_that_needs_more_slots_than_this_build_has_is_refused(runner, tmp_path):
+    # Eight frames fit; their slots do not. Seven frames of ten slots is
+    # 70 against MCUSCRIPT_MAX_SLOTS of 64 — and the buffer is one for
+    # the whole device, so what has to fit is the chain and not the
+    # widest frame in it.
+    locals_ = "".join(f"  .local s{i} i32\n" for i in range(10))
+    container = assemble(
+        PROFILE + ".entry go\n  call down\n  ret\n"
+        ".fn down\n  .cap 7\n" + locals_ + "  call down\n  ret\n"
+    )
+    result = run(runner, tmp_path, "", "", blob=container.encode())
+    assert result.refusal == "build_limit"
+    assert result.out.split()[3] == "70"
+
+
+def test_the_c_loader_recomputes_the_declared_call_depth(runner, tmp_path):
+    from dataclasses import replace
+
+    container = assemble(
+        PROFILE + ".entry go\n  call helper\n  ret\n.fn helper\n  ret\n"
+    )
+    container.functions = [
+        replace(container.functions[0], max_call_depth=4),
+        container.functions[1],
+    ]
+    result = run(runner, tmp_path, "", "", blob=container.encode())
+    assert result.refusal == "call_depth_mismatch"
+
+
 # -- the specification's worked example -----------------------------------
 
 WORKED_EXAMPLE = (

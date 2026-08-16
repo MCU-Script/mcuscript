@@ -31,6 +31,7 @@ class Refusal(enum.Enum):
     MISSING_SECTION = "missing_section"
     DUPLICATE_SECTION = "duplicate_section"
     RESERVED_FIELD_SET = "reserved_field_set"
+    ENTRY_TAKES_PARAMETERS = "entry_takes_parameters"
 
     # -- compatibility ------------------------------------------------
     PROFILE_MISMATCH = "profile_mismatch"
@@ -49,6 +50,7 @@ class Refusal(enum.Enum):
     STACK_DEPTH_MISMATCH = "stack_depth_mismatch"
     CALL_DEPTH_MISMATCH = "call_depth_mismatch"
     UNCAPPED_RECURSION = "uncapped_recursion"
+    RECURSION_CAP_MISMATCH = "recursion_cap_mismatch"
     INDEX_OUT_OF_RANGE = "index_out_of_range"
 
     # -- linking ---------------------------------------------------------

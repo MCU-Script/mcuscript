@@ -1,8 +1,8 @@
 # 4. Two backends, one container
 
 - Status: **draft** — the shape is settled and implemented for the
-  `core`, `i64` and `float` groups; the parts marked *open* below are
-  not yet decided.
+  `core`, `i64`, `float` and `call` groups; the parts marked *open*
+  below are not yet decided.
 - Supersedes nothing. Answers ADR 0002 §8's largest open question, the
   C API toward embedders.
 
@@ -125,6 +125,56 @@ line-oriented protocol — `write`, `result`, `fault`, `refused`, `done` —
 and it is a contract between the two harnesses rather than a
 convenience.
 
+### 4.7 A call is a C call, and the cap is a static counter
+
+The question 4.6 left open. MCUScript functions become ordinary `static`
+C functions; an entry point is one of those plus a thin wrapper carrying
+the `mcuscript_value` the embedder expects, so there is one body
+generator and not two.
+
+Parameters are passed as C parameters — as the slot pair, value and
+state — and that is exact rather than convenient: §3.6 says arguments
+*are* the callee's first locals, and C parameters are assignable
+lvalues, so the callee's local 0 is the C parameter and `store.l 0`
+writes it. The VM reaches the same place from the other side: the
+arguments are already on top of the caller's stack in order, so its
+frame begins there and nothing is copied either.
+
+The recursion cap becomes `static unsigned` per call-graph cycle. Two
+things about it are decisions rather than mechanics:
+
+- **The decrement is on every path out, including the fault path.** A
+  counter that leaked when an invocation faulted would refuse the *next*
+  invocation for what this one did — the failure would appear one run
+  later, in a program that is fine. Every generated function therefore
+  has a single `done:` epilogue and every exit is a `goto` to it.
+- **It is static, not per invocation.** Scripts never nest (§5.1), so
+  there is nothing for a per-invocation counter to distinguish, and a
+  static one costs no argument passing. The VM's are locals of
+  `mcuscript_invoke` for the opposite reason: it has a frame to put them
+  in, and locals cannot leak at all.
+
+That asymmetry is the one place in this project where the two backends
+are told to do different things, so it gets its own test — the compiled
+program is invoked twice in one process and the second invocation must
+behave exactly like the first. The comparison cannot see this: the VM
+has no such state to get wrong.
+
+### 4.8 The call graph is computed twice, by different algorithms
+
+The host verifier condenses the graph with Tarjan's algorithm; the
+runtime uses a reachability matrix and Warshall. Not a duplication that
+happened — a duplication that is the point, and the reason is the same
+one behind the two verifiers: Tarjan needs an explicit stack whose depth
+is the graph's, and a device runtime may not have one that grows.
+`MCUSCRIPT_MAX_FUNCTIONS` is small by design, so one bit per pair of
+functions fits in a handful of bytes and cubic time over eight nodes is
+free.
+
+Everything else falls out of that matrix: `i` and `j` share a component
+when each reaches the other, a component is a cycle when a member
+reaches itself, and a function is dead when no entry point reaches it.
+
 ## Consequences
 
 - **Floating point needs the build, not only the source**, and the
@@ -147,9 +197,12 @@ convenience.
 
 ## Open
 
-- **Function calls.** The `call` group is not lowered. Ordinary C
-  functions plus the recursion counter of spec §5.4 is the obvious
-  shape, but it has not been written and so it is not decided.
-- **Several containers in one translation unit.** Today the generated
-  symbols are global and a second program would collide. A per-program
-  prefix is the likely answer; nothing needs it yet.
+- **Several containers in one translation unit.** The entry wrappers
+  have external linkage and a second program would collide. A
+  per-program prefix is the likely answer; nothing needs it yet. The
+  function bodies are `static` and already safe, which is also why a
+  container carrying a function nothing calls is refused rather than
+  compiled — a C compiler rejects an unused static, and refusing at load
+  keeps that from being a difference between the backends.
+- **The `bits` group.** Six instructions, specified, lowered by neither
+  backend. Nothing about it is undecided; it is simply not written.

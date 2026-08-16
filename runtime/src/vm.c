@@ -55,6 +55,17 @@ static uint64_t value_to_slot(uint8_t type, mcuscript_value value)
 	}
 }
 
+/*
+ * What a call has to remember. `base` is the *caller's* frame base, not
+ * the callee's: the callee's is held in a register-resident local and
+ * restoring it is what pops the frame.
+ */
+typedef struct {
+	uint32_t return_pc;
+	uint32_t base;
+	uint8_t function;
+} call_frame;
+
 bool mcuscript_invoke(const mcuscript_program *program, int entry, mcuscript_slots *slots,
 		      mcuscript_value *result, mcuscript_fault *fault)
 {
@@ -63,9 +74,22 @@ bool mcuscript_invoke(const mcuscript_program *program, int entry, mcuscript_slo
 	if (entry < 0 || (uint8_t)entry >= program->function_count)
 		return false;
 
-	const mcuscript_function *fn = &program->functions[entry];
+	uint8_t current = (uint8_t)entry;
+	const mcuscript_function *fn = &program->functions[current];
 	const mcuscript_host *host = program->host;
 	const uint8_t *code = program->code;
+
+	call_frame frames[MCUSCRIPT_MAX_CALL_DEPTH];
+	uint8_t depth = 0;
+
+	/*
+	 * The recursion counters of §5.4, one per call-graph component.
+	 * They live here rather than in the program because they belong to
+	 * an invocation: a fault that unwinds cannot leave one wrong, and
+	 * a `const` program stays const.
+	 */
+	unsigned counters[MCUSCRIPT_MAX_FUNCTIONS];
+	memset(counters, 0, sizeof counters);
 
 	/*
 	 * A local that has not been written reads as `unavailable`, never
@@ -80,8 +104,14 @@ bool mcuscript_invoke(const mcuscript_program *program, int entry, mcuscript_slo
 
 	uint64_t *values = slots->values;
 	uint8_t *states = slots->states;
+	uint32_t base = 0;
 	uint32_t sp = fn->local_count;
 	uint32_t pc = fn->code_offset;
+
+	/* Being invoked is an entry into the component too, so an entry
+	 * point inside a cycle occupies the first of its cap. */
+	if (program->component_cap[program->component[current]] != 0)
+		counters[program->component[current]] = 1;
 
 #define PUSH(v, s)                       \
 	do {                             \
@@ -129,13 +159,13 @@ bool mcuscript_invoke(const mcuscript_program *program, int entry, mcuscript_slo
 			break;
 
 		case OP_LOAD_L: {
-			uint8_t local = OPERAND;
+			uint32_t local = base + OPERAND;
 			PUSH(values[local], states[local]);
 			pc += 2;
 			break;
 		}
 		case OP_STORE_L: {
-			uint8_t local = OPERAND;
+			uint32_t local = base + OPERAND;
 			sp--;
 			values[local] = values[sp];
 			states[local] = states[sp];
@@ -478,13 +508,71 @@ bool mcuscript_invoke(const mcuscript_program *program, int entry, mcuscript_slo
 			break;
 		}
 
+		case OP_CALL: {
+			uint8_t index = OPERAND;
+			const mcuscript_function *callee = &program->functions[index];
+			uint8_t component = program->component[index];
+			uint8_t cap = program->component_cap[component];
+			if (cap != 0 && ++counters[component] > (unsigned)cap)
+				FAULT(MCUSCRIPT_RECURSION_LIMIT);
+
+			frames[depth].return_pc = pc + 2;
+			frames[depth].base = base;
+			frames[depth].function = current;
+			depth++;
+
+			/*
+			 * The arguments are already where the callee's first
+			 * locals have to be — on top of the caller's stack, in
+			 * order (§5.3). So the frame simply *begins* there and
+			 * nothing is copied.
+			 */
+			base = sp - callee->param_count;
+			for (uint8_t i = callee->param_count; i < callee->local_count; i++) {
+				values[base + i] = 0;
+				states[base + i] = MCUSCRIPT_UNAVAILABLE;
+			}
+			sp = base + callee->local_count;
+			current = index;
+			fn = callee;
+			pc = callee->code_offset;
+			break;
+		}
+
 		case OP_RET:
-			return true;
-		case OP_RET_V:
-			if (result != NULL)
-				*result = slot_to_value(fn->return_type, values[sp - 1],
-							states[sp - 1]);
-			return true;
+		case OP_RET_V: {
+			uint64_t produced = 0;
+			uint8_t produced_state = MCUSCRIPT_UNAVAILABLE;
+			if (opcode == OP_RET_V) {
+				produced = values[sp - 1];
+				produced_state = states[sp - 1];
+			}
+			if (depth == 0) {
+				if (opcode == OP_RET_V && result != NULL)
+					*result = slot_to_value(fn->return_type, produced,
+								produced_state);
+				return true;
+			}
+			uint8_t component = program->component[current];
+			if (program->component_cap[component] != 0)
+				counters[component]--;
+
+			depth--;
+			/* Restoring the stack pointer to the callee's frame base
+			 * is what removes the arguments: they were the bottom of
+			 * that frame and the top of the caller's stack. */
+			sp = base;
+			base = frames[depth].base;
+			pc = frames[depth].return_pc;
+			current = frames[depth].function;
+			fn = &program->functions[current];
+			if (opcode == OP_RET_V) {
+				values[sp] = produced;
+				states[sp] = produced_state;
+				sp++;
+			}
+			break;
+		}
 
 		default:
 			/* Verification proved this cannot happen. */

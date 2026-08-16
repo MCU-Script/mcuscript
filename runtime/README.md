@@ -34,7 +34,10 @@ refusal, or true, and after that no name is looked at again.
 
 **Invoke an entry point.** `mcuscript_find_entry` by name,
 `mcuscript_invoke` with a slot buffer. One buffer serves the whole
-device: scripts run to completion and never nest.
+device: scripts run to completion and never nest, and the loader has
+already checked that the container's deepest call chain fits in it. An
+entry point takes no arguments — a script reads what triggered it from
+an entity, which is also where it can read it twice.
 
 [`tests/mcuscript_run.c`](tests/mcuscript_run.c) is a complete embedder
 in about 300 lines, and it is short enough to read as documentation.
@@ -45,7 +48,7 @@ in about 300 lines, and it is short enough to read as documentation.
   sizes its frame from numbers the container supplied, and this is where
   those numbers are recomputed.
 - **It does not implement every instruction group.** This build has
-  `core`, `i64` and `float`; a container needing `call` or `bits` is
+  `core`, `i64`, `float` and `call`; a container needing `bits` is
   refused at load, by name, before anything runs. That is the mechanism
   working, not a gap in it.
 - **It does not survive `-ffast-math`.** The header refuses to compile
@@ -58,12 +61,19 @@ in about 300 lines, and it is short enough to read as documentation.
 
 ## Two verifiers, on purpose
 
-The host toolchain has one too, and it uses a different algorithm: a
-worklist that can say which path produced a conflict, against this one's
-single forward pass in address order. The forward pass is possible only
-because backward jumps are rejected, and it is what keeps the device's
-memory bounded — it remembers a stack shape per outstanding forward
-branch, not per instruction.
+The host toolchain has one too, and everywhere the two do the same job
+they use a different method.
+
+For the type stack: a worklist that can say which path produced a
+conflict, against this one's single forward pass in address order. The
+forward pass is possible only because backward jumps are rejected, and
+it is what keeps the device's memory bounded — it remembers a stack
+shape per outstanding forward branch, not per instruction.
+
+For the call graph: Tarjan's algorithm, against this one's reachability
+matrix. Same reason. Tarjan needs a stack as deep as the graph; a matrix
+over at most `MCUSCRIPT_MAX_FUNCTIONS` functions is a handful of bytes
+and a triple loop.
 
 Two methods over one specification is worth more than two copies of one
 method. What binds them is a corpus of containers with expected
