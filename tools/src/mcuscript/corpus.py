@@ -471,8 +471,7 @@ def _cases() -> list[Case]:
         "unbalanced-return",
         "verification",
         "unbalanced_return",
-        "A function that returns nothing, returning with a value still "
-        "on the stack.",
+        "A function that returns nothing, returning with a value still on the stack.",
         _raw(b"\x04\x23", max_stack=1),
     )
     case(
@@ -488,8 +487,7 @@ def _cases() -> list[Case]:
         "call-depth-mismatch",
         "verification",
         "call_depth_mismatch",
-        "The recomputed worst-case frame count differs from the declared "
-        "one.",
+        "The recomputed worst-case frame count differs from the declared one.",
         _raw(
             b"\x80\x01\x23\x23",
             functions=[
@@ -536,9 +534,7 @@ def _cases() -> list[Case]:
         "registry is consulted.",
         _raw(
             b"\x08\x00\x0b\x23",
-            imports=(
-                Import("clamp", ImportKind.FUNCTION, Access.NONE, ValType.I32),
-            ),
+            imports=(Import("clamp", ImportKind.FUNCTION, Access.NONE, ValType.I32),),
             max_stack=1,
         ),
     )
@@ -546,13 +542,10 @@ def _cases() -> list[Case]:
         "access-denied",
         "verification",
         "access_denied",
-        "store.h targets an entity the container itself declares "
-        "read-only.",
+        "store.h targets an entity the container itself declares read-only.",
         _raw(
             b"\x01\x01\x09\x00\x23",
-            imports=(
-                Import("temp", ImportKind.ENTITY, Access.READ, ValType.I32, 1),
-            ),
+            imports=(Import("temp", ImportKind.ENTITY, Access.READ, ValType.I32, 1),),
             max_stack=1,
         ),
     )
@@ -596,9 +589,7 @@ def _cases() -> list[Case]:
         "linking",
         "import_type_mismatch",
         "The container declares i32 and the registry offers i64.",
-        _asm(
-            ".entity read i32 temp dim 1\n.entry go -> i32\n  load.h temp\n  ret_v\n"
-        ),
+        _asm(".entity read i32 temp dim 1\n.entry go -> i32\n  load.h temp\n  ret_v\n"),
         "entity read i64 temp dim 1 = 5\n",
     )
     case(
@@ -609,9 +600,7 @@ def _cases() -> list[Case]:
         "compiled against a different world and its numbers would be "
         "wrong by a scale factor. The header catches a wholesale profile "
         "change; this catches the one entity that moved (§4.4).",
-        _asm(
-            ".entity read i32 temp dim 1\n.entry go -> i32\n  load.h temp\n  ret_v\n"
-        ),
+        _asm(".entity read i32 temp dim 1\n.entry go -> i32\n  load.h temp\n  ret_v\n"),
         "entity read i32 temp dim 9 = 5\n",
     )
     case(

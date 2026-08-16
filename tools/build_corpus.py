@@ -19,7 +19,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent / "src"))
 
-from mcuscript import corpus  # noqa: E402
+from mcuscript import corpus
 
 if __name__ == "__main__":
     directory = Path(__file__).resolve().parents[1] / "spec" / "corpus"
