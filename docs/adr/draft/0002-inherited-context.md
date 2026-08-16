@@ -734,10 +734,10 @@ And the methods for getting the view rather than guessing it:
 
 ### 2.10 Prior art as surveyed in the conversation
 
-**On the table**, and explicitly *not re-verified here* — these are the
-conversation's characterizations, recorded so the survey is not
-repeated from zero. Anything acted on should be checked against the
-projects' current state first.
+**On the table.** These are the conversation's characterizations. They
+were spot-checked against the projects on 2026-08-16 and mostly hold;
+where the check disagreed or added something, it is noted in the table
+and below it.
 
 | Project | As characterized |
 |---|---|
@@ -757,6 +757,92 @@ project**, and the pragmatic path is not to start from zero but to
 borrow deliberately: Toit's VM and OTA architecture, Nelua's C codegen
 approach, Pawn's proof of how small a static VM can be, Berry's binding
 model from the Tasmota deployment.
+
+**What the spot-check found (2026-08-16).** Toit's garbage collection,
+its ESP-IDF coupling and the sub-two-second live reload hold; Berry's
+MIT license, dynamic typing and *"interpreter-core's code size is less
+than 40KiB […] on less than 4KiB heap"* hold; Nelua is confirmed
+statically typed, compiling to C, no VM, and **alpha**; Pawn's 4/8-byte
+cells hold and it still has an IA-32 JIT; Wren's last release is 0.4.0,
+April 2021; Pane & Myers and Quorum are real, and the
+event-condition-action finding is theirs.
+
+Three near-misses the conversation did not name, and they matter
+because they narrow the claimed gap:
+
+| Project | Why it is closer than anything in the table above |
+|---|---|
+| **Cyber** | The closest existing combination found: a bytecode VM *and* a C output path. Fails on audience and on being designed for embedding at this size, not on the two-backend idea |
+| **WAMR + wasm2c** | Technically *does* have both backends from one artifact — but the artifact is WebAssembly, which is a compilation target, not something a non-developer writes |
+| **PikaPython** | A Python-like VM running on 64 KB flash / 8 KB RAM, so the footprint end of the claim is less exotic than it sounds. No transpile path |
+
+And the honest status of the central claim: the survey **could not find**
+a project combining all four properties, which is not the same as
+proving none exists. Recorded as *unverifiable*, not as *confirmed*.
+
+### 2.11 Gaps already visible in the sketch
+
+Not from the conversation — this is what a review of §2.7 and §2.8
+against real binary formats (WebAssembly, the JVM class file, ELF, eBPF)
+turned up on 2026-08-16. It is recorded here because the product owner
+chose the container as the starting point (§2.2f), and these are the
+things that would otherwise be discovered by writing them wrong first.
+
+1. **No endianness declaration.** ELF puts byte order in
+   `e_ident[EI_DATA]`; the JVM fixes big-endian by fiat. The sketch does
+   neither, and its whole point is that bytecode compiled on a
+   workstation runs on an ARM device.
+2. **No alignment rule.** Variable-length instructions leave multi-byte
+   operands at arbitrary offsets. Unaligned access is undefined
+   behaviour in C and a fault on some targets — for untrusted input,
+   that is a denial of service.
+3. **No total length in the header.** Every section states its own
+   length and nothing states the file's, so a truncated container is
+   only detectable by arithmetic that a hostile file controls.
+4. **CRC32 is integrity, not authenticity.** §1.6 requires an
+   authenticated channel, and §1.10 records that MCUboot's signature is
+   the only payload trust anchor in the existing path — which a script
+   push deliberately bypasses. A checksum catches a flipped bit, not an
+   attacker.
+5. **"Unknown sections are skipped" has no must-understand flag.**
+   WebAssembly separates custom sections (skippable) from defined ones;
+   ELF is built for it. Without that split, a v1.1 compiler emitting a
+   section a v1.0 VM does not know produces a *silently partial* run
+   rather than a refusal — the failure mode the extension path was
+   supposed to prevent.
+6. **Verification is described as optional, and the VM trusts the
+   ENTRY section's stack depth.** Untrusted bytecode plus trusted
+   metadata is the classic verifier bypass: a container claiming depth
+   2 while needing 20 overflows a statically allocated stack into
+   whatever is next to it. The JVM makes verification mandatory for
+   exactly this reason. If the VM allocates from a number in the file,
+   recomputing that number cannot be a build option.
+7. **A 64-bit time base does not fit a 32-bit cell.** §2.6 gives the
+   time base as `int32` milliseconds in one place and `int64` in
+   another; §2.7 says stack cells are 32 bits and every opcode pushes
+   at most one result. Those three statements cannot all hold. `int32`
+   milliseconds overflow after ~24.9 days, which a device that runs for
+   years cannot use; `int64` means either two-cell values — which
+   changes the stack-effect arithmetic the verifier and the compiler
+   both depend on — or a wider cell. Seconds as `int32` would last 68
+   years and sidestep it entirely. This is the first thing the spec has
+   to answer.
+8. **The HOST table's failure modes are unnamed.** Name not in the
+   registry, type mismatch, dimension mismatch, duplicate name, a write
+   to a read-only entity, an opcode from a group this build did not
+   link — the JVM and WebAssembly both enumerate their linking errors
+   exhaustively, and diagnostics for non-developers (§2.9) are
+   impossible without that list.
+9. **Nothing records which opcode groups a container needs.** With
+   groups selected per Kconfig (§2.7), a device that linked no float
+   support must reject float bytecode at load time. It can only do that
+   if the requirement is written in the header.
+10. **Budget exhaustion has the same rollback hole §2.8 objects to.**
+    The argument against heap frames is that a half-run script that
+    already wrote two entities cannot be undone. An instruction budget
+    that fires mid-script does exactly the same thing. Either writes
+    are buffered to a commit point, or scripts are documented as
+    non-atomic — but it has to be one of them, on purpose.
 
 ---
 
@@ -793,31 +879,42 @@ The mapping that actually holds:
 
 ### 3.2 Where they disagree
 
-Four real disagreements, none fatal, all needing a decision:
+A review of the two sources against each other on 2026-08-16 found
+**two** real disagreements. Two more that look like disagreements
+dissolve on inspection, and they are recorded as such so nobody
+re-opens them.
+
+Real:
 
 1. **The ternary operator.** §1.2 names *"the ternary conditional"* as
    in-scope for tier 2 and its worked example uses `? :`. §2.5 argues
    explicitly against a separate `? :` — an if-expression is the same
    thing, and two spellings confuse the audience. Both cannot survive.
-2. **Where variables live.** §1.2 says an expression has *"no state"*
-   and that *everything stateful* lives in tier 1 with C-owned state —
-   yet it also lists "variables" as in tier-2 scope. §2.4 puts
-   variables in Level 1. The reconciliation is probably that §10's
-   "variables" means named sub-expressions rather than assignable
-   storage, but the documents do not say so, and a language cannot be
-   specified on a probably.
-3. **Generated C control flow.** §1.8 says automations compile to a
-   static table read by a small interpreter, *"no generated C control
-   flow"*. §2.7's C backend generates exactly that. They are about
-   different mechanisms — the declarative automation table versus the
-   script transpiler — but a device could end up carrying both, and
-   nothing says which one owns a given piece of logic.
-4. **Sequencing.** §1.4 says the tier-2 expression engine is built
+   The functionality is not in question, only the spelling.
+2. **Sequencing.** §1.4 says the tier-2 expression engine is built
    inside MCUHome first *"so it can be promoted into the standalone
    project rather than rewritten"*. §2.2d/f start the standalone
    project first, with the spec. The conversation's order won by
    default; it should be said out loud rather than left as a
    contradiction between two documents.
+
+Apparent, and resolved:
+
+3. **Where variables live.** §1.2 says an expression has *"no state"*
+   and that *everything stateful* lives in tier 1 with C-owned state;
+   §2.4 puts variables in Level 1. Different meanings of "state": tier
+   1 owns state that **survives between invocations** (the window of a
+   moving average), Level 1's variables are **scratch within one run**,
+   discarded at `RET`. Both statements hold. What the documents do not
+   yet say is whether a script may have persistent state of its own —
+   and the answer implied by §1.2 is no.
+4. **Generated C control flow.** §1.8 says automations compile to a
+   static table read by a small interpreter, *"no generated C control
+   flow"*; §2.7's C backend generates exactly that. Two different
+   mechanisms under tier 3: the declarative `automations:` table, and
+   the script transpiler. Neither forbids the other. What remains open
+   is not a conflict but an allocation — which of the two owns a given
+   piece of user logic, and whether a device may carry both.
 
 One near-disagreement that turns out to be a **precision**: §1.6 says
 *"scripts work in user units"* with conversion in the C binding; §2.6
@@ -838,26 +935,59 @@ The honest reading, and the one this repository adopts:
   The product owner has committed enough to name the project, found an
   organization and choose a starting point. Pretending that is still
   open would be dishonest.
-- **The measurement is still owed, and it is owed for a different
-  reason than §10 imagined.** §10 expected a footprint comparison —
-  can Berry fit? The conversation supplies a much stronger argument
-  that is not about footprint at all: requirement 2 (transpile to C) is
-  incompatible with a dynamically typed engine, and Berry, Lua and
-  MicroPython are all dynamically typed. If that argument holds, no
-  measurement of Berry's flash usage could change the outcome, because
-  Berry fails on a requirement rather than on a number.
-- **So the measurement that is actually owed is of the argument, not
-  of Berry.** What must be demonstrated is that the two-backend
-  architecture works: one source, a VM and generated C, bit-identical
-  results. That is exactly the MVP proposed in §2.3 and not taken in
-  §2.2f. Whatever is measured first, the automation-phase ADR §1.3
-  calls for still has to be written, and it should record this
-  reasoning rather than a Berry benchmark.
-- **Berry remains the recorded fallback** (§1.3), and the argument
-  against it should be tested before it is treated as settled — a
-  hybrid where Berry serves the script tier and MCUHome owns only the
-  expression tier is not a novel idea, it is what §1.2 already
-  describes.
+- **The reason has moved, and it is weaker than it looks.** §10
+  expected a footprint comparison — can Berry fit? The conversation
+  supplies a different argument, not about footprint at all:
+  requirement 2 (transpile to C) is said to be incompatible with a
+  dynamically typed engine, and Berry, Lua and MicroPython are all
+  dynamically typed. If that held absolutely, no measurement of Berry's
+  flash usage could change the outcome, because Berry would fail on a
+  requirement rather than on a number.
+
+  **It does not hold absolutely.** An adversarial check of the argument
+  on 2026-08-16 found it overstated in three places, and the honest
+  version is narrower:
+
+  - What makes generated C efficient is **type inference**, not a
+    typed-by-default surface language. Cython is the demonstration in
+    both directions: the same source compiles to slow C when the types
+    are unknown and to fast C when they are known, and the knowing can
+    come from inference. RPython's toolchain infers static types out of
+    unannotated code. So "dynamic language" does not imply "bad C" —
+    *unanalyzable* code implies bad C, and a dynamic language can be
+    restricted until it is analyzable.
+  - **Bit-identical results across two backends are hard regardless of
+    typing.** Float behaviour depends on compiler flags, intermediate
+    precision and hardware, not on whether the source language had
+    types. Static typing does not deliver §2.3's invariant; disciplined
+    backend design does.
+  - **No recursion** (§2.8) is a sound constraint, but it is not an
+    argument for a new language — MISRA C forbids recursion outright,
+    and Berry or Lua could be restricted the same way.
+
+  What survives is real but smaller: a statically typed language makes
+  the analyzable subset the *default* rather than something the user
+  must stay inside, and it is what allows the compiler to compute stack
+  depth, reject cycles and check units at compile time. That is a good
+  argument. It is not a proof that adoption is impossible.
+- **The hybrid was never actually rejected.** §1.2 already says the
+  expression tier is small enough for MCUHome to own. Adopt Berry for
+  the script tier, own a statically typed expression tier, transpile
+  only that — most of §2.1's requirement 3 (formulas are the common
+  case) says this covers most scripts. The conversation moved past this
+  without costing it, and nobody has costed it since. Note the
+  conversation's own estimate cuts both ways: if compiler and VM are
+  only 20 % of the work and the other 80 % is bindings, tooling,
+  diagnostics and documentation, then adoption saves 20 % and both
+  paths owe the rest.
+- **So what is owed is a proof of the architecture, not a benchmark of
+  Berry.** One source, a VM and generated C, bit-identical results on a
+  real corpus. That is exactly the MVP proposed in §2.3 and not taken
+  in §2.2f. The automation-phase ADR that §1.3 calls for still has to
+  be written, and it should record this reasoning — including the
+  hybrid it rejects and why — rather than a flash-size table.
+- **Berry remains the recorded fallback** (§1.3), and after this check
+  it is a more serious one than it looked an hour earlier.
 
 ---
 
@@ -903,9 +1033,14 @@ are invisible from inside MCUHome and would be discovered late.
    surfaces and both need a home.
 8. **The reserved script region gets a real format.** ADR 0015 reserved
    it with size zero and said the format is decided in the scripting
-   phase (§1.10); §2.7 is the first sketch, and the two documents will
-   have to agree on framing, alignment and whether the region holds one
-   container or several.
+   phase (§1.10); §2.7 is the first sketch, §2.11 lists what it is
+   still missing, and the two documents will have to agree on framing,
+   alignment and whether the region holds one container or several.
+9. **MCUScript becomes a pinned dependency.** §1.4's charter says
+   MCUHome pins an engine release the way it pins Zephyr and the Matter
+   SDK — which in practice means an entry in the west manifest and in
+   the build container, plus the compiler reaching the builder. Neither
+   `west.yml` nor the container definition knows this project exists.
 
 ---
 
@@ -986,7 +1121,15 @@ were added on 2026-08-16.
 | 14 | Execution-budget semantics: what happens when a script is cut off after it has already written entities. The same "there is no rollback" objection raised against heap frames applies here | §2.4, §2.8 |
 | 15 | Whether the language exposes `unavailable` as a value, a skip semantics, or both | §2.9 |
 | 16 | How the non-developer validation actually gets done, given that the product owner has said he cannot judge it himself | §2.2g, §2.9 |
-| 17 | The prior-art survey of §2.10 is unverified, and so are the name/domain availability checks (ADR 0003) | §2.10 |
+| 17 | Endianness, alignment, total length, must-understand sections, opcode-group declaration — the container gaps of §2.11, all of which must be answered by the first spec | §2.11 |
+| 18 | Whether load-time verification is mandatory. If the VM allocates a stack from a number in an untrusted file, it cannot be a build option | §2.11 |
+| 19 | Authenticity of pushed bytecode: channel-level, a signature in the container, or both. CRC32 answers neither | §2.11, §4 |
+| 20 | Script atomicity: buffered writes with a commit point, or documented non-atomicity | §2.11 |
+| 21 | Whether a script may hold state that survives an invocation. §1.2 implies not; nothing says it | §3.2 |
+| 22 | Which of `automations:` and scripts owns a given piece of user logic, and whether a device may carry both | §3.2 |
+| 23 | The hybrid — adopt for the script tier, own the expression tier — has never been costed against building everything | §3.3 |
+| 24 | "Static inference is more pleasant for non-developers" is unevidenced, and sits oddly beside Pane & Myers, who found laypeople think in events and sets rather than in types | §2.3, §2.9 |
+| 25 | The "90 % of scripts are formulas" figure has no source. It decides how much of the language most users ever meet | §2.4 |
 
 ## Consequences
 

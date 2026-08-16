@@ -128,11 +128,20 @@ MCUHome.
   for others, with the VM as a Zephyr module the first sensible split
   once it is stable. The product owner has not answered this, so
   nothing here is decided beyond the one repository that exists.
-- **Open — verification of the name.** Collision checks on GitHub,
-  PyPI/crates.io and as a domain, and a searchability check, were
-  recommended in the same conversation and have not been carried out.
-  The name is decided; whether it is *available* everywhere the project
-  will want it is unverified.
-- **Open — the docs domain.** MCUHome publishes under `mcuhome.org`;
-  a project in its own organization needs its own, and none is
-  registered.
+- The name survives the collision check the conversation recommended
+  and never performed (carried out 2026-08-16): **the namespace is
+  clear.** Verified by direct lookup — no `mcuscript` or
+  `mcuscript-lang` organization, user or repository on GitHub, and both
+  names 404 on PyPI and npm. Verified by search only, so weaker: no
+  crate of either name on crates.io; no MCU vendor ships anything
+  branded "MCU Script" (the
+  scripting features in MCUXpresso, STM32CubeProgrammer, MPLAB and the
+  Renesas and Silicon Labs tools are automation surfaces, not named
+  languages); and `.mcs` is associated with old Mathcad images and
+  Intel MCS-86 hex objects, not with any live language. The nearest
+  neighbour is `mcscript`, a Minecraft datapack compiler — one letter
+  away, but a different audience, and dormant.
+- **Open — the domain.** MCUHome publishes under `mcuhome.org`; a
+  project in its own organization needs its own, and none is
+  registered. Availability of `mcuscript.org`/`.dev`/`.io` could not be
+  established by search and needs a real WHOIS lookup.

@@ -5,14 +5,17 @@
 # repository has no project file — the implementation language is
 # undecided — so the configuration lives in its own file.
 #
-# There is no ignore-words list on purpose. The design conversation this
-# project inherits was German, and the first draft of the ADRs quoted it
-# verbatim, which meant teaching the spellchecker to ignore German words
-# that are also plausible English typos ("ist", "oder"). The quotes are
-# translated instead; one German sentence remains, and it does not trip
-# anything.
+# The ignore list is kept to real vocabulary. The design conversation
+# this project inherits was German, and the first draft of the ADRs
+# quoted it verbatim, which would have meant teaching the spellchecker
+# to ignore German words that are also plausible English typos ("ist",
+# "oder"). The quotes are translated instead; one German sentence
+# remains, and it trips nothing.
 
 [codespell]
+# Rust's word for a package. Reading it as "create" is the one false
+# positive this repository produces.
+ignore-words-list = crate
 # The Contributor Covenant 3.0, reproduced verbatim. Its wording is the
 # licensed text (CC-BY-SA-4.0, see REUSE.toml) — "correcting" it would
 # make the file no longer the Covenant. Both spellings of the path:
