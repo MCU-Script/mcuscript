@@ -702,14 +702,25 @@ would become spaghetti with stack simulation.
   number, and a runaway script is a compile-time or load-time refusal
   rather than a dead device — while not forbidding a construct users
   may reasonably reach for.
-- What the decision does not yet settle, and the spec must: the exact
-  cap and whether it is fixed by the language or declarable per
-  function; whether the cap counts **self-calls only** or any cycle in
-  the call graph, since mutual recursion (`a` → `b` → `a`) has the same
-  stack cost and would otherwise slip through; how the C backend
-  enforces it, given that C has no recursion counter of its own; and
-  what happens when the cap is hit at runtime — refusal, clamp, or
-  script abort with the §2.11 rollback question attached.
+- **Decided with it (product owner, 2026-08-16): a language default,
+  overridable per function.** The default keeps the common case free of
+  ceremony; a function that genuinely needs more says so at its own
+  declaration, which also makes the cost visible where it is incurred.
+  A per-function override is what keeps the worst case computable —
+  the number is in the source, so the compiler can multiply it by the
+  frame size without guessing.
+- **Decided with it: the cap counts every cycle in the call graph, not
+  just self-calls.** Two functions that call each other blow the same
+  stack as one that calls itself; a self-call-only rule would let
+  exactly that through. So the compiler finds strongly connected
+  components in the call graph and applies the cap to the cycle, not to
+  the function.
+- What the decision does not yet settle, and the spec must: the actual
+  default number; how the C backend enforces the cap, given that C has
+  no recursion counter of its own and the transpiled functions are
+  ordinary C functions on a fixed Zephyr thread stack; and what happens
+  when the cap is reached at runtime — refusal before the call, or an
+  aborted script with the §2.11 rollback question attached.
 
 ### 2.9 On the table: designing for non-developers, and how to validate it
 
@@ -738,11 +749,21 @@ come from how non-developers actually think:
   both into one `null` is what makes template languages fragile: the
   user cannot write different handling for "not yet" and "broken"
   because the language does not distinguish them.
-  Still to define: whether `invalid` propagates through arithmetic the
-  way NaN does or stops the expression; whether `else` catches both or
-  only `unavailable`; how each maps onto the embedder's own notion of
-  a faulted reading; and what the two become when a value crosses into
-  the C backend, where neither has a natural representation.
+  **Direction (product owner, 2026-08-16): `invalid` behaves like
+  NaN** — it propagates through arithmetic rather than stopping the
+  expression, so a computation touched by a faulted reading yields
+  `invalid` rather than a plausible-looking number. That is the right
+  instinct and it is exactly how IEEE-754 handles the analogous case
+  for floats.
+  What it does not yet answer, and what the spec must: **integers have
+  no NaN.** A propagating `invalid` over integer arithmetic needs a
+  mechanism — a reserved sentinel value (which collides with real
+  data), a validity bit shadowing every value (which widens the stack),
+  or a per-evaluation flag (which loses which operand was bad). Also
+  open: whether `else` catches both kinds or only `unavailable`; what
+  `invalid > 5` evaluates to, given that three-valued logic has a long
+  record of confusing people; and what both become when a value crosses
+  into the C backend, where neither has a natural representation.
 - **No silent wrong behaviour**: `=` versus `==` (forbid assignment
   where a condition is expected, with an explaining compile error);
   integer division (`3 / 2 = 1` is simply wrong to a layman — make `/`
@@ -1185,8 +1206,8 @@ still open, renumbered.
 | 10 | The host compiler's implementation language. A compiler that only Python embedders can run is a different product from one anybody can | §1.4 |
 | 11 | Whether the first artifact is the spec (the product owner's choice) or the expression-level end-to-end MVP (the advice), and what a spec is worth before either backend exists | §2.2f, §2.3 |
 | 12 | Execution-budget semantics: what happens when a script is cut off after it has already written entities | §2.4, §2.8, §2.11 |
-| 13 | `unavailable` and `invalid` are decided as two concepts; their semantics are not — propagation, what `else` catches, and what each becomes in the C backend | §2.9 |
-| 14 | Recursion is capped, but the cap is not fixed: the exact number, self-calls versus any call-graph cycle, how the C backend enforces it, and what happens when it is hit | §2.8 |
+| 13 | `invalid` propagates like NaN — but integers have no NaN, so the mechanism is open: sentinel value, validity bit, or per-evaluation flag. Plus what `else` catches, and what `invalid > 5` evaluates to | §2.9 |
+| 14 | The recursion cap's default number, how the C backend enforces it on an ordinary thread stack, and what happens when it is reached | §2.8 |
 | 15 | How the non-developer validation actually gets done, given that the product owner has said he cannot judge it himself | §2.2g, §2.9 |
 | 16 | Endianness, alignment, total length, must-understand sections, opcode-group declaration — the container gaps of §2.11, all of which the first spec must answer | §2.11 |
 | 17 | Whether load-time verification is mandatory. If the VM sizes its stack from a number in an untrusted file, it cannot be a build option | §2.11 |
