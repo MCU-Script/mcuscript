@@ -916,6 +916,97 @@ things that would otherwise be discovered by writing them wrong first.
     are buffered to a commit point, or scripts are documented as
     non-atomic — but it has to be one of them, on purpose.
 
+### 2.12 Proposed answers to §2.11 — researched, not yet signed off
+
+A research round on 2026-08-16 worked through the gaps above against
+WebAssembly, the JVM, ELF, PNG, eBPF, MCUboot/SUIT and IEC 61131-3, and
+each recommendation was then attacked by a separate reviewer. What
+follows is **the proposal, not the decision** — it moves to *decided*
+only when the product owner signs it off, and three items are questions
+for him rather than engineering calls.
+
+**The value model — uniform 8-byte stack slots.** The forcing argument
+is not the one the research found. Scripts are event-driven and run to
+completion without re-entrancy, so the device needs **one** interpreter
+stack, sized to the static maximum over all scripts — not one per
+script. The difference between 4-byte and 8-byte slots is therefore
+something like 64 bytes on the whole device, not per script, and it buys
+away the JVM's entire category-2 apparatus: no two-slot values, no
+`dup2`/`pop2` family, no "is this slot the high half of something"
+bookkeeping in the verifier, and the "pops n, pushes at most one"
+invariant survives literally. eBPF makes the same choice for the same
+reason. int64 milliseconds (§2.6) then fits a slot with nothing special
+about it.
+
+**Typing is validated at load, not tagged at runtime.** Slots carry no
+type tag; the verifier walks the code with a type stack and rejects
+bytecode that would add an i32 to an f32 — WebAssembly's model. This is
+not extra work: R5 (untrusted bytecode) and R6 (static typing) require a
+type-checking verifier anyway, and once it exists the runtime needs no
+tags at all.
+
+**Opcodes stay per-type, against the research's recommendation.** It
+proposed one opcode family plus a type byte. Rejected on two counts:
+a type immediate costs a byte on every instruction, which is exactly
+where a formula's density lives; and it defeats §2.4's droppable
+groups, because float handling would then sit inside every arithmetic
+handler's switch instead of in an opcode range the linker can remove
+whole. With a deliberately small type set the count stays modest —
+roughly seventy opcodes, in JVM/WebAssembly territory at a fraction of
+their type sets.
+
+**Byte-granular slots and an overflow flag: both rejected.** Cell
+granularity and opcode count are independent — an addition is one
+opcode whether the stack is an array of cells or an array of bytes, so
+byte granularity buys nothing and costs unaligned access, which faults
+outright on Cortex-M0+. A carry/overflow flag is worse: it is VM state
+that portable C cannot reproduce, so it would break R2 by construction.
+Overflow, if it needs to be observable, is a checked *operation*
+yielding `invalid`, which both backends can implement identically.
+
+**Narrow targets are not a constituency.** Zephyr 4.4.0's `arch/`
+directory contains arc, arm, arm64, mips, openrisc, posix, riscv, rx,
+sparc, x86 and xtensa — verified in the pinned checkout. There is no
+8-bit or 16-bit target, so nothing in the first embedder's world would
+benefit from narrowing, and parameterising the slot width per target
+would make the same bytecode behave differently on two devices, which
+defeats R1 and R2 at once.
+
+**The container**, gap by gap: little-endian fixed with no header field
+for it (WebAssembly's choice; every plausible target is little-endian);
+sections 4-byte aligned with explicitly byte-wise header reads, so
+Cortex-M0+ never faults; a total-length field in the header, so
+truncation is detectable without trusting section lengths; PNG's
+critical-bit convention on the section identifier, so a section a reader
+does not know is either safely skippable or a hard refusal and never
+silently ignored; **verification mandatory and never a build option**,
+recomputing the stack depth rather than trusting the ENTRY section;
+required opcode groups declared as a bitmask in the header so a build
+without float refuses at load instead of misbehaving; and the eight
+HOST linking failures named individually as load-time errors, modelled
+on the JVM's linking-error hierarchy.
+
+**Execution budget: the PLC scan cycle, not an instruction counter.**
+Writes go to a staging buffer and commit atomically at `RET`, which is
+how IEC 61131-3 has run industrial plants for forty years, and it closes
+gap 10 exactly: a script cut short leaves the device consistent because
+it leaves it unchanged. It also removes the reason for a per-opcode
+counter — with loops bounded (§2.4) and recursion capped (§2.8),
+termination is provable at load time, the way eBPF does it, so the
+runtime counts nothing and the C backend has nothing awkward to
+reproduce.
+
+**Float is the one that does not resolve cleanly.** Integer semantics
+pin down without difficulty — wrapping defined explicitly, division and
+modulo by zero yielding `invalid`, shift counts and negative shifts
+specified rather than left to C. Float does not: bit-identity depends on
+`-ffp-contract`, `-ffast-math` and denormal handling, and those belong
+to the *embedder's* build, not to this project. Measured locally on
+GCC 16.1.1: `a*b+c` contracts to a single FMA under `-std=gnu11` and
+does not under `-std=c11` — the same compiler, the same source, two
+different results, decided by a flag nobody thinks about. Options are
+in §8 and one of them is a product decision, not an engineering one.
+
 ---
 
 ## 3. Reading the two sources together
