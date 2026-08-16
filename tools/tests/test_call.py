@@ -420,9 +420,9 @@ def test_an_entry_point_may_recurse_into_itself(vm, cc, tmp_path):
     # `start` is read afresh in every frame, so a positive one recurses
     # until the cap: the entry occupies the first of three.
     assert "result i32 0" in program.agree("entity read i32 start = 0\n").output
-    assert "fault recursion_limit" in program.agree(
-        "entity read i32 start = 1\n"
-    ).output
+    assert (
+        "fault recursion_limit" in program.agree("entity read i32 start = 1\n").output
+    )
 
 
 def test_the_generated_counter_is_balanced_after_a_fault(vm, cc, tmp_path):

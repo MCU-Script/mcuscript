@@ -1328,6 +1328,11 @@ backend, the execution budget, read-back of a script's own writes,
 whether a script may hold state between invocations, and the
 spec-versus-prototype sequencing.
 
+One more went the same way once there was something to measure: the
+float build flags. `-ffp-contract=off`, never `-ffast-math`, and the
+harness pins host precision by compiling one program both ways and
+asserting the results come apart (ADR 0004 §4.5, spec §1.5).
+
 The **C API toward embedders**, which this list called its largest open
 item, is gone too — not decided in the abstract but settled by having
 been written (ADR 0004, `runtime/include/mcuscript.h`). An embedder
@@ -1338,10 +1343,9 @@ before writing the VM would have been guessing. What is left:
 |---|---|---|
 | 1 | No flash/RAM budget has ever been measured for the engine on any target. The 1–2 KB figure for an expression-only VM is an estimate and always was | §1.3, §2.7 |
 | 3 | The grammar. The specification deliberately does not cover syntax, and the ternary conflict of §3.2 is still unresolved | §2.5, §3.2 |
-| 4 | The recursion cap's default number. The mechanism is specified (spec §5.4); the number is not | §2.8 |
+| 4 | The recursion cap's **default** is provisionally **5** (product owner, 2026-08-16), and provisionally is the whole answer: the mechanism is specified and enforced (spec §5.4, ADR 0004 §4.7), but which number annoys the fewest authors is a thing real use decides. Nothing depends on it yet — a container declares its cap and the assembler requires one, so the default exists only for a compiler that does not | §2.8 |
 | 5 | The counted-loop construct, reserved as a group but undesigned — and it must keep termination provable | spec §3.8 |
 | 6 | The percent base unit (0–100 / 0–255 / 0–1000). A profile question, but the first profile must answer it; Matter uses 0–254 for level and 0–10000 for percent100ths | §2.6 |
-| 7 | The exact compiler-flag list the specification names for float, and how the differential harness pins host precision | §2.12, spec §1.5 |
 | 8 | The host compiler's implementation language. A compiler only Python embedders can run is a different product from one anybody can | §1.4 |
 | 9 | How the non-developer validation actually gets done, given that the product owner has said he cannot judge it himself | §2.2g, §2.9 |
 | 10 | "Static inference is more pleasant for non-developers" is unevidenced, and sits oddly beside Pane & Myers, who found laypeople think in events and sets rather than in types | §2.3, §2.9 |
