@@ -5,8 +5,13 @@ add_executable(test_header test_header.c)
 target_link_libraries(test_header PRIVATE mcuscript)
 add_test(NAME header COMMAND test_header)
 
-# The reference embedder the Python test suite drives. Not a test in
-# itself: it is how the runtime becomes observable from outside, and the
-# C backend will be driven through the same output protocol.
+# The world a test describes in a file, and the output protocol both
+# backends answer in. Linked into the VM runner here, and compiled
+# alongside generated C by the differential harness.
+add_library(hostfile STATIC hostfile.c)
+target_link_libraries(hostfile PUBLIC mcuscript)
+target_include_directories(hostfile PUBLIC .)
+
+# The reference embedder the Python test suite drives.
 add_executable(mcuscript-run mcuscript_run.c)
-target_link_libraries(mcuscript-run PRIVATE mcuscript)
+target_link_libraries(mcuscript-run PRIVATE mcuscript hostfile)

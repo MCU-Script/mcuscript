@@ -27,6 +27,7 @@ should not have to reproduce a dependency tree first.
 mcuscript asm program.mcs-asm -o program.mcs   # text  → container
 mcuscript dis program.mcs                      # container → text
 mcuscript verify program.mcs                   # check it as a loader would
+mcuscript cc program.mcs -o program.c          # container → C, the second backend
 mcuscript info program.mcs                     # what is inside
 ```
 
@@ -46,6 +47,7 @@ built and tested against each other before anybody argues about how an
 | `container.py` | The binary format: header, sections, the three tables |
 | `verify.py` | The load-time verifier of spec §2.6 |
 | `asm.py` | Assembler and disassembler |
+| `cbackend.py` | The second backend: a container, lowered to plain C |
 | `cli.py` | The `mcuscript` command |
 
 ## Tests
@@ -58,3 +60,9 @@ Three of them are not tests of the code but of the **specification**:
 the opcode table, the refusal names and the fault names are compared
 against the specification's own tables, so a change to one that is not a
 change to the other fails the build.
+
+`test_differential.py` is the one that matters most. It runs the same
+container through the VM and through the compiled C output and asserts
+the two produce **byte-identical** output — not that each matches a
+written expectation, which would only test the expectation. It needs
+`cmake` and a C compiler and skips without them.

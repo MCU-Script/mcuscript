@@ -16,9 +16,10 @@ from pathlib import Path
 
 from . import SPEC_VERSION, __version__
 from .asm import AsmError, assemble, disassemble
+from .cbackend import UnsupportedProgram
 from .container import Container, ImportKind
 from .errors import Refused
-from .opcodes import IMPLEMENTED_GROUPS, ValType, group_names
+from .opcodes import IMPLEMENTED_GROUPS, Group, ValType, group_names
 from .verify import verify
 
 EXIT_OK = 0
@@ -51,6 +52,17 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("container", type=Path)
     p.set_defaults(run=_verify)
 
+    p = sub.add_parser("cc", help="lower a container to C")
+    p.add_argument("container", type=Path)
+    p.add_argument(
+        "-o",
+        "--output",
+        type=Path,
+        required=True,
+        help="the .c file to write; a .h beside it gets the declarations",
+    )
+    p.set_defaults(run=_cc)
+
     p = sub.add_parser("info", help="describe a container")
     p.add_argument("container", type=Path)
     p.set_defaults(run=_info)
@@ -64,6 +76,9 @@ def main(argv: list[str] | None = None) -> int:
     except Refused as error:
         print(f"refused: {error}", file=sys.stderr)
         return EXIT_REFUSED
+    except UnsupportedProgram as error:
+        print(f"cannot lower: {error}", file=sys.stderr)
+        return EXIT_USAGE
     except OSError as error:
         print(f"{error}", file=sys.stderr)
         return EXIT_USAGE
@@ -90,6 +105,25 @@ def _verify(args: argparse.Namespace) -> int:
             f"{name}: stack {fact.max_stack}, call depth {fact.max_call_depth}"
             + (f", recursion cap {fact.recursion_cap}" if fact.recursion_cap else "")
         )
+    return EXIT_OK
+
+
+def _cc(args: argparse.Namespace) -> int:
+    from .cbackend import generate, header
+
+    container = _load(args.container)
+    # The C backend consumes a *verified* container: it inherits the
+    # types and depths rather than recomputing them, so refusing here is
+    # not a courtesy, it is the precondition.
+    verify(container, implemented=frozenset(Group))
+    args.output.write_text(
+        generate(container, source=args.container.name), encoding="utf-8"
+    )
+    declarations = args.output.with_suffix(".h")
+    declarations.write_text(
+        header(container, source=args.container.name), encoding="utf-8"
+    )
+    print(f"{args.output}\n{declarations}")
     return EXIT_OK
 
 

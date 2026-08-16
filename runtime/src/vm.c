@@ -16,52 +16,8 @@
 
 #include "internal.h"
 #include "mcuscript.h"
+#include "mcuscript_ops.h"
 #include "opcodes.h"
-
-/* Validity propagates as the maximum of the operands' ordinals (§1.3):
- * a defect outranks a wait. Branchless on purpose — there is nothing
- * here for the two backends to get subtly different. */
-static inline uint8_t worse(uint8_t a, uint8_t b)
-{
-	return a > b ? a : b;
-}
-
-static inline int32_t as_i32(uint64_t slot)
-{
-	return (int32_t)(uint32_t)slot;
-}
-
-static inline uint64_t from_i32(int32_t value)
-{
-	return (uint64_t)(uint32_t)value;
-}
-
-/*
- * Signed overflow is undefined in C, so every wrapping operation is
- * computed in the unsigned type of the same width and converted back
- * (§1.5). This is not defensive style; it is the only way the VM and
- * the transpiled C can be made to agree, because the C compiler is
- * entitled to assume the undefined case never happens.
- */
-static inline int32_t wrap_add(int32_t a, int32_t b)
-{
-	return (int32_t)((uint32_t)a + (uint32_t)b);
-}
-
-static inline int32_t wrap_sub(int32_t a, int32_t b)
-{
-	return (int32_t)((uint32_t)a - (uint32_t)b);
-}
-
-static inline int32_t wrap_mul(int32_t a, int32_t b)
-{
-	return (int32_t)((uint32_t)a * (uint32_t)b);
-}
-
-static inline int32_t wrap_neg(int32_t a)
-{
-	return (int32_t)(0u - (uint32_t)a);
-}
 
 static mcuscript_value slot_to_value(uint8_t type, uint64_t raw, uint8_t state)
 {
@@ -69,7 +25,7 @@ static mcuscript_value slot_to_value(uint8_t type, uint64_t raw, uint8_t state)
 	value.as.i64 = 0;
 	switch (type) {
 	case MCUSCRIPT_I32:
-		value.as.i32 = as_i32(raw);
+		value.as.i32 = mcuscript_op_as_i32(raw);
 		break;
 	case MCUSCRIPT_BOOL:
 		value.as.boolean = raw != 0;
@@ -88,7 +44,7 @@ static uint64_t value_to_slot(uint8_t type, mcuscript_value value)
 {
 	switch (type) {
 	case MCUSCRIPT_I32:
-		return from_i32(value.as.i32);
+		return mcuscript_op_from_i32(value.as.i32);
 	case MCUSCRIPT_BOOL:
 		return value.as.boolean ? 1u : 0u;
 	default:
@@ -147,17 +103,17 @@ bool mcuscript_invoke(const mcuscript_program *program, int entry, mcuscript_slo
 
 		switch (opcode) {
 		case OP_CONST_I32_S8:
-			PUSH(from_i32((int8_t)OPERAND), MCUSCRIPT_VALID);
+			PUSH(mcuscript_op_from_i32((int8_t)OPERAND), MCUSCRIPT_VALID);
 			pc += 2;
 			break;
 		case OP_CONST_I32_S16:
-			PUSH(from_i32((int16_t)(uint16_t)(code[pc + 1] |
+			PUSH(mcuscript_op_from_i32((int16_t)(uint16_t)(code[pc + 1] |
 							  ((uint16_t)code[pc + 2] << 8))),
 			     MCUSCRIPT_VALID);
 			pc += 3;
 			break;
 		case OP_CONST_I32:
-			PUSH(from_i32(mcuscript_constant_i32(program, OPERAND)), MCUSCRIPT_VALID);
+			PUSH(mcuscript_op_from_i32(mcuscript_constant_i32(program, OPERAND)), MCUSCRIPT_VALID);
 			pc += 2;
 			break;
 		case OP_CONST_TRUE:
@@ -238,47 +194,33 @@ bool mcuscript_invoke(const mcuscript_program *program, int entry, mcuscript_slo
 		case OP_ADD_I32:
 		case OP_SUB_I32:
 		case OP_MUL_I32: {
-			int32_t b = as_i32(values[sp - 1]);
-			int32_t a = as_i32(values[sp - 2]);
-			int32_t out = (opcode == OP_ADD_I32)   ? wrap_add(a, b)
-				      : (opcode == OP_SUB_I32) ? wrap_sub(a, b)
-							       : wrap_mul(a, b);
+			int32_t b = mcuscript_op_as_i32(values[sp - 1]);
+			int32_t a = mcuscript_op_as_i32(values[sp - 2]);
+			int32_t out = (opcode == OP_ADD_I32)   ? mcuscript_op_add_i32(a, b)
+				      : (opcode == OP_SUB_I32) ? mcuscript_op_sub_i32(a, b)
+							       : mcuscript_op_mul_i32(a, b);
 			sp--;
-			values[sp - 1] = from_i32(out);
-			states[sp - 1] = worse(states[sp - 1], states[sp]);
+			values[sp - 1] = mcuscript_op_from_i32(out);
+			states[sp - 1] = mcuscript_op_worse(states[sp - 1], states[sp]);
 			pc += 1;
 			break;
 		}
 		case OP_DIV_I32:
 		case OP_REM_I32: {
-			int32_t b = as_i32(values[sp - 1]);
-			int32_t a = as_i32(values[sp - 2]);
-			uint8_t state = worse(states[sp - 2], states[sp - 1]);
-			int32_t out;
-			if (b == 0) {
-				/* A value the script can handle beats a dead
-				 * script: division by zero is overwhelmingly a
-				 * sensor that happened to read zero (§1.5). */
-				out = 0;
-				state = MCUSCRIPT_INVALID;
-			} else if (a == INT32_MIN && b == -1) {
-				/* The quotient is not representable, so it is
-				 * `invalid`; the remainder is defined and is
-				 * zero (§1.5). */
-				out = 0;
-				if (opcode == OP_DIV_I32)
-					state = MCUSCRIPT_INVALID;
-			} else {
-				out = (opcode == OP_DIV_I32) ? a / b : a % b;
-			}
+			int32_t b = mcuscript_op_as_i32(values[sp - 1]);
+			int32_t a = mcuscript_op_as_i32(values[sp - 2]);
+			uint8_t state = mcuscript_op_worse(states[sp - 2], states[sp - 1]);
+			int32_t out = (opcode == OP_DIV_I32)
+					      ? mcuscript_op_div_i32(a, b, &state)
+					      : mcuscript_op_rem_i32(a, b, &state);
 			sp--;
-			values[sp - 1] = from_i32(out);
+			values[sp - 1] = mcuscript_op_from_i32(out);
 			states[sp - 1] = state;
 			pc += 1;
 			break;
 		}
 		case OP_NEG_I32:
-			values[sp - 1] = from_i32(wrap_neg(as_i32(values[sp - 1])));
+			values[sp - 1] = mcuscript_op_from_i32(mcuscript_op_neg_i32(mcuscript_op_as_i32(values[sp - 1])));
 			pc += 1;
 			break;
 
@@ -288,8 +230,8 @@ bool mcuscript_invoke(const mcuscript_program *program, int entry, mcuscript_slo
 		case OP_LE_I32:
 		case OP_GT_I32:
 		case OP_GE_I32: {
-			int32_t b = as_i32(values[sp - 1]);
-			int32_t a = as_i32(values[sp - 2]);
+			int32_t b = mcuscript_op_as_i32(values[sp - 1]);
+			int32_t a = mcuscript_op_as_i32(values[sp - 2]);
 			bool out;
 			switch (opcode) {
 			case OP_EQ_I32:
@@ -313,7 +255,7 @@ bool mcuscript_invoke(const mcuscript_program *program, int entry, mcuscript_slo
 			}
 			sp--;
 			values[sp - 1] = out ? 1u : 0u;
-			states[sp - 1] = worse(states[sp - 1], states[sp]);
+			states[sp - 1] = mcuscript_op_worse(states[sp - 1], states[sp]);
 			pc += 1;
 			break;
 		}

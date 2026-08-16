@@ -1326,12 +1326,17 @@ verifier's duties, how a 64-bit value lives in the machine, the
 mechanism behind `invalid`, how the recursion cap is enforced in the C
 backend, the execution budget, read-back of a script's own writes,
 whether a script may hold state between invocations, and the
-spec-versus-prototype sequencing. What is left:
+spec-versus-prototype sequencing.
+
+The **C API toward embedders**, which this list called its largest open
+item, is gone too — not decided in the abstract but settled by having
+been written (ADR 0004, `runtime/include/mcuscript.h`). An embedder
+declares imports and three callbacks, loads, and invokes. Designing it
+before writing the VM would have been guessing. What is left:
 
 | # | Question | From |
 |---|---|---|
 | 1 | No flash/RAM budget has ever been measured for the engine on any target. The 1–2 KB figure for an expression-only VM is an estimate and always was | §1.3, §2.7 |
-| 2 | **The C API toward embedders** — now the largest open item. The specification says what a program is; nothing says how a host offers a registry, invokes an entry point or receives a fault | §1.4, §4 |
 | 3 | The grammar. The specification deliberately does not cover syntax, and the ternary conflict of §3.2 is still unresolved | §2.5, §3.2 |
 | 4 | The recursion cap's default number. The mechanism is specified (spec §5.4); the number is not | §2.8 |
 | 5 | The counted-loop construct, reserved as a group but undesigned — and it must keep termination provable | spec §3.8 |

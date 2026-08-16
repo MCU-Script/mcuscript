@@ -14,7 +14,7 @@ set(CMAKE_C_STANDARD 99)
 set(CMAKE_C_STANDARD_REQUIRED ON)
 set(CMAKE_C_EXTENSIONS OFF)
 
-add_library(mcuscript STATIC src/load.c src/vm.c)
+add_library(mcuscript STATIC src/load.c src/names.c src/vm.c)
 target_include_directories(mcuscript PUBLIC include PRIVATE src)
 
 # Warnings are errors. A runtime that runs on a device with no MMU does

@@ -150,8 +150,29 @@ def _code_regions(container: Container) -> list[tuple[int, int]]:
 # -- the type-stack walk --------------------------------------------------
 
 
+def stack_shapes(container: Container) -> dict[str, dict[int, Stack]]:
+    """The verified type stack entering every reachable instruction.
+
+    The C backend needs it: knowing the depth at each instruction is what
+    turns a stack machine into named local variables. It comes from the
+    verifier rather than from a second walk, because a second walk is a
+    second thing to be wrong.
+    """
+    regions = _code_regions(container)
+    out = {}
+    for index, fn in enumerate(container.functions):
+        shapes: dict[int, Stack] = {}
+        _walk(container, fn, index, regions[index], shapes)
+        out[fn.name] = shapes
+    return out
+
+
 def _walk(
-    container: Container, fn: Function, index: int, region: tuple[int, int]
+    container: Container,
+    fn: Function,
+    index: int,
+    region: tuple[int, int],
+    record: dict[int, Stack] | None = None,
 ) -> int:
     """Abstract-interpret one function; return the maximum stack depth.
 
@@ -184,6 +205,8 @@ def _walk(
                     )
                 break
             at[pc] = stack
+            if record is not None:
+                record[pc] = stack
 
             op = BY_CODE.get(code[pc])
             if op is None:

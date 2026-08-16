@@ -232,19 +232,30 @@ alone, because it depends on how the embedder's toolchain compiles the
 generated C. Two requirements therefore fall on a conforming C backend
 and on the build around it:
 
-1. **The generated C states its own requirement.** Every generated
-   translation unit begins with `#pragma STDC FP_CONTRACT OFF`, so that
-   `a*b + c` is two roundings and not a fused multiply-add. This is not
-   a courtesy: measured on GCC 16.1.1, that expression contracts to a
-   single FMA under `-std=gnu11` and does not under `-std=c11` — the
+1. **The generated C states its own requirement where it can.** Every
+   generated translation unit carries `#pragma STDC FP_CONTRACT OFF`, so
+   that `a*b + c` is two roundings and not a fused multiply-add. This is
+   not a courtesy: measured on GCC 16.1.1, that expression contracts to
+   a single FMA under `-std=gnu11` and does not under `-std=c11` — the
    same compiler and the same source, differing by a flag nobody thinks
    about.
+
+   **The pragma is not enough, because GCC does not implement it.** It
+   warns that the pragma is ignored and then contracts anyway. So the
+   generated source emits it only for compilers that honour it, and a
+   GCC build must pass **`-ffp-contract=off`**. A warning nobody can act
+   on trains people to ignore warnings, which is worse than the warning
+   is worth.
 2. **The specification names what must not be set.** `-ffast-math` and
    anything implying it, and any flag enabling flush-to-zero, are
    incompatible with a conforming build. An embedder that sets them has
    a non-conforming build, in the same way that an embedder that
    corrupts the container has a broken transport: the language states
    the semantics, and the build must honour them.
+
+Both requirements therefore land on the **build**, not only on the
+generated file, and a conforming C backend is one that ships with the
+flags it needs rather than one that hopes for them.
 
 The differential test suite runs every case through both backends, on
 the host and on real hardware, with the host forced to single precision
