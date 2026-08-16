@@ -398,16 +398,22 @@ def test_a_container_for_another_profile_is_refused(runner, tmp_path):
 
 
 def test_a_group_this_build_does_not_implement_is_refused(runner, tmp_path):
-    # `bits` is specified and neither backend implements it, which is
-    # what makes it the honest test of the group mechanism.
-    source = (
-        PROFILE
-        + ".entry go -> i32\n  const.i32.s8 6\n  const.i32.s8 3\n  and.i32\n  ret_v\n"
-    )
-    result = run(runner, tmp_path, source, "")
+    """Every group that has instructions is implemented now, so this is
+    tested the way §2.5 actually specifies it: against the **header**.
+
+    That is not a weaker test, it is the real one. The check exists so a
+    build without float says no at load rather than meeting a float
+    opcode at run time — and the thing it reads is `required_groups`,
+    not the code. `loop` is reserved with no instructions at all, which
+    makes it the only group a container can claim to need here."""
+    from mcuscript.opcodes import Group
+
+    container = assemble(PROFILE + ".entry go\n  ret\n")
+    blob = container.encode(required_groups=Group.CORE.mask | Group.LOOP.mask)
+    result = run(runner, tmp_path, "", "", blob=blob)
     assert result.refusal == "unsupported_group"
-    # `where` carries the mask of the groups this build lacks — bit 4.
-    assert result.out.split()[3] == "16"
+    # `where` carries the mask of the groups this build lacks — bit 5.
+    assert result.out.split()[3] == "32"
 
 
 def test_an_import_the_host_does_not_offer_is_refused_by_name(runner, tmp_path):

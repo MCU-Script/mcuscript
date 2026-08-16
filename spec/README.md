@@ -6,12 +6,12 @@ SPDX-License-Identifier: Apache-2.0
 # The MCUScript specification
 
 - Specification version: **0.1.0-draft**
-- Status: **complete in draft, and executed.** All five chapters have
-  an implementation: two verifiers, an interpreter and a C backend, and
-  a differential test that runs the same container through both
-  backends and compares the bytes. The `core`, `i64`, `float` and
-  `call` instruction groups work end to end; `bits` is specified and
-  not lowered.
+- Status: **complete in draft, and fully executed.** All five chapters
+  have an implementation: two verifiers, an interpreter and a C backend,
+  and a differential test that runs the same container through both
+  backends and compares the bytes. **Every instruction the document
+  defines works end to end in both backends** — `core`, `i64`, `float`,
+  `call` and `bits`. `loop` is reserved and has no instructions (§3.8).
 
 This is the contract. Everything else in this repository is an
 implementation of it, including the reference compiler, the VM and the

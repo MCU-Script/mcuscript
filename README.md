@@ -26,8 +26,8 @@ never heard of MCUHome is a design goal, not a side effect.
 [the specification](spec/) are written and implemented — the container
 format, two verifiers, the VM in C, and the C backend — and a
 differential test runs the same container through both backends and
-compares the bytes. The `core`, `i64`, `float` and `call` instruction
-groups work end to end; `bits` is specified and lowered by neither.
+compares the bytes. Every instruction the specification defines works
+end to end in both of them.
 
 What does **not** exist is the part a user would see: there is no
 surface syntax and no compiler. Programs are written in an assembler,

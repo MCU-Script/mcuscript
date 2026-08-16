@@ -1,7 +1,7 @@
 # 4. Two backends, one container
 
-- Status: **draft** — the shape is settled and implemented for the
-  `core`, `i64`, `float` and `call` groups; the parts marked *open*
+- Status: **draft** — the shape is settled and implemented for every
+  instruction group the specification defines; the parts marked *open*
   below are not yet decided.
 - Supersedes nothing. Answers ADR 0002 §8's largest open question, the
   C API toward embedders.
@@ -204,5 +204,10 @@ reaches itself, and a function is dead when no entry point reaches it.
   container carrying a function nothing calls is refused rather than
   compiled — a C compiler rejects an unused static, and refusing at load
   keeps that from being a difference between the backends.
-- **The `bits` group.** Six instructions, specified, lowered by neither
-  backend. Nothing about it is undecided; it is simply not written.
+- **A build that drops a group is untested against a real program.**
+  Both backends now implement everything, so the refusal of §2.5 can
+  only be provoked through a container's header. The mechanism is
+  right — the check reads the header, not the code — but nobody has
+  compiled a runtime with `MCUSCRIPT_GROUPS_IMPLEMENTED` narrowed and
+  measured what it saves, which is the number the modularity claim in
+  ADR 0002 rests on.

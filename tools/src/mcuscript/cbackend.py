@@ -271,13 +271,8 @@ def _write_slot(name: str, type_: ValType, expression: str) -> str:
     raise UnsupportedProgram(f"{type_} is not lowered yet")
 
 
-_ARITHMETIC = {
-    "add": ValType.I32,
-    "sub": ValType.I32,
-    "mul": ValType.I32,
-}
-
-#: mnemonic -> (operand type, helper, result type)
+#: mnemonic -> (operand type, helper). The result takes the worse of the
+#: two operands' states and nothing else can go wrong.
 _BINARY = {
     f"{stem}.{suffix}": (
         {"i32": ValType.I32, "i64": ValType.I64, "f32": ValType.F32}[suffix],
@@ -289,20 +284,28 @@ _BINARY = {
 _BINARY.update(
     {
         "div.f32": (ValType.F32, "mcuscript_op_div_f32"),
+        "and.i32": (ValType.I32, "mcuscript_op_and_i32"),
+        "or.i32": (ValType.I32, "mcuscript_op_or_i32"),
+        "xor.i32": (ValType.I32, "mcuscript_op_xor_i32"),
     }
 )
 
-_DIVISION = {
+#: The same shape, but the helper can turn the result `invalid` — so it
+#: takes the state by address and the propagation happens first.
+_CHECKED = {
     "div.i32": (ValType.I32, "mcuscript_op_div_i32"),
     "rem.i32": (ValType.I32, "mcuscript_op_rem_i32"),
     "div.i64": (ValType.I64, "mcuscript_op_div_i64"),
     "rem.i64": (ValType.I64, "mcuscript_op_rem_i64"),
+    "shl.i32": (ValType.I32, "mcuscript_op_shl_i32"),
+    "shr.i32": (ValType.I32, "mcuscript_op_shr_i32"),
 }
 
 _UNARY = {
     "neg.i32": (ValType.I32, ValType.I32, "mcuscript_op_neg_i32"),
     "neg.i64": (ValType.I64, ValType.I64, "mcuscript_op_neg_i64"),
     "neg.f32": (ValType.F32, ValType.F32, "mcuscript_op_neg_f32"),
+    "bitnot.i32": (ValType.I32, ValType.I32, "mcuscript_op_bitnot_i32"),
     "convert.i32_f32": (ValType.I32, ValType.F32, "mcuscript_op_convert_i32_f32"),
 }
 
@@ -605,8 +608,8 @@ def _instruction(
             _write_slot(a, operand, expression),
             f"{a_state} = mcuscript_op_worse({a_state}, {b_state});",
         ]
-    if name in _DIVISION:
-        operand, helper = _DIVISION[name]
+    if name in _CHECKED:
+        operand, helper = _CHECKED[name]
         a, a_state = _slot(depth - 2)
         b, b_state = _slot(depth - 1)
         return [

@@ -44,6 +44,49 @@ def test_arithmetic_agrees(vm, cc, tmp_path, body):
     agree(vm, cc, tmp_path, PROFILE + ".entry go -> i32\n" + body)
 
 
+@pytest.mark.parametrize(
+    "body",
+    [
+        "  const.i32.s8 12\n  const.i32.s8 10\n  and.i32\n  ret_v\n",
+        "  const.i32.s8 12\n  const.i32.s8 10\n  or.i32\n  ret_v\n",
+        "  const.i32.s8 12\n  const.i32.s8 10\n  xor.i32\n  ret_v\n",
+        "  const.i32.s8 12\n  bitnot.i32\n  ret_v\n",
+        "  const.i32.s8 -1\n  bitnot.i32\n  ret_v\n",
+        # A negative operand is where a backend that used signed `&`
+        # would be relying on the representation rather than the bits.
+        "  const.i32.s8 -8\n  const.i32.s8 12\n  and.i32\n  ret_v\n",
+        "  const.i32.s8 1\n  const.i32.s8 31\n  shl.i32\n  ret_v\n",
+        "  const.i32.s8 -16\n  const.i32.s8 2\n  shr.i32\n  ret_v\n",
+        "  const.i32.s8 -1\n  const.i32.s8 31\n  shr.i32\n  ret_v\n",
+        "  const.i32.s8 16\n  const.i32.s8 0\n  shr.i32\n  ret_v\n",
+        # Out of range in both directions: `invalid`, not whatever the
+        # machine's shifter happens to do (§1.5).
+        "  const.i32.s8 1\n  const.i32.s8 32\n  shl.i32\n  ret_v\n",
+        "  const.i32.s8 1\n  const.i32.s8 -1\n  shl.i32\n  ret_v\n",
+        "  const.i32.s8 -16\n  const.i32.s8 32\n  shr.i32\n  ret_v\n",
+    ],
+)
+def test_bitwise_agrees(vm, cc, tmp_path, body):
+    agree(vm, cc, tmp_path, PROFILE + ".entry go -> i32\n" + body)
+
+
+def test_a_shift_out_of_range_is_invalid_rather_than_a_machine_quirk(vm, cc, tmp_path):
+    """The one case where "the backends agree" is not enough on its own.
+
+    x86 masks the shift count to five bits and ARM produces zero, so two
+    conforming builds of the *same* backend would already disagree if
+    the count reached the hardware. §1.5 says `invalid`, and that is a
+    claim about the value and not only about the agreement."""
+    run = agree(
+        vm,
+        cc,
+        tmp_path,
+        PROFILE + ".entry go -> i32\n"
+        "  const.i32.s8 1\n  const.i32.s8 33\n  shl.i32\n  ret_v\n",
+    )
+    assert "result i32 0 invalid" in run.output
+
+
 @pytest.mark.parametrize("value", ["2147483647", "-2147483648"])
 def test_the_extremes_agree(vm, cc, tmp_path, value):
     """`INT32_MIN` is the one that catches a lazy backend twice over: it

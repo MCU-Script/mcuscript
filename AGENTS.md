@@ -19,8 +19,8 @@ reference embedder, not its owner — do not let its requirements read as
 governance.
 
 **The back end exists; the language does not.** The container format,
-both verifiers, the VM and the C backend are written and tested
-(`core`, `i64`, `float`, `call`; `bits` is specified and not lowered).
+both verifiers, the VM and the C backend are written and tested, and
+every instruction the specification defines works in both backends.
 There is no surface syntax and no compiler — programs are written in
 the assembler in `tools/src/mcuscript/asm.py`.
 

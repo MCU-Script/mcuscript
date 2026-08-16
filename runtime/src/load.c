@@ -143,6 +143,12 @@ unsigned mcuscript_instruction_size(uint8_t opcode)
 	case OP_GE_F32:
 	case OP_CONVERT_I32_F32:
 	case OP_TRUNC_F32_I32:
+	case OP_AND_I32:
+	case OP_OR_I32:
+	case OP_XOR_I32:
+	case OP_BITNOT_I32:
+	case OP_SHL_I32:
+	case OP_SHR_I32:
 		return 1;
 	case OP_CONST_I32_S8:
 	case OP_CONST_I32:
@@ -745,7 +751,15 @@ static bool verify_function(const mcuscript_program *program, section imports,
 			ok = binary(&w, MCUSCRIPT_I32, MCUSCRIPT_I32);
 			break;
 		case OP_NEG_I32:
+		case OP_BITNOT_I32:
 			ok = unary(&w, MCUSCRIPT_I32, MCUSCRIPT_I32);
+			break;
+		case OP_AND_I32:
+		case OP_OR_I32:
+		case OP_XOR_I32:
+		case OP_SHL_I32:
+		case OP_SHR_I32:
+			ok = binary(&w, MCUSCRIPT_I32, MCUSCRIPT_I32);
 			break;
 		case OP_EQ_I32:
 		case OP_NE_I32:

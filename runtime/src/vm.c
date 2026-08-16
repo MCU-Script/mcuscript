@@ -297,6 +297,41 @@ bool mcuscript_invoke(const mcuscript_program *program, int entry, mcuscript_slo
 			pc += 1;
 			break;
 
+		/* -- bits ----------------------------------------------- */
+		case OP_AND_I32:
+		case OP_OR_I32:
+		case OP_XOR_I32: {
+			int32_t b = mcuscript_op_as_i32(values[sp - 1]);
+			int32_t a = mcuscript_op_as_i32(values[sp - 2]);
+			int32_t out = (opcode == OP_AND_I32)  ? mcuscript_op_and_i32(a, b)
+				      : (opcode == OP_OR_I32) ? mcuscript_op_or_i32(a, b)
+							      : mcuscript_op_xor_i32(a, b);
+			sp--;
+			values[sp - 1] = mcuscript_op_from_i32(out);
+			states[sp - 1] = mcuscript_op_worse(states[sp - 1], states[sp]);
+			pc += 1;
+			break;
+		}
+		case OP_BITNOT_I32:
+			values[sp - 1] = mcuscript_op_from_i32(
+				mcuscript_op_bitnot_i32(mcuscript_op_as_i32(values[sp - 1])));
+			pc += 1;
+			break;
+		case OP_SHL_I32:
+		case OP_SHR_I32: {
+			int32_t count = mcuscript_op_as_i32(values[sp - 1]);
+			int32_t a = mcuscript_op_as_i32(values[sp - 2]);
+			uint8_t state = mcuscript_op_worse(states[sp - 2], states[sp - 1]);
+			int32_t out = (opcode == OP_SHL_I32)
+					      ? mcuscript_op_shl_i32(a, count, &state)
+					      : mcuscript_op_shr_i32(a, count, &state);
+			sp--;
+			values[sp - 1] = mcuscript_op_from_i32(out);
+			states[sp - 1] = state;
+			pc += 1;
+			break;
+		}
+
 		case OP_ELSE:
 			/* The fallback carries its own state, so a fallback
 			 * that is itself absent does not become valid. */

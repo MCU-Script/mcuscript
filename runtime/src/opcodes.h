@@ -27,7 +27,7 @@
  * name, before anything runs. */
 #define MCUSCRIPT_GROUPS_IMPLEMENTED                                        \
 	(MCUSCRIPT_GROUP_CORE | MCUSCRIPT_GROUP_I64 | MCUSCRIPT_GROUP_FLOAT | \
-	 MCUSCRIPT_GROUP_CALL)
+	 MCUSCRIPT_GROUP_CALL | MCUSCRIPT_GROUP_BITS)
 
 enum {
 	/* constants */
@@ -108,7 +108,15 @@ enum {
 	OP_TRUNC_F32_I32 = 0x71,   /* trunc.f32_i32 */
 
 	/* -- the call group -- */
-	OP_CALL = 0x80 /* call */
+	OP_CALL = 0x80, /* call */
+
+	/* -- the bits group -- */
+	OP_AND_I32 = 0x90,    /* and.i32 */
+	OP_OR_I32 = 0x91,     /* or.i32 */
+	OP_XOR_I32 = 0x92,    /* xor.i32 */
+	OP_BITNOT_I32 = 0x93, /* bitnot.i32 */
+	OP_SHL_I32 = 0x94,    /* shl.i32 */
+	OP_SHR_I32 = 0x95     /* shr.i32 */
 };
 
 #endif /* MCUSCRIPT_OPCODES_H */

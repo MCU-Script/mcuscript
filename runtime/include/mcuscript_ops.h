@@ -126,6 +126,66 @@ static inline int32_t mcuscript_op_rem_i32(int32_t a, int32_t b, uint8_t *state)
 }
 
 /* ------------------------------------------------------------------
+ * i32 bitwise (§3.7)
+ *
+ * Computed in the unsigned type for the same reason the arithmetic is:
+ * C99 does not require two's complement, so `a & b` on negative signed
+ * operands is a question about the representation rather than about the
+ * bits. In unsigned there is no question.
+ */
+
+static inline int32_t mcuscript_op_and_i32(int32_t a, int32_t b)
+{
+	return (int32_t)((uint32_t)a & (uint32_t)b);
+}
+
+static inline int32_t mcuscript_op_or_i32(int32_t a, int32_t b)
+{
+	return (int32_t)((uint32_t)a | (uint32_t)b);
+}
+
+static inline int32_t mcuscript_op_xor_i32(int32_t a, int32_t b)
+{
+	return (int32_t)((uint32_t)a ^ (uint32_t)b);
+}
+
+static inline int32_t mcuscript_op_bitnot_i32(int32_t a)
+{
+	return (int32_t)(~(uint32_t)a);
+}
+
+/*
+ * A shift count outside [0, 32) is `invalid` rather than undefined
+ * (§1.5). C says nothing about what `x << 40` is, and a compiler is
+ * entitled to emit whatever the machine's shifter happens to do — which
+ * on ARM is a zero and on x86 is a rotate of the count, so two
+ * conforming builds of the *same* backend would already disagree.
+ */
+static inline int32_t mcuscript_op_shl_i32(int32_t value, int32_t count, uint8_t *state)
+{
+	if (count < 0 || count >= 32) {
+		*state = MCUSCRIPT_OPS_INVALID;
+		return 0;
+	}
+	return (int32_t)((uint32_t)value << (unsigned)count);
+}
+
+static inline int32_t mcuscript_op_shr_i32(int32_t value, int32_t count, uint8_t *state)
+{
+	if (count < 0 || count >= 32) {
+		*state = MCUSCRIPT_OPS_INVALID;
+		return 0;
+	}
+	uint32_t bits = (uint32_t)value >> (unsigned)count;
+	/* Arithmetic: the sign bit is replicated (§1.5), spelled out rather
+	 * than left to `>>` on a signed value, which C99 makes
+	 * implementation-defined. */
+	if (value < 0 && count > 0)
+		bits |= ~0u << (unsigned)(32 - count);
+	return (int32_t)bits;
+}
+
+/* ------------------------------------------------------------------
  * i64
  */
 

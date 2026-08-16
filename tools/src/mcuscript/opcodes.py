@@ -7,11 +7,11 @@ specification chapter 3. The assembler, the disassembler, the verifier
 and the C backend all read it, and a test compares the C runtime's
 opcode header against it so the two cannot drift.
 
-Every group is tabulated, including the ones the runtime of this
-version does not implement. That is deliberate: a container using an
-unimplemented group must be *refused by name* at load, and a refusal
-that has never been produced by a real container is not a tested
-refusal.
+Every group that has instructions is now implemented by both backends,
+which moves the refusal of §2.5 out of reach of a real program: the
+only way a container can require something this build lacks is to say
+so in its header, and that is what the check reads anyway. The
+reserved `loop` group is what a test uses to say it.
 """
 
 from __future__ import annotations
@@ -35,10 +35,14 @@ class Group(enum.IntEnum):
         return 1 << self.value
 
 
-#: The groups this version's runtime implements. `bits` is specified but
-#: not lowered by either backend yet, and `loop` is reserved with no
-#: instructions at all (spec §3.8).
-IMPLEMENTED_GROUPS = frozenset({Group.CORE, Group.I64, Group.FLOAT, Group.CALL})
+#: The groups this version's runtime implements: every one that has
+#: instructions. `loop` is reserved with none at all (spec §3.8), so the
+#: refusal of §2.5 is exercised through a container whose *header*
+#: claims a group — which is what the specification actually says the
+#: check is about.
+IMPLEMENTED_GROUPS = frozenset(
+    {Group.CORE, Group.I64, Group.FLOAT, Group.CALL, Group.BITS}
+)
 
 #: Opcode range per group (inclusive), spec §3.2. Ranges are disjoint so
 #: an implementation that omits a group omits a contiguous span of its

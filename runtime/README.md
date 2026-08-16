@@ -47,10 +47,12 @@ in about 300 lines, and it is short enough to read as documentation.
 - **It does not skip verification.** There is no flag for it. The VM
   sizes its frame from numbers the container supplied, and this is where
   those numbers are recomputed.
-- **It does not implement every instruction group.** This build has
-  `core`, `i64`, `float` and `call`; a container needing `bits` is
-  refused at load, by name, before anything runs. That is the mechanism
-  working, not a gap in it.
+- **It does not have to implement every instruction group.** This build
+  does — `core`, `i64`, `float`, `call`, `bits` — but a build that drops
+  one refuses a container needing it at load, by name, before anything
+  runs. The groups occupy disjoint opcode ranges precisely so a build
+  can drop a contiguous span of the dispatch table, and only `core` is
+  mandatory.
 - **It does not survive `-ffast-math`.** The header refuses to compile
   under it, and a build must pass `-ffp-contract=off`. Both are measured
   requirements, not superstition — see spec §1.5.
