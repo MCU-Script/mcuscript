@@ -211,7 +211,13 @@ def measure(tools: Toolchain, target: str, config: str, keep: Path) -> Measureme
     for name in SOURCES:
         obj = keep / f"{name}.o"
         subprocess.run(
-            [tools.cc, *flags, "-fstack-usage", "-c", str(RUNTIME / "src" / f"{name}.c")],
+            [
+                tools.cc,
+                *flags,
+                "-fstack-usage",
+                "-c",
+                str(RUNTIME / "src" / f"{name}.c"),
+            ],
             cwd=keep,
             check=True,
         )
@@ -221,7 +227,9 @@ def measure(tools: Toolchain, target: str, config: str, keep: Path) -> Measureme
 
     probe = keep / "probe.c"
     probe.write_text(PROBE, encoding="utf-8")
-    subprocess.run([tools.cc, *flags, "-c", str(probe), "-o", str(keep / "probe.o")], check=True)
+    subprocess.run(
+        [tools.cc, *flags, "-c", str(probe), "-o", str(keep / "probe.o")], check=True
+    )
     out = subprocess.run(
         [tools.nm, "--print-size", "--radix=d", str(keep / "probe.o")],
         capture_output=True,
@@ -276,16 +284,16 @@ def main() -> int:
     with tempfile.TemporaryDirectory() as raw:
         for target in TARGETS:
             for config in CONFIGS:
-                work = Path(raw) / f"{target}-{config}".replace(" ", "-").replace("+", "p")
+                work = Path(raw) / f"{target}-{config}".replace(" ", "-").replace(
+                    "+", "p"
+                )
                 work.mkdir()
                 results[target, config] = measure(tools, target, config, work)
 
     print("**Flash, bytes.** Loader, verifier and interpreter together.\n")
     rows = [["group set", *TARGETS]]
     for config in CONFIGS:
-        rows.append(
-            [config, *(f"{results[t, config].total_flash:,}" for t in TARGETS)]
-        )
+        rows.append([config, *(f"{results[t, config].total_flash:,}" for t in TARGETS)])
     print(table(rows, "l" + "r" * len(TARGETS)))
 
     reference = "cortex-m33"
