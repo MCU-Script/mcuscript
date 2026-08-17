@@ -18,6 +18,14 @@ implementation of it, including the reference compiler, the VM and the
 C backend, and a third party implementing any of those from this
 document alone should arrive at something that interoperates.
 
+What the contract covers, and what it deliberately does not: this
+document defines what a **conforming container** is and what a runtime
+does with one. It does not oblige a runtime to establish that its input
+is conforming, and §2.6 explains why a language with two backends cannot
+make that a conformance rule without implying a guarantee it has no way
+to keep. Getting a container from a compiler to a device unaltered is
+the embedder's concern, identically for either backend.
+
 ## What is specified here, and what is not
 
 Specified: the value model, the binary container, the instruction set
@@ -73,25 +81,37 @@ output, it is a different arm of the ladder.
 
 ## Conformance
 
-An implementation conforms if it:
+There are three kinds of implementation, and each conforms to a
+different thing.
 
-1. accepts every container this document calls well-formed, and
-   **refuses** every container it does not, with the error this
-   document names;
-2. produces, for every well-formed container, the results this document
+A **compiler** conforms if every container it emits is conforming
+(§2.6).
+
+A **runtime** conforms if it:
+
+1. produces, for every conforming container, the results this document
    prescribes;
-3. performs load-time verification unconditionally (§2.6) — this is not
-   a build option, because the alternative is a VM that sizes its own
-   stack from a number an untrusted file supplied;
-4. implements at least the `core` instruction group, and refuses at
-   load any container requiring a group it does not implement (§2.5).
+2. implements at least the `core` instruction group, and refuses at load
+   any container whose header requires a group it does not implement, or
+   whose profile pin, format version or magic do not match (§2.5, §2.7).
+
+A runtime's behaviour on a **non-conforming** container is undefined,
+and that is deliberate rather than an omission — see §2.6, which says
+why a language with two backends cannot make the promise the other
+reading would imply. A runtime that wants to be safe against arbitrary
+input contains a verifier; that is the third kind.
+
+A **verifier** conforms if it accepts exactly the conforming containers
+and refuses everything else with the error this document names (§2.6.0).
+It is an optional component, and `corpus/` is what one is checked
+against.
 
 ## Document map
 
 | Document | Contents |
 |---|---|
 | [01-value-model.md](01-value-model.md) | Types, slots, validity states, numeric semantics |
-| [02-container.md](02-container.md) | The binary format, sections, verification |
+| [02-container.md](02-container.md) | The binary format, its sections, and what makes a container conforming |
 | [03-instructions.md](03-instructions.md) | The instruction set, group by group, with a worked example |
 | [04-linking.md](04-linking.md) | The constant, entry-point and import tables; name resolution; every error |
 | [05-execution.md](05-execution.md) | Invocation, frames, recursion, faults, termination |
@@ -183,6 +203,26 @@ this, and could not have: its completeness rule asks whether every
 *named refusal* has a container, and a rule nobody implemented produces
 no new name. And the divergence is the two-implementation design paying
 for itself — one loader alone would have been self-consistently wrong.
+
+## The change of 2026-08-17
+
+The seventeenth correction is not a correction at all but a change of
+what this document *is for*, in one place, and it is worth separating
+from the list above.
+
+§2.6 used to make verification a **conformance rule**: an implementation
+that ran unverified containers did not conform. It now defines what a
+conforming **container** is, and leaves deciding that about arbitrary
+bytes to an optional component (§2.6.0).
+
+The reason is the two backends. The same source is equally expressible
+as a container for a VM or as C built into the firmware, and nothing
+protects the C on its way to a device. Obliging every runtime to police
+its input gave one of two equivalent paths a guarantee the other cannot
+have — and invited the reading that the language protects a device
+against code it did not produce, which it does not and cannot. The
+properties in §2.6 are unchanged, down to the arithmetic; what moved is
+whose duty they are. Reasoning: ADR 0006.
 
 ## Versioning
 

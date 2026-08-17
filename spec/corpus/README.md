@@ -1,11 +1,18 @@
 # The conformance corpus
 
-Containers, and the verdict a conforming loader must give each of them.
+Containers, and the verdict a conforming **verifier** must give each of
+them (§2.6.0).
 
 This directory belongs to the specification rather than to any
-implementation. If you are writing a loader from
+implementation. If you are writing a verifier from
 [the document](../README.md), this is how you find out where you and it
-disagree — run every container past your loader and compare.
+disagree — run every container past yours and compare.
+
+A **runtime** is a different kind of implementation and answers to a
+narrower part of this: it promises to execute the `ok` cases as
+specified, and its behaviour on the rest is undefined, so those are not
+its tests. §2.6 says why the language draws the line there rather than
+obliging every runtime to police its input.
 
 ## What is here
 
@@ -35,8 +42,8 @@ container must be **accepted**. `host`, when present, names the registry
 the container is to be resolved against; when absent, the registry is
 empty.
 
-`stage` says *which part of a loader owes the verdict*, and it is the
-§4.6 heading the refusal is listed under:
+`stage` says *which part of an implementation owes the verdict*, and it
+is the §4.6 heading the refusal is listed under:
 
 | Stage | |
 |---|---|
@@ -49,9 +56,10 @@ empty.
 The distinction that matters is the last one. A host toolchain has no
 registry — resolving names against one is the embedder's job, at load —
 so **a tool that only verifies must accept every `linking` case**, and
-only a full loader refuses it. Two names, `kind_mismatch` and
-`access_denied`, appear at both stages, because a container can
-contradict itself about an import as well as contradict the registry.
+only something holding a registry refuses it. Two names,
+`kind_mismatch` and `access_denied`, appear at both stages, because a
+container can contradict itself about an import as well as contradict
+the registry.
 
 ## Running it
 
@@ -63,13 +71,18 @@ for each case in corpus.toml:
     the outcome must be case.refusal, or acceptance when it is empty
 ```
 
-In this repository both implementations are run against it by
-`tools/tests/test_corpus.py` — the Python verifier and the C runtime,
-which is the whole reason the corpus exists. They use different
-algorithms on purpose (a worklist against a single forward pass,
-Tarjan's algorithm against a reachability matrix), and two methods over
-one specification are only worth having if something asks them the same
-question.
+In this repository it is run by `tools/tests/test_corpus.py` against the
+Python verifier, and — for as long as the C runtime still verifies —
+against that too. They use different algorithms on purpose (a worklist
+against a single forward pass, Tarjan's algorithm against a reachability
+matrix), and two methods over one specification are only worth having if
+something asks them the same question.
+
+ADR 0006 removes the C runtime's verifier, which leaves the Python one
+alone here. That makes this directory more useful rather than less: it
+becomes the material anyone building a verifier is checked against, and
+the reference implementation stops being the only answer to what a
+verdict should be.
 
 ## Why the bytes are committed
 

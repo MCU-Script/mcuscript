@@ -167,6 +167,13 @@ documentation, a bytecode verifier (pushed bytecode must never crash a
 node), and format stability across firmware versions."* **Berry remains
 the safety net if this track stalls.**
 
+One item on that list has since been struck rather than paid for. ADR
+0006 (2026-08-17) decided that a device-side verifier is not this
+project's to own — not because the decade of ownership is too long, but
+because the guarantee it implies cannot hold on the C backend and a
+half-held guarantee is worse than none. The other three items stand as
+written.
+
 ### 1.4 The standalone-project charter
 
 *Recorded direction, component-model.md §10, product-owner decision of
@@ -885,8 +892,18 @@ things that would otherwise be discovered by writing them wrong first.
    metadata is the classic verifier bypass: a container claiming depth
    2 while needing 20 overflows a statically allocated stack into
    whatever is next to it. The JVM makes verification mandatory for
-   exactly this reason. If the VM allocates from a number in the file,
-   recomputing that number cannot be a build option.
+   exactly this reason.
+
+   *This gap was closed by making verification mandatory, and then
+   reopened deliberately on 2026-08-17 — see ADR 0006.* The mechanism
+   above is real and the specification still states it (§2.6 point 5);
+   what changed is whose duty it is. A language with two backends cannot
+   oblige one of them to police its input and leave the other unable to,
+   so the depth numbers are now an obligation on the producer and a
+   container that gets them wrong is undefined rather than refused. The
+   JVM comparison is what finally settled it in the other direction:
+   the JVM ships one execution path, and a `.class` file has no
+   equivalent of "transpile it to C and build it into the firmware".
 7. **The time base is `int64` milliseconds — and it does not fit a
    32-bit cell.** The conversation gave the base as `int32` ms in one
    place and `int64` in another; the product owner settled it on
@@ -951,9 +968,12 @@ about it.
 **Typing is validated at load, not tagged at runtime.** Slots carry no
 type tag; the verifier walks the code with a type stack and rejects
 bytecode that would add an i32 to an f32 — WebAssembly's model. This is
-not extra work: R5 (untrusted bytecode) and R6 (static typing) require a
-type-checking verifier anyway, and once it exists the runtime needs no
-tags at all.
+not extra work: the type rules have to exist for R6 (static typing) and
+for the two backends to agree, and once the types are static the runtime
+needs no tags at all. Whether anything on the *device* re-establishes
+them is ADR 0006's question, and the answer there does not change this
+one: untagged slots are safe in a conforming container by construction,
+not because something checked at load.
 
 **Opcodes stay per-type, against the research's recommendation.** It
 proposed one opcode family plus a type byte. Rejected on two counts:
@@ -992,12 +1012,14 @@ does not know is either safely skippable or a hard refusal and never
 silently ignored — and so an embedder can attach a signature section
 without the format needing to know what a signature is; a CRC that the
 spec labels explicitly as corruption detection and **not** a security
-mechanism; **verification mandatory and never a build option**,
-recomputing the stack depth rather than trusting the ENTRY section;
-required opcode groups declared as a bitmask in the header so a build
-without float refuses at load instead of misbehaving; and the eight
-HOST linking failures named individually as load-time errors, modelled
-on the JVM's linking-error hierarchy.
+mechanism; the stack depth defined as something recomputable rather than
+something to be taken on trust (made a mandatory load-time check here,
+and turned into an obligation on the producer by ADR 0006 — the
+arithmetic is unchanged, the duty moved); required opcode groups
+declared as a bitmask in the header so a build without float refuses at
+load instead of misbehaving; and the eight HOST linking failures named
+individually as load-time errors, modelled on the JVM's linking-error
+hierarchy.
 
 **Termination is proved, not metered.** With loops bounded (§2.4) and
 recursion capped (§2.8), a script's termination is provable at load
@@ -1342,8 +1364,11 @@ where the guess was 1–2 KB — and 14 KB complete on a Cortex-M0+, whose
 missing divide instruction and missing FPU are paid for out of the
 compiler's support library. The guess was right about the *interpreter*
 — that is 1.5 KB — and silent about the loader and verifier, which are
-roughly twice its size again and are what "a pushed script must never
-crash a node" costs. The feature-module mechanism of §1.3 is now real
+roughly twice its size again. Costing them is what put the promise
+itself on the agenda, and ADR 0006 then removed it on grounds that have
+nothing to do with the number: the guess had been an estimate of a
+trusting runtime all along, and a trusting runtime is what the project
+is going back to. The feature-module mechanism of §1.3 is now real
 rather than declared, and buys 3–14 % per group; the size decision that
 matters is which backend a device uses, because generated C links none
 of this. Figures, method and the on-hardware run: ADR 0004 §4.9 and

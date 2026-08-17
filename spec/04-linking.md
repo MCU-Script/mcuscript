@@ -88,18 +88,20 @@ name is what the host invokes by and what a C backend turns into a
 symbol — so two records sharing one would be a program only one backend
 can express, which is the thing this specification exists to prevent.
 
-`max_stack` and `max_call_depth` are what the VM allocates from, and
-they are **recomputed by the verifier and compared** rather than
-trusted (§2.6). A container whose declared numbers differ from the
-computed ones is refused; it is either a compiler bug or an attack, and
-neither should reach a running device.
+`max_stack` and `max_call_depth` are what the VM allocates from, and it
+takes them as given. They are therefore the two fields a producer has
+the least freedom about: §2.6 point 5 requires them to be the values the
+code actually needs, and a container that gets them wrong is not a
+container with a wrong number in it but one whose behaviour is
+undefined. A verifier **recomputes and compares** them rather than
+asking whether they look plausible; that is the whole of what makes
+these two fields checkable at all.
 
-`recursion_cap` is the one number the verifier cannot derive: a cap is a
-*decision* the author made, not a property of the code (§5.4). What the
-verifier does derive is which functions form a cycle, and it refuses a
-cycle whose members declare no cap, or declare different ones — and it
-refuses a cap on a function that is in no cycle
-(`recursion_cap_mismatch`), because a number that changes nothing is a
+`recursion_cap` is the one number that cannot be derived: a cap is a
+*decision* the author made, not a property of the code (§5.4). What is
+derivable is which functions form a cycle, so a conforming container has
+a cap on every cycle, one cap per cycle, and none on a function outside
+one (`recursion_cap_mismatch`) — a number that changes nothing is a
 compiler bug or an attempt to make one look harmless.
 
 `param_count` is what makes a call checkable. Arguments become the

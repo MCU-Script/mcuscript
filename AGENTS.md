@@ -24,6 +24,12 @@ every instruction the specification defines works in both backends.
 There is no surface syntax and no compiler — programs are written in
 the assembler in `tools/src/mcuscript/asm.py`.
 
+**One of those two verifiers is being removed** (ADR 0006, 2026-08-17).
+The specification has been rewritten to it; the runtime has not yet
+followed. Until it does, the C loader still verifies and the tests still
+expect it to — so a change in that area is a scheduled removal, not a
+defect to fix in passing.
+
 So the split to keep in mind is: everything below the container is
 **decided and executed**, and everything above it is still a
 *proposal*. Before writing anything in the second half, read
@@ -103,10 +109,21 @@ Sources and status in ADR 0002.
   forbidden or left open: bounded recursion keeps the worst case
   computable (frame size × cap) and keeps both backends able to honour
   the same number.
-- **Bytecode is untrusted input.** A pushed script must never crash a
-  node: a load-time verifier recomputes what the compiler claimed
-  rather than trusting the header, and a profile mismatch is a refusal
-  rather than arithmetic on wrongly scaled numbers.
+- **Three contracts, not one promise** (ADR 0006). The reference
+  compiler emits conforming containers; the reference runtime executes
+  conforming containers as specified and is **undefined on anything
+  else**; getting an artifact from one to the other unaltered is the
+  embedder's concern. This replaced *"bytecode is untrusted input, a
+  pushed script must never crash a node"* on 2026-08-17, and the reason
+  is the bullet above: a guarantee that holds on the bytecode path and
+  cannot hold on the transpiled-C path is not half a guarantee, it is an
+  invitation to read the language as safe when it is not. **Do not
+  reintroduce a device-side verifier**, and do not write text that
+  implies one. A verifier is a defined, optional component (spec
+  §2.6.0), and `spec/corpus/` is what one is checked against.
+  What the loader still does is check **identity, never
+  well-formedness**: magic, format version, profile pin, group mask, CRC
+  — is this container meant for me, not is it any good.
 - **Compilation happens on the host.** The embedder's builder is always
   in the loop, so a device-side parser buys nothing.
 - **Units are compile-time only.** At runtime, in both backends, there

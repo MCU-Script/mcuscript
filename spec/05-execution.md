@@ -61,21 +61,20 @@ Because the value stack and the locals are all slots (§1.2), a frame is
 `(local_count + max_stack)` slots, and the requirement for an
 invocation is that summed along the deepest call chain — the overlap
 above makes the sum an over-estimate, which is the right direction for a
-number a device sizes a buffer from. The verifier computes it, so the VM
-allocates once and never checks a bound at runtime. There is no stack
-growth, no guard page, no overflow test in the interpreter loop.
+number a device sizes a buffer from. It follows from the container, so
+the VM allocates once and never checks a bound at runtime. There is no
+stack growth, no guard page, no overflow test in the interpreter loop.
 
-`max_call_depth` in the record (§4.3) counts *frames*, not slots, and it
-is there to be recomputed and compared rather than to be allocated from:
-frames are not a resource, slots are. A container whose declared frame
-count is wrong is refused for the same reason a wrong `max_stack` is —
-the file and its code disagree, and that is either a compiler bug or an
-attack.
+`max_call_depth` in the record (§4.3) counts *frames*, not slots, which
+is why it is not the number anything is allocated from: frames are not a
+resource, slots are. It is there to be checked against — a verifier
+recomputes it, and a container where the file and its code disagree is
+non-conforming.
 
 `RET_V` pops the return value, discards the frame, and pushes the value
-into the caller's stack. `RET` discards the frame. Neither can leave
-the caller's stack in an unexpected shape, because the verifier proved
-the shape at every call site.
+into the caller's stack. `RET` discards the frame. In a conforming
+container neither can leave the caller's stack in an unexpected shape,
+since §2.6 point 3 fixes the shape at every call site.
 
 ## 5.4 Recursion and its cap
 
@@ -97,9 +96,10 @@ follows from the counter below rather than being an extra rule, and it
 is the only reading both backends can implement without knowing the
 cycle's shape.
 
-The verifier rejects any cycle without a cap (`uncapped_recursion`),
-and takes the worst case to be the cap times the largest frame in the
-cycle, which is what makes §5.3's single allocation possible.
+A cycle without a cap makes a container non-conforming
+(`uncapped_recursion`), and the worst case is the cap times the largest
+frame in the cycle — which is what makes §5.3's single allocation
+possible.
 
 **Both backends enforce it the same way, at runtime.** A cap is a
 static bound on the *worst case*, but whether a particular run recurses
@@ -144,9 +144,10 @@ script that has the context to handle it, while a fault can only be
 reported to a user who does not.
 
 There is no fault for a bad opcode, a stack overflow, a bad index or a
-type error, because verification (§2.6) has already made those
-impossible. An implementation that would need such a fault has a
-verifier that is not doing its job.
+type error, because a conforming container cannot produce one (§2.6).
+An implementation is not required to detect these; a container that
+contains one is outside what this specification defines, and inventing a
+fault for it would only make the undefined look handled.
 
 A fault is reported to the embedder with its kind, the entry point, and
 — if the container carried a `dbug` section — the source position. What
@@ -164,11 +165,10 @@ runtime:
 - the call graph's cycles all carry a finite cap (§5.4).
 
 Together those bound the number of instructions an invocation can
-execute by a number the verifier could compute if it wanted to. So
-there is no instruction budget, no counter in the dispatch loop, and no
-per-opcode cost — which matters twice over: the interpreter's inner
-loop stays as small as the 1–2 KB target needs, and the C backend has
-nothing artificial to reproduce. An instruction counter is natural in a
+execute by a number that follows from the container. So there is no
+instruction budget, no counter in the dispatch loop, and no per-opcode
+cost — which matters twice over: the interpreter's inner loop stays
+small, and the C backend has nothing artificial to reproduce. An instruction counter is natural in a
 VM and absurd in compiled C, and requiring one would have put the two
 backends at odds over their own arithmetic.
 
@@ -202,10 +202,14 @@ an embedder goes out of its way to implement the interface twice.
 Collected here because each one would silently break a promise made
 elsewhere:
 
-- **Do not skip verification** — not for trusted sources, not for
-  speed, not behind a build flag (§2.6).
-- **Do not trust `max_stack` or `max_call_depth`** from the container;
-  recompute them (§4.3).
+- **Do not accept a container whose header says it needs something this
+  build does not have** (§2.5). That is an identity check, it is cheap,
+  and skipping it means decoding an instruction that is not implemented.
+- **Do not present a runtime as safe against non-conforming input**
+  unless it verifies (§2.6). A runtime alone establishes that a
+  container is *meant* for it, never that it is sound; an embedder whose
+  delivery path is untrusted needs a verifier or an authenticated path,
+  and the language cannot supply either.
 - **Do not fault where the specification names a value.** Turning a
   division by zero into a fault would make a script that handles
   `invalid` correctly die anyway.

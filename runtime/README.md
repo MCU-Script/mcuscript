@@ -3,6 +3,16 @@
 The loader, the verifier and the VM, in C99. This is what goes on the
 device.
 
+> **The verifier is on its way out.** ADR 0006 (2026-08-17) decided that
+> deciding whether arbitrary bytes are a conforming container is not this
+> project's job: the language has two backends, transpiled C carries no
+> such guarantee and could not, and a guarantee that holds on one path
+> invites the reading that the language protects a device against code it
+> did not produce. What this runtime will promise is narrower and
+> honest — it executes **conforming** containers as the specification
+> says, and is undefined on anything else. The text below still describes
+> what is built today; the code has not changed yet.
+
 Two source files, one public header, **no dependencies** beyond
 `<string.h>` and the fixed-width integer types. It never allocates:
 every buffer is one the embedder passed in or one sized at compile time
@@ -44,9 +54,11 @@ in about 300 lines, and it is short enough to read as documentation.
 
 ## What it does not do
 
-- **It does not skip verification.** There is no flag for it. The VM
-  sizes its frame from numbers the container supplied, and this is where
-  those numbers are recomputed.
+- **It does not skip verification** — today. There is no flag for it,
+  and the VM sizes its frame from numbers the container supplied, which
+  is where those numbers are recomputed. Under ADR 0006 this becomes an
+  obligation on whoever produced the container instead, and the entry
+  above the heading says what that changes.
 - **It does not have to implement every instruction group.** By default
   it does — `core`, `i64`, `float`, `call`, `bits` — and
   `-DMCUSCRIPT_GROUPS_IMPLEMENTED=MCUSCRIPT_GROUP_CORE|...` drops the
@@ -86,6 +98,13 @@ with the verdict each must get, run against both. It has already paid:
 the runtime used to accept a container whose header under-declared its
 instruction groups, and the host verifier refused it.
 
+This is the section ADR 0006 costs the most. When the device-side
+verifier goes, one of the two methods goes with it and the host one is
+left alone — a real loss, and the reason the decision was argued on
+grounds strong enough to be worth it. The corpus survives as the
+material a conforming verifier is checked against, wherever one is
+built.
+
 ## What it costs
 
 Measured on a **linked image**, cortex-m33 at `-Os`, and reproducible
@@ -114,9 +133,11 @@ fifth — trim rather than a lever. And an expression-only interpreter
 really is about 1.5 KB, which is what the project's original estimate
 was about; it just left out everything around it.
 
-Whether a device-side verifier belongs in this project at all is an open
-question as of 2026-08-17 — see ADR 0004's Open section. The numbers
-above describe what is built today.
+Verification is what the second column costs, and ADR 0006 removes it —
+so these figures describe what is built today, not what is intended. The
+estimate for the runtime that decision leaves is ~2.1 KB for an
+expression-only build and ~4 KB complete; it will be measured rather
+than estimated once the code follows the text.
 
 Also verified on hardware rather than argued: an nRF5340 running a
 container that uses all five groups returns the same value, bit for bit,

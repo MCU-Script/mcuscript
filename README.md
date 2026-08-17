@@ -13,6 +13,27 @@ backends: a compact bytecode for a tiny on-device VM, or plain C
 compiled into the firmware — every program expressible both ways, with
 the same behaviour either way.**
 
+## What it guarantees, and what it does not
+
+MCUScript is a language with two backends. It guarantees that the same
+source produces the same behaviour on both, that the reference
+implementation of the compiler emits conforming containers, and that the
+reference implementation of the runtime executes conforming containers
+as specified. About code the reference implementation did not produce,
+the reference runtime guarantees nothing; on non-conforming input its
+behaviour is undefined.
+
+How an artifact travels from the compiler to a device, and how it is
+protected on the way, is the embedder's concern — **equally for both
+backends**. That is a deliberate line rather than a gap: transpiled C
+can be tampered with exactly as bytecode can, and a language that
+policed one path and could not police the other would be read as safe
+when it is not. If your delivery path is untrusted, you want an
+authenticated channel, a verifier, or both; the specification defines
+what a verifier decides ([§2.6](spec/02-container.md)) and
+[`spec/corpus/`](spec/corpus/) is what one is checked against. Reasoning
+in [ADR 0006](docs/adr/draft/0006-three-contracts-not-one-promise.md).
+
 MCUScript is a standalone project in its own organization,
 [`mcu-script`](https://github.com/mcu-script), developed
 independently. [MCUHome](https://github.com/mcu-home/mcuhome), which
@@ -86,7 +107,11 @@ the compiler's support library is part of the bill, which is also why
 64-bit division is a group you can leave out.
 
 Roughly two thirds of that is the loader and its verification; the
-interpreter alone is 1.5 KB.
+interpreter alone is 1.5 KB. That proportion is why the next change is
+not an optimisation: [ADR 0006](docs/adr/draft/0006-three-contracts-not-one-promise.md)
+takes the device-side verifier out, for reasons of scope rather than
+size, and the runtime it leaves is estimated at ~2.1 KB expression-only
+and ~4 KB complete.
 
 Which is also the honest answer to "will it fit": if it does not, the
 second backend costs nothing at all, because generated C links neither

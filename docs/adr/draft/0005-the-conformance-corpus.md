@@ -5,7 +5,8 @@ SPDX-License-Identifier: Apache-2.0
 
 # 0005 — The conformance corpus
 
-- Status: draft — written, populated and running against both loaders.
+- Status: draft — written and populated. Its purpose changed on
+  2026-08-17; see "What ADR 0006 does to this".
 - Date: 2026-08-16
 
 ## Context
@@ -106,6 +107,36 @@ table — and this rule found one before the corpus even ran.
   were asked, which is a pleasant result and not evidence that the
   corpus was unnecessary. It is a regression net now, and the three
   findings above came from *writing* it rather than from running it.
+
+## What ADR 0006 does to this
+
+ADR 0006 removes the device-side verifier, which takes away one of the
+two implementations this corpus was built to hold together. That is a
+real reduction and worth naming plainly rather than smoothing over.
+
+What the corpus becomes is **the conformance material for a verifier**:
+containers with the verdict a conforming verifier must reach (spec
+§2.6.0), rather than the verdict two loaders must agree on. Its `ok`
+cases stay runtime tests — those are exactly the conforming containers a
+runtime promises to execute — and its refusal cases become host tests.
+
+Three things survive the change, and they are why the corpus is not
+diminished by it:
+
+- It is **the deliverable for anyone who wants a device-side verifier.**
+  The specification tells them what to decide; this tells them the
+  answers, in bytes. That is worth more once the reference
+  implementation no longer ships one.
+- It is still the check on the **host** verifier, which ADR 0006 keeps
+  and leans on harder: that verifier is now the only one, and it is what
+  makes the compiler's output trustworthy.
+- The three findings recorded above came from *writing* it, and they
+  were findings about the **specification**. That does not depend on how
+  many implementations read it.
+
+What is lost is the differential property — two algorithms, one verdict
+— for the load-time rules. The differential test that guards the actual
+two-backend claim, VM against generated C, is untouched.
 
 ## Open
 

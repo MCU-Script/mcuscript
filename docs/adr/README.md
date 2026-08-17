@@ -53,7 +53,15 @@ result yet.
 | [0001](draft/0001-record-mcuscript-decisions-here.md) | Record MCUScript decisions in this repository |
 | [0002](draft/0002-inherited-context.md) | Inherited context: what is already decided, and where it is written down |
 | [0003](draft/0003-name-organization-positioning.md) | The name, the organization, and what this project is positioned as |
+| [0004](draft/0004-two-backends-one-container.md) | Two backends, one container: the format, the VM, the C lowering, and what they cost |
+| [0005](draft/0005-the-conformance-corpus.md) | The conformance corpus |
+| [0006](draft/0006-three-contracts-not-one-promise.md) | Three contracts, not one promise |
 
 Start with [0002](draft/0002-inherited-context.md). It marks every item
 as **decided**, **recorded direction** or **on the table**, and its §8
 is the list of open questions — which is the actual work list.
+
+Read [0006](draft/0006-three-contracts-not-one-promise.md) before
+touching anything about verification: it is the decision that says what
+this project guarantees and what it deliberately does not, and it
+supersedes the older framing that a device-side verifier is mandatory.

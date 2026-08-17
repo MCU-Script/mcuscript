@@ -26,7 +26,7 @@ should not have to reproduce a dependency tree first.
 ```sh
 mcuscript asm program.mcs-asm -o program.mcs   # text  → container
 mcuscript dis program.mcs                      # container → text
-mcuscript verify program.mcs                   # check it as a loader would
+mcuscript verify program.mcs                   # is it a conforming container?
 mcuscript cc program.mcs -o program.c          # container → C, the second backend
 mcuscript info program.mcs                     # what is inside
 ```
@@ -45,7 +45,7 @@ built and tested against each other before anybody argues about how an
 | `opcodes.py` | The instruction table — one source of truth, read by everything else |
 | `errors.py` | Every refusal and fault the specification names |
 | `container.py` | The binary format: header, sections, the three tables |
-| `verify.py` | The load-time verifier of spec §2.6 |
+| `verify.py` | A conforming verifier (spec §2.6.0) — after ADR 0006 the only one this project ships, and the compiler's second opinion on its own output |
 | `asm.py` | Assembler and disassembler |
 | `cbackend.py` | The second backend: a container, lowered to plain C |
 | `corpus.py` | The conformance corpus's definitions; `../build_corpus.py` writes it |
@@ -62,7 +62,8 @@ the opcode table, the refusal names and the fault names are compared
 against the specification's own tables, so a change to one that is not a
 change to the other fails the build.
 
-`test_corpus.py` is the one that binds the two *loaders*. It runs
+`test_corpus.py` is the one that binds the two *loaders* — for as long
+as there are two; ADR 0006 removes the C one's verifier. It runs
 [`spec/corpus/`](../spec/corpus/) — containers with the verdict each
 must get — past the Python verifier and the C runtime, and it also
 checks that the committed bytes are still the ones
