@@ -166,6 +166,24 @@ refusal must have a container is what does the work:
 - **`duplicate_import` was filed as a linking error** and needs no
   registry to see.
 
+Then measuring the runtime's footprint found the sixteenth, and this one
+was a place where the document was right and only one implementation had
+read it. §2.6 point 1 says an instruction's opcode must be "defined in a
+required group": an opcode from a group the header does not declare is
+undefined *for that container*. The host verifier did that; the C loader
+checked only whether the opcode existed, so a container declaring `core`
+and containing `add.i64` was refused by one and **executed** by the
+other. §2.5 now states the duty separately instead of leaving it inside a
+compound sentence, because the check reads like a courtesy to small
+builds and is not one — under-declaration is how a container reaches an
+implementation that lacks the group with nothing left to stop it.
+
+Two things that follow are worth writing down. The corpus did not catch
+this, and could not have: its completeness rule asks whether every
+*named refusal* has a container, and a rule nobody implemented produces
+no new name. And the divergence is the two-implementation design paying
+for itself — one loader alone would have been self-consistently wrong.
+
 ## Versioning
 
 Three version numbers appear in this project and they are not the same

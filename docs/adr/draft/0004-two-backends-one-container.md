@@ -175,6 +175,107 @@ Everything else falls out of that matrix: `i` and `j` share a component
 when each reaches the other, a component is a cycle when a member
 reaches itself, and a function is dead when no entry point reaches it.
 
+### 4.9 Narrowing the group mask removes the code, and the numbers say what that is worth
+
+The group bits were a **permission** and nothing more: `#if` read them
+nowhere, so a build with `MCUSCRIPT_GROUPS_IMPLEMENTED` narrowed refused
+containers it could in fact have run, and saved not one byte. The
+modularity requirement of ADR 0002 §1.3 — *"the VM assembled from feature
+modules so an expression-only device links an expression-only VM"* —
+rested on that.
+
+It is now real: the dispatch cases, the verifier's type rules and the
+instruction-length table are each compiled per group, the group bits
+moved to the installed header where a build system can reach them, and
+`core` is mandatory while `loop` is a compile error because it has no
+instructions to implement. `python tools/measure_footprint.py`
+cross-compiles the whole matrix; the figures below are
+arm-zephyr-eabi-gcc 14.3.0 at `-Os`.
+
+**Flash, bytes.** Loader, verifier and interpreter together.
+
+| group set | cortex-m0+ | cortex-m4f | cortex-m33 |
+|---|---:|---:|---:|
+| full | 10,941 | 10,507 | 10,491 |
+| no i64 | 10,153 | 9,975 | 9,975 |
+| no float | 10,369 | 9,907 | 9,897 |
+| no call | 10,493 | 10,135 | 10,119 |
+| no bits | 10,640 | 10,218 | 10,206 |
+| expressions + float | 9,433 | 9,299 | 9,279 |
+| expressions only | 8,813 | 8,339 | 8,325 |
+
+**The estimate was five times low, and it was low about the right
+thing.** ADR 0002 §8 carried 1–2 KB for an expression-only engine. An
+expression-only *interpreter* is 1,504 bytes on cortex-m33 — the
+estimate was close. What nobody costed is the other 5,954: the loader
+and the verifier. On cortex-m33 the split is
+
+| | load.c | vm.c | names.c | total |
+|---|---:|---:|---:|---:|
+| full | 6,548 | 3,076 | 867 | 10,491 |
+| expressions + float | 6,332 | 2,080 | 867 | 9,279 |
+| expressions only | 5,954 | 1,504 | 867 | 8,325 |
+
+so **the verifier costs four times the interpreter it protects**, and it
+barely shrinks when groups go, because most of it is the container walk,
+the CRC, the import resolution and the call-graph condensation — none of
+which is per-group. That is not a defect to optimise away. It is the
+price of "a pushed script must never crash a node", and it is worth
+naming rather than discovering later: dropping every optional group buys
+21 %, and the four optional groups cost 3–6 % each.
+
+The honest reading of the modularity requirement is therefore narrower
+than it was written. Feature modules are real and they work; they are
+not what makes an engine fit a small device. **What makes it fit is
+choosing the other backend** — generated C links no loader and no VM, so
+the same script costs zero of these bytes. §4.1's two backends are the
+size knob; the group mask is trim.
+
+**RAM, and none of it is static.** The runtime declares no writable
+data at all; every byte below is the embedder's, and sized by the macros
+in `mcuscript.h` rather than by the container.
+
+| | bytes | set by |
+|---|---:|---|
+| `mcuscript_program` | 436 | `MAX_IMPORTS`, `MAX_FUNCTIONS`, `MAX_CONSTANTS` |
+| `mcuscript_slots` | 576 | `MAX_SLOTS` (64 × 9) |
+| stack, load | ≤ 732 | transient; gone before the first invocation |
+| stack, invoke | ≤ 348 | transient |
+
+The two stack figures never add: `mcuscript_load` has long returned when
+`mcuscript_invoke` is called. Both are GCC's `-fstack-usage` summed over
+the translation unit, which is an upper bound and a safe one, because
+the runtime does not recurse — the same property the loader proves about
+the container, applied to the C that runs it.
+
+### 4.10 It has been run on real hardware
+
+Everything above is cross-compiled. On 2026-08-17 the runtime was also
+loaded and invoked on an **nRF5340 application core** (nRF7002-DK,
+Zephyr 4.4.0, `-Os`), with a container using all five groups — a float
+comparison, a shift and a mask, a user function call, a host function
+call, a forward branch and a 64-bit round trip, arranged so every group
+contributes to the answer.
+
+- The device returns **176, valid**, and writes **176, valid** to its
+  entity. The host runner, given the same container and the same world,
+  returns and writes the same. Two architectures, one answer.
+- `sizeof(mcuscript_program)` is 436 and `sizeof(mcuscript_slots)` 576
+  on the device, matching the cross-compiled table exactly.
+- Stack high-water across `mcuscript_load` is **536 bytes** measured,
+  against the 732-byte bound above — the bound holds, with 27 % slack,
+  which is about what summing whole frames should cost.
+- Built into a real Zephyr image with Zephyr's own flags rather than
+  this tool's, the three objects come to **10,539 bytes** against the
+  10,491 measured standalone. A 0.5 % gap, which is the measurement
+  method checking out.
+
+The fixture was a throwaway Zephyr application and is not in this
+repository: a sample here would tie a standalone language project to one
+RTOS, and it would rot. What is kept is the part that reproduces
+anywhere with an ARM cross compiler — `tools/measure_footprint.py` — and
+this record of what the device said.
+
 ## Consequences
 
 - **Floating point needs the build, not only the source**, and the
@@ -193,7 +294,20 @@ reaches itself, and a function is dead when no entry point reaches it.
   ADR 0002 §8 can drop the question.
 - Generated C needs no runtime library at all — not the loader, not the
   VM, only a header of inline functions. A device that compiles its
-  scripts in carries neither.
+  scripts in carries neither. §4.9 puts a number on what that saves:
+  everything, and everything is 8 to 11 KB.
+- **The container must declare every group its code uses**, and the
+  runtime now checks it (§2.6.1). It did not, and the host verifier did,
+  which made an under-declaring container a thing the two
+  implementations disagreed about — the C loader ran it. That is the
+  hole §2.5 cannot have, because the header is the whole of what lets a
+  narrowed build refuse a container before meeting an instruction it
+  does not implement.
+- **The warning policy now survives optimisation.** `-Werror` had only
+  ever been exercised at `-O0`, since that is what the CMake test build
+  uses; at `-O2` the loader did not compile. A device build is always
+  optimised, so the measurement matrix compiles every group set at every
+  level, with two compilers.
 
 ## Open
 
@@ -204,10 +318,11 @@ reaches itself, and a function is dead when no entry point reaches it.
   container carrying a function nothing calls is refused rather than
   compiled — a C compiler rejects an unused static, and refusing at load
   keeps that from being a difference between the backends.
-- **A build that drops a group is untested against a real program.**
-  Both backends now implement everything, so the refusal of §2.5 can
-  only be provoked through a container's header. The mechanism is
-  right — the check reads the header, not the code — but nobody has
-  compiled a runtime with `MCUSCRIPT_GROUPS_IMPLEMENTED` narrowed and
-  measured what it saves, which is the number the modularity claim in
-  ADR 0002 rests on.
+- **The loader is where a small build's flash goes, and nobody has
+  tried to make it smaller.** §4.9 says it is 5,954 bytes of the 8,325 an
+  expression-only device pays. Two candidates are visible and neither is
+  costed: the refusal names are 867 bytes of string that an embedder
+  reporting a number instead of a word does not need, and the call-graph
+  condensation runs its full closure even for a build with no `call`
+  group. Both are measurements, not decisions, and neither is urgent
+  while the alternative backend costs nothing at all.

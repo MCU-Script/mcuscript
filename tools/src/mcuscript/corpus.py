@@ -383,6 +383,22 @@ def _cases() -> list[Case]:
         _raw(b"\x00"),
     )
     case(
+        "opcode-outside-the-required-groups",
+        "verification",
+        "undefined_opcode",
+        "add.i64 in a container whose header requires only `core`. The "
+        "opcode is assigned, and a complete build implements it — but "
+        "§2.6 point 1 asks whether it is in a group the *container* required, "
+        "and it is not. Without this the header could under-declare, and "
+        "the header is the whole of what lets a narrowed build refuse a "
+        "container before meeting an instruction it does not have (§2.5).",
+        _raw(
+            b"\x40\x00\x40\x00\x41\x0b\x23",
+            constants=(Constant(ValType.I64, 7),),
+            max_stack=2,
+        ),
+    )
+    case(
         "truncated-instruction",
         "verification",
         "truncated_instruction",

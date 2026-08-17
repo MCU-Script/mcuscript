@@ -164,6 +164,16 @@ load, in words, before anything runs.
 The compiler sets exactly the bits the code needs — not the bits the
 language has.
 
+That is a duty, and §2.6 point 1 is its enforcement: an opcode belonging
+to a group the header does **not** require is undefined *for this
+container*, and refused as `undefined_opcode`, however complete the
+implementation is. Stated separately because it is easy to read the
+group check as a courtesy to small builds and skip it in a large one.
+It is not: a container that under-declares would pass the check above on
+every implementation that has the group, and reach an implementation
+that does not with nothing left to stop it. The header can only protect
+a narrowed build if a complete build refuses to accept a wrong one.
+
 ## 2.6 Verification
 
 **Verification is mandatory. It is not a build option, a debug feature

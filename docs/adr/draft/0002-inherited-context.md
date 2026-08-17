@@ -1328,10 +1328,24 @@ backend, the execution budget, read-back of a script's own writes,
 whether a script may hold state between invocations, and the
 spec-versus-prototype sequencing.
 
-One more went the same way once there was something to measure: the
-float build flags. `-ffp-contract=off`, never `-ffast-math`, and the
+Two more went the same way once there was something to measure. The
+float build flags: `-ffp-contract=off`, never `-ffast-math`, and the
 harness pins host precision by compiling one program both ways and
 asserting the results come apart (ADR 0004 §4.5, spec §1.5).
+
+And the **flash and RAM budget**, which this list called question 1 and
+which was the oldest unmeasured claim in the project. It is measured now,
+on three Cortex-M targets and on a real nRF5340, and the answer corrects
+the §1.3 and §2.7 estimate rather than confirming it: 8.3 KB of flash for
+an expression-only build and 10.5 KB for a complete one, where the guess
+was 1–2 KB. The guess was right about the *interpreter* — that is 1.5 KB
+— and silent about the loader and verifier, which are four times its
+size and are what "a pushed script must never crash a node" costs. The
+feature-module mechanism of §1.3 is now real rather than declared, and
+buys 3–6 % per group; the size decision that matters is which backend a
+device uses, because generated C links none of this. Figures, method and
+the on-hardware run: ADR 0004 §4.9 and §4.10, reproducible with
+`python tools/measure_footprint.py`.
 
 The **C API toward embedders**, which this list called its largest open
 item, is gone too — not decided in the abstract but settled by having
@@ -1341,7 +1355,6 @@ before writing the VM would have been guessing. What is left:
 
 | # | Question | From |
 |---|---|---|
-| 1 | No flash/RAM budget has ever been measured for the engine on any target. The 1–2 KB figure for an expression-only VM is an estimate and always was | §1.3, §2.7 |
 | 3 | The grammar. The specification deliberately does not cover syntax, and the ternary conflict of §3.2 is still unresolved | §2.5, §3.2 |
 | 4 | The recursion cap's **default** is provisionally **5** (product owner, 2026-08-16), and provisionally is the whole answer: the mechanism is specified and enforced (spec §5.4, ADR 0004 §4.7), but which number annoys the fewest authors is a thing real use decides. Nothing depends on it yet — a container declares its cap and the assembler requires one, so the default exists only for a compiler that does not | §2.8 |
 | 5 | The counted-loop construct, reserved as a group but undesigned — and it must keep termination provable | spec §3.8 |

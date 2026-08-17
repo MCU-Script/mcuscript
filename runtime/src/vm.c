@@ -297,6 +297,7 @@ bool mcuscript_invoke(const mcuscript_program *program, int entry, mcuscript_slo
 			pc += 1;
 			break;
 
+#if MCUSCRIPT_GROUPS & MCUSCRIPT_GROUP_BITS
 		/* -- bits ----------------------------------------------- */
 		case OP_AND_I32:
 		case OP_OR_I32:
@@ -331,6 +332,7 @@ bool mcuscript_invoke(const mcuscript_program *program, int entry, mcuscript_slo
 			pc += 1;
 			break;
 		}
+#endif
 
 		case OP_ELSE:
 			/* The fallback carries its own state, so a fallback
@@ -352,6 +354,7 @@ bool mcuscript_invoke(const mcuscript_program *program, int entry, mcuscript_slo
 			break;
 		}
 
+#if MCUSCRIPT_GROUPS & MCUSCRIPT_GROUP_I64
 		/* -- i64 ------------------------------------------------ */
 		case OP_CONST_I64:
 			PUSH(mcuscript_op_from_i64(mcuscript_constant_i64(program, OPERAND)),
@@ -439,7 +442,9 @@ bool mcuscript_invoke(const mcuscript_program *program, int entry, mcuscript_slo
 				(int32_t)(uint32_t)(uint64_t)values[sp - 1]);
 			pc += 1;
 			break;
+#endif
 
+#if MCUSCRIPT_GROUPS & MCUSCRIPT_GROUP_FLOAT
 		/* -- f32 ------------------------------------------------ */
 		case OP_CONST_F32:
 			PUSH((uint64_t)mcuscript_constant_f32_bits(program, OPERAND),
@@ -522,6 +527,7 @@ bool mcuscript_invoke(const mcuscript_program *program, int entry, mcuscript_slo
 			pc += 1;
 			break;
 		}
+#endif
 
 		case OP_JMP:
 			pc = (uint32_t)((int32_t)pc + 3 +
@@ -543,6 +549,7 @@ bool mcuscript_invoke(const mcuscript_program *program, int entry, mcuscript_slo
 			break;
 		}
 
+#if MCUSCRIPT_GROUPS & MCUSCRIPT_GROUP_CALL
 		case OP_CALL: {
 			uint8_t index = OPERAND;
 			const mcuscript_function *callee = &program->functions[index];
@@ -573,6 +580,7 @@ bool mcuscript_invoke(const mcuscript_program *program, int entry, mcuscript_slo
 			pc = callee->code_offset;
 			break;
 		}
+#endif
 
 		case OP_RET:
 		case OP_RET_V: {

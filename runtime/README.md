@@ -47,12 +47,15 @@ in about 300 lines, and it is short enough to read as documentation.
 - **It does not skip verification.** There is no flag for it. The VM
   sizes its frame from numbers the container supplied, and this is where
   those numbers are recomputed.
-- **It does not have to implement every instruction group.** This build
-  does — `core`, `i64`, `float`, `call`, `bits` — but a build that drops
-  one refuses a container needing it at load, by name, before anything
-  runs. The groups occupy disjoint opcode ranges precisely so a build
-  can drop a contiguous span of the dispatch table, and only `core` is
-  mandatory.
+- **It does not have to implement every instruction group.** By default
+  it does — `core`, `i64`, `float`, `call`, `bits` — and
+  `-DMCUSCRIPT_GROUPS_IMPLEMENTED=MCUSCRIPT_GROUP_CORE|...` drops the
+  rest: their dispatch cases, their type rules and their entries in the
+  instruction-length table are not compiled, and a container needing one
+  is refused at load, by name, before anything runs. The groups occupy
+  disjoint opcode ranges precisely so a build can drop a contiguous span
+  of the dispatch table. Only `core` is mandatory, and `loop` is a
+  compile error because it is reserved and has no instructions yet.
 - **It does not survive `-ffast-math`.** The header refuses to compile
   under it, and a build must pass `-ffp-contract=off`. Both are measured
   requirements, not superstition — see spec §1.5.
@@ -79,4 +82,33 @@ and a triple loop.
 
 Two methods over one specification is worth more than two copies of one
 method. What binds them is [the corpus](../spec/corpus/) — containers
-with the verdict each must get, run against both.
+with the verdict each must get, run against both. It has already paid:
+the runtime used to accept a container whose header under-declared its
+instruction groups, and the host verifier refused it.
+
+## What it costs
+
+Measured, on cortex-m33 at `-Os`, and reproducible with
+`python ../tools/measure_footprint.py`:
+
+| | flash | of which the verifier |
+|---|---:|---:|
+| every group | 10,491 B | 6,548 B |
+| `core` + `float` | 9,279 B | 6,332 B |
+| `core` only | 8,325 B | 5,954 B |
+
+No static RAM at all. An embedder declares an `mcuscript_program` (436
+bytes with the default limits) and an `mcuscript_slots` (576), and the
+runtime borrows at most 732 bytes of stack while loading and 348 while
+running — never both, since loading has finished before anything runs.
+
+Two things that table says out loud. **The verifier is four times the
+interpreter**, and it is what "a pushed script must never crash a node"
+costs; dropping every optional group saves 21 %, which is trim rather
+than a lever. And an expression-only interpreter really is about 1.5 KB,
+which is what the project's original estimate was about — it just left
+out the loader.
+
+Also verified on hardware rather than argued: an nRF5340 running a
+container that uses all five groups returns the same value, bit for bit,
+as the host runner given the same world (ADR 0004 §4.10).

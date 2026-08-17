@@ -77,6 +77,51 @@ extern "C" {
 #endif
 
 /* ------------------------------------------------------------------
+ * Instruction groups
+ *
+ * The bits of a container's `required_groups` (spec §2.5), and what
+ * this build implements. Narrowing the mask removes the code as well
+ * as the permission: the group's cases are not compiled, and a
+ * container that needs the group is refused at load, by name, before
+ * anything runs.
+ *
+ * Set it from the build system — `-DMCUSCRIPT_GROUPS_IMPLEMENTED=...`
+ * — and the loader and the interpreter follow it together, because
+ * both read this one macro.
+ */
+#define MCUSCRIPT_GROUP_CORE (1u << 0)
+#define MCUSCRIPT_GROUP_I64 (1u << 1)
+#define MCUSCRIPT_GROUP_FLOAT (1u << 2)
+#define MCUSCRIPT_GROUP_CALL (1u << 3)
+#define MCUSCRIPT_GROUP_BITS (1u << 4)
+#define MCUSCRIPT_GROUP_LOOP (1u << 5)
+
+#ifndef MCUSCRIPT_GROUPS_IMPLEMENTED
+#define MCUSCRIPT_GROUPS_IMPLEMENTED                                          \
+	(MCUSCRIPT_GROUP_CORE | MCUSCRIPT_GROUP_I64 | MCUSCRIPT_GROUP_FLOAT | \
+	 MCUSCRIPT_GROUP_CALL | MCUSCRIPT_GROUP_BITS)
+#endif
+
+/*
+ * Use this, never the macro above. A mask arrives from a command line
+ * as `-DMCUSCRIPT_GROUPS_IMPLEMENTED=A|B`, without parentheses, and `&`
+ * binds tighter than `|` — so `MCUSCRIPT_GROUPS_IMPLEMENTED & BIT`
+ * silently asks about the last group in the list rather than about the
+ * set. Parenthesising once here is what keeps every other site right.
+ */
+#define MCUSCRIPT_GROUPS ((MCUSCRIPT_GROUPS_IMPLEMENTED))
+
+#if !(MCUSCRIPT_GROUPS & MCUSCRIPT_GROUP_CORE)
+#error "core is mandatory: a build without it implements no instruction"
+#endif
+
+/* `loop` is reserved and has no opcodes yet (spec §3.8). Claiming it
+ * would accept a container this build cannot possibly run. */
+#if MCUSCRIPT_GROUPS & MCUSCRIPT_GROUP_LOOP
+#error "loop is reserved and empty: no build implements it"
+#endif
+
+/* ------------------------------------------------------------------
  * Values
  */
 

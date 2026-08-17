@@ -93,6 +93,7 @@ static bool fail_named(mcuscript_diagnostic *diagnostic, mcuscript_refusal refus
 unsigned mcuscript_instruction_size(uint8_t opcode)
 {
 	switch (opcode) {
+	/* -- core --------------------------------------------------- */
 	case OP_CONST_TRUE:
 	case OP_CONST_FALSE:
 	case OP_DROP:
@@ -116,6 +117,23 @@ unsigned mcuscript_instruction_size(uint8_t opcode)
 	case OP_IS_VALID:
 	case OP_IS_UNAVAILABLE:
 	case OP_IS_INVALID:
+		return 1;
+	case OP_CONST_I32_S8:
+	case OP_CONST_I32:
+	case OP_LOAD_L:
+	case OP_STORE_L:
+	case OP_LOAD_H:
+	case OP_STORE_H:
+	case OP_CALL_H:
+		return 2;
+	case OP_CONST_I32_S16:
+	case OP_JMP:
+	case OP_JMP_IF_FALSE:
+	case OP_JMP_IF_TRUE:
+		return 3;
+
+#if MCUSCRIPT_GROUPS & MCUSCRIPT_GROUP_I64
+	/* -- i64 ---------------------------------------------------- */
 	case OP_ADD_I64:
 	case OP_SUB_I64:
 	case OP_MUL_I64:
@@ -130,6 +148,13 @@ unsigned mcuscript_instruction_size(uint8_t opcode)
 	case OP_GE_I64:
 	case OP_EXTEND_I32_I64:
 	case OP_WRAP_I64_I32:
+		return 1;
+	case OP_CONST_I64:
+		return 2;
+#endif
+
+#if MCUSCRIPT_GROUPS & MCUSCRIPT_GROUP_FLOAT
+	/* -- float -------------------------------------------------- */
 	case OP_ADD_F32:
 	case OP_SUB_F32:
 	case OP_MUL_F32:
@@ -143,6 +168,19 @@ unsigned mcuscript_instruction_size(uint8_t opcode)
 	case OP_GE_F32:
 	case OP_CONVERT_I32_F32:
 	case OP_TRUNC_F32_I32:
+		return 1;
+	case OP_CONST_F32:
+		return 2;
+#endif
+
+#if MCUSCRIPT_GROUPS & MCUSCRIPT_GROUP_CALL
+	/* -- call --------------------------------------------------- */
+	case OP_CALL:
+		return 2;
+#endif
+
+#if MCUSCRIPT_GROUPS & MCUSCRIPT_GROUP_BITS
+	/* -- bits --------------------------------------------------- */
 	case OP_AND_I32:
 	case OP_OR_I32:
 	case OP_XOR_I32:
@@ -150,26 +188,37 @@ unsigned mcuscript_instruction_size(uint8_t opcode)
 	case OP_SHL_I32:
 	case OP_SHR_I32:
 		return 1;
-	case OP_CONST_I32_S8:
-	case OP_CONST_I32:
-	case OP_LOAD_L:
-	case OP_STORE_L:
-	case OP_LOAD_H:
-	case OP_STORE_H:
-	case OP_CALL_H:
-	case OP_CONST_I64:
-	case OP_CONST_F32:
-		return 2;
-	case OP_CALL:
-		return 2;
-	case OP_CONST_I32_S16:
-	case OP_JMP:
-	case OP_JMP_IF_FALSE:
-	case OP_JMP_IF_TRUE:
-		return 3;
+#endif
+
 	default:
 		return 0;
 	}
+}
+
+/*
+ * The group an opcode belongs to, from its range alone (§3.2). Zero for
+ * a byte in no group's range — which the caller treats exactly like an
+ * unassigned opcode, because that is what it is.
+ *
+ * This stays defined for every group, including ones this build does
+ * not implement: it answers a question about the *container*, and the
+ * answer must not depend on the build.
+ */
+uint32_t mcuscript_opcode_group(uint8_t opcode)
+{
+	if (opcode >= MCUSCRIPT_RANGE_CORE_LO && opcode <= MCUSCRIPT_RANGE_CORE_HI)
+		return MCUSCRIPT_GROUP_CORE;
+	if (opcode >= MCUSCRIPT_RANGE_I64_LO && opcode <= MCUSCRIPT_RANGE_I64_HI)
+		return MCUSCRIPT_GROUP_I64;
+	if (opcode >= MCUSCRIPT_RANGE_FLOAT_LO && opcode <= MCUSCRIPT_RANGE_FLOAT_HI)
+		return MCUSCRIPT_GROUP_FLOAT;
+	if (opcode >= MCUSCRIPT_RANGE_CALL_LO && opcode <= MCUSCRIPT_RANGE_CALL_HI)
+		return MCUSCRIPT_GROUP_CALL;
+	if (opcode >= MCUSCRIPT_RANGE_BITS_LO && opcode <= MCUSCRIPT_RANGE_BITS_HI)
+		return MCUSCRIPT_GROUP_BITS;
+	if (opcode >= MCUSCRIPT_RANGE_LOOP_LO && opcode <= MCUSCRIPT_RANGE_LOOP_HI)
+		return MCUSCRIPT_GROUP_LOOP;
+	return 0;
 }
 
 /* ------------------------------------------------------------------
@@ -383,9 +432,13 @@ static bool load_imports(mcuscript_program *program, section table,
 			return fail(diagnostic, MCUSCRIPT_MALFORMED_SECTION, i);
 		for (uint8_t j = 0; j < i; j++) {
 			mcuscript_str other;
-			(void)read_name(area, area_length,
-					read_u16(table.data + program->import_offsets[j]),
-					&other);
+			/* Reading a name that a previous round already read
+			 * cannot fail — but saying so in a comment leaves the
+			 * compiler to assume it, and at -O2 it will not. */
+			if (!read_name(area, area_length,
+				       read_u16(table.data + program->import_offsets[j]),
+				       &other))
+				return fail(diagnostic, MCUSCRIPT_MALFORMED_SECTION, j);
 			if (other.length == name.length &&
 			    memcmp(other.bytes, name.bytes, name.length) == 0)
 				return fail_named(diagnostic, MCUSCRIPT_DUPLICATE_IMPORT, i,
@@ -671,6 +724,16 @@ static bool verify_function(const mcuscript_program *program, section imports,
 		unsigned size = mcuscript_instruction_size(opcode);
 		if (size == 0)
 			return fail(diagnostic, MCUSCRIPT_UNDEFINED_OPCODE, pc);
+		/*
+		 * §2.6 point 1: an opcode assigned to a group the header does not
+		 * require is undefined *for this container*, however complete
+		 * the build is. Without this, a container could under-declare
+		 * its groups and slip past the check of §2.5 — which is the
+		 * one thing standing between a narrowed build and an
+		 * instruction it does not implement.
+		 */
+		if (!(program->required_groups & mcuscript_opcode_group(opcode)))
+			return fail(diagnostic, MCUSCRIPT_UNDEFINED_OPCODE, pc);
 		if (pc + size > fn->code_end)
 			return fail(diagnostic, MCUSCRIPT_TRUNCATED_INSTRUCTION, pc);
 		uint8_t index = (size >= 2) ? code[pc + 1] : 0;
@@ -751,6 +814,18 @@ static bool verify_function(const mcuscript_program *program, section imports,
 			ok = binary(&w, MCUSCRIPT_I32, MCUSCRIPT_I32);
 			break;
 		case OP_NEG_I32:
+			ok = unary(&w, MCUSCRIPT_I32, MCUSCRIPT_I32);
+			break;
+		case OP_EQ_I32:
+		case OP_NE_I32:
+		case OP_LT_I32:
+		case OP_LE_I32:
+		case OP_GT_I32:
+		case OP_GE_I32:
+			ok = binary(&w, MCUSCRIPT_I32, MCUSCRIPT_BOOL);
+			break;
+#if MCUSCRIPT_GROUPS & MCUSCRIPT_GROUP_BITS
+		/* -- bits --------------------------------------------- */
 		case OP_BITNOT_I32:
 			ok = unary(&w, MCUSCRIPT_I32, MCUSCRIPT_I32);
 			break;
@@ -761,23 +836,17 @@ static bool verify_function(const mcuscript_program *program, section imports,
 		case OP_SHR_I32:
 			ok = binary(&w, MCUSCRIPT_I32, MCUSCRIPT_I32);
 			break;
-		case OP_EQ_I32:
-		case OP_NE_I32:
-		case OP_LT_I32:
-		case OP_LE_I32:
-		case OP_GT_I32:
-		case OP_GE_I32:
-			ok = binary(&w, MCUSCRIPT_I32, MCUSCRIPT_BOOL);
-			break;
-		case OP_CONST_I64:
-		case OP_CONST_F32: {
-			uint8_t want = (opcode == OP_CONST_I64) ? MCUSCRIPT_I64 : MCUSCRIPT_F32;
+#endif
+
+#if MCUSCRIPT_GROUPS & MCUSCRIPT_GROUP_I64
+		/* -- i64 ---------------------------------------------- */
+		case OP_CONST_I64: {
 			uint8_t type;
 			if (!constant_type(program, index, &type))
 				return fail(diagnostic, MCUSCRIPT_INDEX_OUT_OF_RANGE, pc);
-			if (type != want)
+			if (type != MCUSCRIPT_I64)
 				return fail(diagnostic, MCUSCRIPT_TYPE_MISMATCH, pc);
-			ok = push_type(&w, want);
+			ok = push_type(&w, MCUSCRIPT_I64);
 			break;
 		}
 		case OP_ADD_I64:
@@ -804,6 +873,19 @@ static bool verify_function(const mcuscript_program *program, section imports,
 		case OP_WRAP_I64_I32:
 			ok = unary(&w, MCUSCRIPT_I64, MCUSCRIPT_I32);
 			break;
+#endif
+
+#if MCUSCRIPT_GROUPS & MCUSCRIPT_GROUP_FLOAT
+		/* -- float -------------------------------------------- */
+		case OP_CONST_F32: {
+			uint8_t type;
+			if (!constant_type(program, index, &type))
+				return fail(diagnostic, MCUSCRIPT_INDEX_OUT_OF_RANGE, pc);
+			if (type != MCUSCRIPT_F32)
+				return fail(diagnostic, MCUSCRIPT_TYPE_MISMATCH, pc);
+			ok = push_type(&w, MCUSCRIPT_F32);
+			break;
+		}
 		case OP_ADD_F32:
 		case OP_SUB_F32:
 		case OP_MUL_F32:
@@ -827,6 +909,10 @@ static bool verify_function(const mcuscript_program *program, section imports,
 		case OP_TRUNC_F32_I32:
 			ok = unary(&w, MCUSCRIPT_F32, MCUSCRIPT_I32);
 			break;
+#endif
+
+#if MCUSCRIPT_GROUPS & MCUSCRIPT_GROUP_CALL
+		/* -- call --------------------------------------------- */
 		case OP_CALL: {
 			if (index >= program->function_count)
 				return fail(diagnostic, MCUSCRIPT_INDEX_OUT_OF_RANGE, pc);
@@ -841,6 +927,9 @@ static bool verify_function(const mcuscript_program *program, section imports,
 				     : push_type(&w, callee->return_type);
 			break;
 		}
+#endif
+
+		/* -- core, continued ---------------------------------- */
 		case OP_NOT:
 			ok = pop_type(&w, MCUSCRIPT_BOOL, NULL) && push_type(&w, MCUSCRIPT_BOOL);
 			break;
@@ -1174,9 +1263,9 @@ bool mcuscript_load(mcuscript_program *program, const uint8_t *bytes, size_t len
 		return fail(diagnostic, MCUSCRIPT_PROFILE_MISMATCH, read_u32(bytes + 12));
 
 	program->required_groups = read_u32(bytes + 20);
-	if (program->required_groups & ~(uint32_t)MCUSCRIPT_GROUPS_IMPLEMENTED)
+	if (program->required_groups & ~(uint32_t)MCUSCRIPT_GROUPS)
 		return fail(diagnostic, MCUSCRIPT_UNSUPPORTED_GROUP,
-			    program->required_groups & ~(uint32_t)MCUSCRIPT_GROUPS_IMPLEMENTED);
+			    program->required_groups & ~(uint32_t)MCUSCRIPT_GROUPS);
 
 	section code = { 0 }, constants = { 0 }, entries = { 0 }, imports = { 0 };
 	if (!walk_sections(bytes, length, &code, &constants, &entries, &imports, diagnostic))

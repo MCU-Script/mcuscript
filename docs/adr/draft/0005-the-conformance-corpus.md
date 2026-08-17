@@ -109,6 +109,17 @@ table — and this rule found one before the corpus even ran.
 
 ## Open
 
+- **Completeness is measured in names, not in rules**, and the
+  difference has already cost something. "Every refusal §4.6 names has a
+  container" is checkable because the names are a closed list; "every
+  rule §2 states has a container" is not, because the rules are prose. A
+  rule that *neither* implementation enforced would look exactly like a
+  complete corpus — and one that only one implementation enforced did:
+  the group-declaration rule of §2.6 point 1 was missing from the C
+  loader, produced no new refusal name, and was found by writing a
+  narrowed build rather than by the corpus. The corpus has a container
+  for it now. What would actually close the gap is a rule-to-case index
+  in the manifest, which is real work and is not decided.
 - **Faults are not covered.** The corpus is about verdicts at load. What
   a container computes once accepted is the differential test's
   business, and whether the three faults of §5.5 deserve the same

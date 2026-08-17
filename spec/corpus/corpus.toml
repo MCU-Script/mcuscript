@@ -131,6 +131,13 @@ refusal = "undefined_opcode"
 description = "Opcode 0x00, which is deliberately unassigned so that a run of erased flash is refused rather than executed (§3.1)."
 
 [[case]]
+name = "opcode-outside-the-required-groups"
+file = "opcode-outside-the-required-groups.mcs"
+stage = "verification"
+refusal = "undefined_opcode"
+description = "add.i64 in a container whose header requires only `core`. The opcode is assigned, and a complete build implements it — but §2.6 point 1 asks whether it is in a group the *container* required, and it is not. Without this the header could under-declare, and the header is the whole of what lets a narrowed build refuse a container before meeting an instruction it does not have (§2.5)."
+
+[[case]]
 name = "truncated-instruction"
 file = "truncated-instruction.mcs"
 stage = "verification"

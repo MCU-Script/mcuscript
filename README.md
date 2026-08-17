@@ -61,7 +61,9 @@ Three requirements shape everything else:
    image and link no VM at all. Which one a deployment uses is a
    choice; being able to do both is not.
 3. **Modular**, because most scripts are formulas. A device that only
-   evaluates expressions should link only an expression evaluator.
+   evaluates expressions should link only an expression evaluator —
+   and dropping the optional instruction groups really does drop their
+   code, which is now measured rather than claimed.
 
 Requirement 2 is what shapes the rest. Two backends generate from one
 typed intermediate representation, and a construct only one of them can
@@ -72,6 +74,23 @@ depth, and why recursion is capped rather than open-ended.
 What that buys, and what nothing else currently offers in one package:
 **one source, two backends, identical behaviour**, held to it by
 differential tests.
+
+## What it costs
+
+Measured, not estimated: the engine is **8.3 KB of flash** on a
+Cortex-M33 for an expression-only build and **10.5 KB** with every
+instruction group, no static RAM, and about 1 KB the embedder declares
+for a loaded program and its slots. Two thirds of that is the load-time
+verifier — the interpreter alone is 1.5 KB — because a script that
+arrives over the air is untrusted input and checking it is not optional.
+
+Which is also the honest answer to "will it fit": if it does not, the
+second backend costs nothing at all, because generated C links neither
+the loader nor the VM. The whole table, the method, and the run on a
+real nRF5340 are in
+[ADR 0004 §4.9](docs/adr/draft/0004-two-backends-one-container.md), and
+`python tools/measure_footprint.py` reproduces it wherever there is an
+ARM cross compiler.
 
 ## Mostly sketches
 
@@ -108,7 +127,7 @@ from quietly becoming a home-automation one.
 the instruction set, linking and execution. A third party should be
 able to write a conforming VM from it alone — and the implementation in
 this repository is how that claim gets checked, because writing it has
-corrected the document fifteen times and the list is kept in
+corrected the document sixteen times and the list is kept in
 [spec/README.md](spec/README.md).
 
 [spec/corpus/](spec/corpus/) is how *you* would check: containers with

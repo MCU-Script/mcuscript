@@ -15,19 +15,28 @@
 #ifndef MCUSCRIPT_OPCODES_H
 #define MCUSCRIPT_OPCODES_H
 
-/* Group bits in the container header (§2.5). */
-#define MCUSCRIPT_GROUP_CORE (1u << 0)
-#define MCUSCRIPT_GROUP_I64 (1u << 1)
-#define MCUSCRIPT_GROUP_FLOAT (1u << 2)
-#define MCUSCRIPT_GROUP_CALL (1u << 3)
-#define MCUSCRIPT_GROUP_BITS (1u << 4)
-#define MCUSCRIPT_GROUP_LOOP (1u << 5)
+#include "mcuscript.h" /* the group bits, and what this build implements */
 
-/* What this build implements. Everything else is refused at load, by
- * name, before anything runs. */
-#define MCUSCRIPT_GROUPS_IMPLEMENTED                                        \
-	(MCUSCRIPT_GROUP_CORE | MCUSCRIPT_GROUP_I64 | MCUSCRIPT_GROUP_FLOAT | \
-	 MCUSCRIPT_GROUP_CALL | MCUSCRIPT_GROUP_BITS)
+/*
+ * Opcode range per group, inclusive (§3.2). The ranges are disjoint so
+ * that a build omitting a group omits a contiguous span of its dispatch
+ * table, and so that the group of an opcode is a comparison rather than
+ * a table — which is what §2.6 point 1 needs, since an opcode assigned to a
+ * group the *container* does not require is undefined for that
+ * container however complete the build is.
+ */
+#define MCUSCRIPT_RANGE_CORE_LO 0x01
+#define MCUSCRIPT_RANGE_CORE_HI 0x3F
+#define MCUSCRIPT_RANGE_I64_LO 0x40
+#define MCUSCRIPT_RANGE_I64_HI 0x5F
+#define MCUSCRIPT_RANGE_FLOAT_LO 0x60
+#define MCUSCRIPT_RANGE_FLOAT_HI 0x7F
+#define MCUSCRIPT_RANGE_CALL_LO 0x80
+#define MCUSCRIPT_RANGE_CALL_HI 0x8F
+#define MCUSCRIPT_RANGE_BITS_LO 0x90
+#define MCUSCRIPT_RANGE_BITS_HI 0x9F
+#define MCUSCRIPT_RANGE_LOOP_LO 0xA0
+#define MCUSCRIPT_RANGE_LOOP_HI 0xAF
 
 enum {
 	/* constants */

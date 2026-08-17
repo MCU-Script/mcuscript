@@ -25,6 +25,7 @@ from mcuscript.asm import assemble
 REPO = Path(__file__).resolve().parents[2]
 RUNTIME = REPO / "runtime"
 OPCODES_H = RUNTIME / "src" / "opcodes.h"
+MCUSCRIPT_H = RUNTIME / "include" / "mcuscript.h"
 
 PROFILE = ".profile 1 0.0\n"
 
@@ -57,10 +58,27 @@ def test_the_c_opcode_table_matches_the_python_one():
     }
     assert found == implemented
 
+    # The group bits are a build-time knob an embedder sets, so they
+    # live in the installed header rather than beside the opcodes.
+    public = MCUSCRIPT_H.read_text(encoding="utf-8")
     for group in Group:
         macro = f"#define MCUSCRIPT_GROUP_{group.name} (1u << {group.value})"
-        assert macro in text, f"the C header is missing {macro}"
-    assert GROUP_RANGES[Group.CORE] == (0x01, 0x3F)
+        assert macro in public, f"the public header is missing {macro}"
+
+    # The ranges are the second table that has to agree, and the C side
+    # needs them for its own reason: §2.6 point 1 asks which group an
+    # opcode is in, which is a question about the container, not the build.
+    ranges = {
+        (name, bound): int(value, 16)
+        for name, bound, value in re.findall(
+            r"#define MCUSCRIPT_RANGE_([A-Z0-9]+)_(LO|HI) 0x([0-9A-F]{2})", text
+        )
+    }
+    assert ranges == {
+        (group.name, bound): value
+        for group, (lo, hi) in GROUP_RANGES.items()
+        for bound, value in (("LO", lo), ("HI", hi))
+    }
 
 
 # -- building the runtime -------------------------------------------------
@@ -414,6 +432,165 @@ def test_a_group_this_build_does_not_implement_is_refused(runner, tmp_path):
     assert result.refusal == "unsupported_group"
     # `where` carries the mask of the groups this build lacks — bit 5.
     assert result.out.split()[3] == "32"
+
+
+# -- a build that drops a group --------------------------------------------
+#
+# The three tests below are the modularity claim of ADR 0002 §1.3, which
+# until now was a claim: the group bits gated the *permission* and no
+# `#if` read them, so narrowing the mask refused containers and saved
+# nothing.
+
+
+@pytest.fixture(scope="session")
+def core_only_runner(tmp_path_factory) -> Path:
+    """The runtime built with `core` and nothing else."""
+    if shutil.which("cmake") is None:
+        pytest.skip("cmake is not installed")
+    build = tmp_path_factory.mktemp("core-only")
+    subprocess.run(
+        [
+            "cmake",
+            "-S",
+            str(RUNTIME),
+            "-B",
+            str(build),
+            "-DCMAKE_BUILD_TYPE=Release",
+            "-DCMAKE_C_FLAGS=-Os -DMCUSCRIPT_GROUPS_IMPLEMENTED=MCUSCRIPT_GROUP_CORE",
+        ],
+        check=True,
+        capture_output=True,
+    )
+    subprocess.run(["cmake", "--build", str(build)], check=True, capture_output=True)
+    return build / "tests" / "mcuscript-run"
+
+
+@pytest.fixture(scope="session")
+def optimised_runner(tmp_path_factory) -> Path:
+    """The full runtime, built the same way, so sizes are comparable."""
+    if shutil.which("cmake") is None:
+        pytest.skip("cmake is not installed")
+    build = tmp_path_factory.mktemp("optimised")
+    subprocess.run(
+        [
+            "cmake",
+            "-S",
+            str(RUNTIME),
+            "-B",
+            str(build),
+            "-DCMAKE_BUILD_TYPE=Release",
+            "-DCMAKE_C_FLAGS=-Os",
+        ],
+        check=True,
+        capture_output=True,
+    )
+    subprocess.run(["cmake", "--build", str(build)], check=True, capture_output=True)
+    return build / "tests" / "mcuscript-run"
+
+
+def test_a_core_only_build_still_runs_a_core_program(core_only_runner, tmp_path):
+    source = (
+        PROFILE
+        + ".entry go -> i32\n  const.i32.s8 20\n  const.i32.s8 22\n  add.i32\n  ret_v\n"
+    )
+    result = run(core_only_runner, tmp_path, source, "")
+    assert result.result == ("i32", "42", "valid")
+
+
+def test_a_core_only_build_refuses_a_container_needing_a_dropped_group(
+    core_only_runner, tmp_path
+):
+    """By name, at load, before the code is looked at (§2.5)."""
+    source = (
+        PROFILE
+        + ".const seven i64 7\n"
+        + ".entry go -> i64\n  const.i64 seven\n  const.i64 seven\n  add.i64\n  ret_v\n"
+    )
+    result = run(core_only_runner, tmp_path, source, "")
+    assert result.refusal == "unsupported_group"
+    assert result.out.split()[3] == "2"  # the i64 bit, and only it
+
+
+def test_dropping_the_groups_drops_their_code(core_only_runner, optimised_runner):
+    """The claim is that the code goes, not just the permission.
+
+    Strictly smaller rather than smaller by some figure: a threshold
+    would be a compiler's number rather than this project's. The
+    measured savings are in ADR 0004, from
+    `python tools/measure_footprint.py`, which cross-compiles for the
+    targets that make the number mean something.
+    """
+    narrowed = core_only_runner.stat().st_size
+    complete = optimised_runner.stat().st_size
+    assert narrowed < complete, (
+        f"core-only build is {narrowed} bytes and the full build is "
+        f"{complete} — narrowing the group mask removed no code"
+    )
+
+
+GROUP_SETS = {
+    "full": "",  # the header's own default
+    "core": "MCUSCRIPT_GROUP_CORE",
+    "core+float": "MCUSCRIPT_GROUP_CORE|MCUSCRIPT_GROUP_FLOAT",
+    "no-call": (
+        "MCUSCRIPT_GROUP_CORE|MCUSCRIPT_GROUP_I64|"
+        "MCUSCRIPT_GROUP_FLOAT|MCUSCRIPT_GROUP_BITS"
+    ),
+}
+
+WARNINGS = [
+    "-std=c99",
+    "-Wall",
+    "-Wextra",
+    "-Werror",
+    "-Wconversion",
+    "-Wsign-conversion",
+    "-Wshadow",
+    "-Wstrict-prototypes",
+    "-Wmissing-prototypes",
+    "-Wcast-qual",
+    "-Wpointer-arith",
+    "-ffp-contract=off",
+]
+
+
+def compilers() -> list[str]:
+    """Both of the ones the project claims to support, where present."""
+    found = [path for name in ("gcc", "clang") if (path := shutil.which(name))]
+    return found or ["cc"]
+
+
+@pytest.mark.parametrize("compiler", compilers(), ids=lambda p: Path(p).name)
+@pytest.mark.parametrize("groups", list(GROUP_SETS), ids=list(GROUP_SETS))
+@pytest.mark.parametrize("level", ["-Os", "-O2"])
+def test_every_group_set_compiles_clean_when_optimised(
+    tmp_path, groups, level, compiler
+):
+    """Warnings are errors, and that had only ever been tried at -O0.
+
+    The CMake test build sets no optimisation, so a device build — which
+    is always optimised — was outside the policy the project states. At
+    -O2 the loader did not compile. Two axes because a group set that
+    only compiles at one level is a group set nobody can ship, and the
+    `|` in the masks is deliberate: an unparenthesised mask arriving from
+    a command line is how a guard silently asks the wrong question.
+    """
+    define = GROUP_SETS[groups]
+    flags = [
+        *WARNINGS,
+        level,
+        f"-I{RUNTIME / 'include'}",
+        f"-I{RUNTIME / 'src'}",
+    ]
+    if define:
+        flags.append(f"-DMCUSCRIPT_GROUPS_IMPLEMENTED={define}")
+    for source in ("load.c", "vm.c", "names.c"):
+        command = [compiler, *flags, "-c", str(RUNTIME / "src" / source)]
+        command += ["-o", str(tmp_path / "out.o")]
+        result = subprocess.run(command, capture_output=True, text=True, check=False)
+        assert result.returncode == 0, (
+            f"{source} at {level}, {groups}, {Path(compiler).name}:\n{result.stderr}"
+        )
 
 
 def test_an_import_the_host_does_not_offer_is_refused_by_name(runner, tmp_path):
