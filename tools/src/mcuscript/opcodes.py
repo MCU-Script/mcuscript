@@ -29,6 +29,7 @@ class Group(enum.IntEnum):
     CALL = 3
     BITS = 4
     LOOP = 5
+    I64DIV = 6
 
     @property
     def mask(self) -> int:
@@ -41,7 +42,7 @@ class Group(enum.IntEnum):
 #: claims a group — which is what the specification actually says the
 #: check is about.
 IMPLEMENTED_GROUPS = frozenset(
-    {Group.CORE, Group.I64, Group.FLOAT, Group.CALL, Group.BITS}
+    {Group.CORE, Group.I64, Group.FLOAT, Group.CALL, Group.BITS, Group.I64DIV}
 )
 
 #: Opcode range per group (inclusive), spec §3.2. Ranges are disjoint so
@@ -54,6 +55,7 @@ GROUP_RANGES: dict[Group, tuple[int, int]] = {
     Group.CALL: (0x80, 0x8F),
     Group.BITS: (0x90, 0x9F),
     Group.LOOP: (0xA0, 0xAF),
+    Group.I64DIV: (0xB0, 0xBF),
 }
 
 
@@ -213,8 +215,6 @@ _OPS: list[Op] = [
     Op(0x41, "add.i64", Group.I64, **_binary(_I64)),
     Op(0x42, "sub.i64", Group.I64, **_binary(_I64)),
     Op(0x43, "mul.i64", Group.I64, **_binary(_I64)),
-    Op(0x44, "div.i64", Group.I64, **_binary(_I64)),
-    Op(0x45, "rem.i64", Group.I64, **_binary(_I64)),
     Op(0x46, "neg.i64", Group.I64, **_unary(_I64)),
     Op(0x48, "eq.i64", Group.I64, **_compare(_I64)),
     Op(0x49, "ne.i64", Group.I64, **_compare(_I64)),
@@ -248,6 +248,13 @@ _OPS: list[Op] = [
     Op(0x93, "bitnot.i32", Group.BITS, **_unary(_I32)),
     Op(0x94, "shl.i32", Group.BITS, **_binary(_I32)),
     Op(0x95, "shr.i32", Group.BITS, **_binary(_I32)),
+    # -- i64div ----------------------------------------------------------
+    # Split out of `i64` because 64-bit division is the only arithmetic in
+    # the instruction set that a 32-bit target cannot do in registers: the
+    # C compiler calls a library routine for it, and that routine is three
+    # times the size of the rest of the group put together (§3.4).
+    Op(0xB0, "div.i64", Group.I64DIV, **_binary(_I64)),
+    Op(0xB1, "rem.i64", Group.I64DIV, **_binary(_I64)),
 ]
 
 

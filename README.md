@@ -77,12 +77,16 @@ differential tests.
 
 ## What it costs
 
-Measured, not estimated: the engine is **8.3 KB of flash** on a
-Cortex-M33 for an expression-only build and **10.5 KB** with every
-instruction group, no static RAM, and about 1 KB the embedder declares
-for a loaded program and its slots. Two thirds of that is the load-time
-verifier — the interpreter alone is 1.5 KB — because a script that
-arrives over the air is untrusted input and checking it is not optional.
+Measured on linked images, not estimated: the engine is **7.4 KB of
+flash** on a Cortex-M33 for an expression-only build and **10.5 KB**
+with every instruction group, no static RAM, and about 1 KB the embedder
+declares for a loaded program and its slots. On a Cortex-M0+, which has
+neither a divide instruction nor an FPU, the full build is 14 KB —
+the compiler's support library is part of the bill, which is also why
+64-bit division is a group you can leave out.
+
+Roughly two thirds of that is the loader and its verification; the
+interpreter alone is 1.5 KB.
 
 Which is also the honest answer to "will it fit": if it does not, the
 second backend costs nothing at all, because generated C links neither

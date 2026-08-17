@@ -21,6 +21,7 @@ from pathlib import Path
 import pytest
 
 from mcuscript.asm import assemble
+from mcuscript.opcodes import Group
 
 REPO = Path(__file__).resolve().parents[2]
 RUNTIME = REPO / "runtime"
@@ -528,6 +529,71 @@ def test_dropping_the_groups_drops_their_code(core_only_runner, optimised_runner
     )
 
 
+I64_NO_DIVISION = (
+    "MCUSCRIPT_GROUP_CORE|MCUSCRIPT_GROUP_I64|"
+    "MCUSCRIPT_GROUP_FLOAT|MCUSCRIPT_GROUP_CALL|MCUSCRIPT_GROUP_BITS"
+)
+
+#: The same set as a number. CMake puts `CMAKE_C_FLAGS` through a shell,
+#: which reads `A|B` as a pipe, so the macro-name spelling cannot travel
+#: that way. Computed from the Python table rather than written out, so
+#: it cannot drift from it; the macro-name spelling is what
+#: `test_every_group_set_compiles_clean_when_optimised` exercises, and
+#: it invokes the compiler directly.
+I64_NO_DIVISION_MASK = sum(
+    g.mask for g in (Group.CORE, Group.I64, Group.FLOAT, Group.CALL, Group.BITS)
+)
+
+
+@pytest.fixture(scope="session")
+def no_i64_division_runner(tmp_path_factory) -> Path:
+    """Everything except `i64div` — the configuration §3.4 is for."""
+    if shutil.which("cmake") is None:
+        pytest.skip("cmake is not installed")
+    build = tmp_path_factory.mktemp("no-i64-division")
+    subprocess.run(
+        [
+            "cmake",
+            "-S",
+            str(RUNTIME),
+            "-B",
+            str(build),
+            "-DCMAKE_BUILD_TYPE=Release",
+            "-DCMAKE_C_FLAGS=-Os "
+            f"-DMCUSCRIPT_GROUPS_IMPLEMENTED={I64_NO_DIVISION_MASK}u",
+        ],
+        check=True,
+        capture_output=True,
+    )
+    subprocess.run(["cmake", "--build", str(build)], check=True, capture_output=True)
+    return build / "tests" / "mcuscript-run"
+
+
+def test_dropping_i64_division_keeps_the_rest_of_i64(no_i64_division_runner, tmp_path):
+    """The split is only worth having if the arithmetic survives it."""
+    source = (
+        PROFILE
+        + ".const big i64 5000000000\n"
+        + ".entry go -> i64\n  const.i64 big\n  const.i64 big\n  add.i64\n  ret_v\n"
+    )
+    result = run(no_i64_division_runner, tmp_path, source, "")
+    assert result.result == ("i64", "10000000000", "valid")
+
+
+def test_dropping_i64_division_refuses_a_container_that_divides(
+    no_i64_division_runner, tmp_path
+):
+    """At load, by group, and not as an undefined opcode mid-stream."""
+    source = (
+        PROFILE
+        + ".const big i64 5000000000\n"
+        + ".entry go -> i64\n  const.i64 big\n  const.i64 big\n  div.i64\n  ret_v\n"
+    )
+    result = run(no_i64_division_runner, tmp_path, source, "")
+    assert result.refusal == "unsupported_group"
+    assert result.out.split()[3] == "64"  # the i64div bit, and only it
+
+
 GROUP_SETS = {
     "full": "",  # the header's own default
     "core": "MCUSCRIPT_GROUP_CORE",
@@ -536,6 +602,7 @@ GROUP_SETS = {
         "MCUSCRIPT_GROUP_CORE|MCUSCRIPT_GROUP_I64|"
         "MCUSCRIPT_GROUP_FLOAT|MCUSCRIPT_GROUP_BITS"
     ),
+    "no-i64-division": I64_NO_DIVISION,
 }
 
 WARNINGS = [

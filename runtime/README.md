@@ -88,26 +88,35 @@ instruction groups, and the host verifier refused it.
 
 ## What it costs
 
-Measured, on cortex-m33 at `-Os`, and reproducible with
-`python ../tools/measure_footprint.py`:
+Measured on a **linked image**, cortex-m33 at `-Os`, and reproducible
+with `python ../tools/measure_footprint.py`:
 
-| | flash | of which the verifier |
+| | flash | of which loader + verifier |
 |---|---:|---:|
-| every group | 10,491 B | 6,548 B |
-| `core` + `float` | 9,279 B | 6,332 B |
-| `core` only | 8,325 B | 5,954 B |
+| every group | 10,525 B | 6,542 B |
+| `core` + `float` | 8,349 B | 6,290 B |
+| `core` only | 7,375 B | 5,912 B |
+
+Linked rather than compiled, because the compiler's own support library
+is part of what a device pays: 64-bit division alone pulls in 698 bytes
+of it, which is why `i64div` is a group of its own. On a Cortex-M0+,
+with neither a divide instruction nor an FPU, the full build is 14,043 B
+rather than 10,525.
 
 No static RAM at all. An embedder declares an `mcuscript_program` (436
 bytes with the default limits) and an `mcuscript_slots` (576), and the
 runtime borrows at most 732 bytes of stack while loading and 348 while
 running — never both, since loading has finished before anything runs.
 
-Two things that table says out loud. **The verifier is four times the
-interpreter**, and it is what "a pushed script must never crash a node"
-costs; dropping every optional group saves 21 %, which is trim rather
-than a lever. And an expression-only interpreter really is about 1.5 KB,
-which is what the project's original estimate was about — it just left
-out the loader.
+Two things that table says out loud. **Verification is roughly two
+thirds of the whole**, and dropping every optional group saves about a
+fifth — trim rather than a lever. And an expression-only interpreter
+really is about 1.5 KB, which is what the project's original estimate
+was about; it just left out everything around it.
+
+Whether a device-side verifier belongs in this project at all is an open
+question as of 2026-08-17 — see ADR 0004's Open section. The numbers
+above describe what is built today.
 
 Also verified on hardware rather than argued: an nRF5340 running a
 container that uses all five groups returns the same value, bit for bit,

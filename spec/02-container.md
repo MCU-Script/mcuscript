@@ -149,7 +149,8 @@ refuses the container at load.
 | 3 | `call` | user-defined function calls and the frame machinery |
 | 4 | `bits` | bitwise operations and shifts on `i32` |
 | 5 | `loop` | reserved — counted loops (§3.8) |
-| 6–31 | reserved | must be zero in version 1 |
+| 6 | `i64div` | `DIV` and `REM` on `i64`; needs `i64` (§3.4) |
+| 7–31 | reserved | must be zero in version 1 |
 
 `RET` and `RET_V` are in `core`, not in `call`: an entry point has to
 return whether or not the program has functions. Only calling belongs
@@ -222,9 +223,12 @@ type.
 
 Point 1 needs "the function's code region" to mean something, so the
 format fixes it: **the functions' code regions tile `CODE` exactly.**
-Sorted by `code_offset`, the first begins at 0, each one ends where the
-next begins, the last ends at the end of the section, and none is
-empty. Records need not be in offset order.
+The first begins at 0, each one ends where the next begins, the last
+ends at the end of the section, and none is empty. **The records are in
+`code_offset` order** (§4.3), so a reader walks the table once instead
+of sorting it — which on a device is the difference between comparing
+every record against every other and comparing each against the one
+before.
 
 The regions are what makes "a branch outside this function" a decidable
 question rather than a matter of taste, and the tiling is what leaves

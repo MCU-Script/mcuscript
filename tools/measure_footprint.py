@@ -61,17 +61,19 @@ I64 = "MCUSCRIPT_GROUP_I64"
 FLOAT = "MCUSCRIPT_GROUP_FLOAT"
 CALL = "MCUSCRIPT_GROUP_CALL"
 BITS = "MCUSCRIPT_GROUP_BITS"
+I64DIV = "MCUSCRIPT_GROUP_I64DIV"
 
 #: Group sets worth a column. `expressions` is the configuration ADR
 #: 0002 §1.3 describes — "a device that only evaluates expressions
 #: should link only an expression evaluator" — and `expressions+float`
 #: is that device once its sensors report temperatures.
 CONFIGS: dict[str, tuple[str, ...]] = {
-    "full": (CORE, I64, FLOAT, CALL, BITS),
+    "full": (CORE, I64, FLOAT, CALL, BITS, I64DIV),
     "no i64": (CORE, FLOAT, CALL, BITS),
-    "no float": (CORE, I64, CALL, BITS),
-    "no call": (CORE, I64, FLOAT, BITS),
-    "no bits": (CORE, I64, FLOAT, CALL),
+    "no i64 division": (CORE, I64, FLOAT, CALL, BITS),
+    "no float": (CORE, I64, CALL, BITS, I64DIV),
+    "no call": (CORE, I64, FLOAT, BITS, I64DIV),
+    "no bits": (CORE, I64, FLOAT, CALL, I64DIV),
     "expressions+float": (CORE, FLOAT),
     "expressions": (CORE,),
 }
@@ -108,10 +110,63 @@ char mcuscript_probe_program[sizeof(mcuscript_program)];
 char mcuscript_probe_slots[sizeof(mcuscript_slots)];
 """
 
+#: The smallest honest embedder: load a container, run an entry point,
+#: report a code on failure. It brings its own `<string.h>` so that what
+#: gets linked is the runtime and the compiler's support library, and
+#: not a C library the target may not have.
+#:
+#: Linking is the whole point of this file. Object files show the code
+#: this project writes; they do not show `__udivmoddi4`, `__aeabi_idiv`
+#: or the soft-float helpers, which the *compiler* emits calls to and
+#: the linker pulls in — and on a Cortex-M0+ those outweigh several of
+#: the groups. A per-object figure understates a real device by a third.
+EMBEDDER = """
+#include "mcuscript.h"
+void *memset(void *d, int c, size_t n);
+void *memcpy(void *d, const void *s, size_t n);
+int memcmp(const void *x, const void *y, size_t n);
+size_t strlen(const char *s);
+void *memset(void *d, int c, size_t n)
+{ unsigned char *p = d; while (n--) *p++ = (unsigned char)c; return d; }
+void *memcpy(void *d, const void *s, size_t n)
+{ unsigned char *a = d; const unsigned char *b = s; while (n--) *a++ = *b++; return d; }
+int memcmp(const void *x, const void *y, size_t n)
+{ const unsigned char *a = x, *b = y;
+  while (n--) { if (*a != *b) return *a - *b; a++; b++; } return 0; }
+size_t strlen(const char *s)
+{ const char *p = s; while (*p) p++; return (size_t)(p - s); }
+
+extern const uint8_t IMAGE[64];
+extern const mcuscript_host HOST;
+static mcuscript_program program;
+static mcuscript_slots slots;
+volatile int sink;
+
+void mcuscript_measure_entry(void);
+void mcuscript_measure_entry(void)
+{
+\tmcuscript_diagnostic diagnostic;
+\tmcuscript_fault fault;
+\tmcuscript_value value;
+\tif (!mcuscript_load(&program, IMAGE, sizeof IMAGE, &HOST, 1, 1, &diagnostic)) {
+\t\tsink = (int)diagnostic.refusal;
+\t\treturn;
+\t}
+\tif (!mcuscript_invoke(&program, mcuscript_find_entry(&program, "go"), &slots,
+\t\t\t      &value, &fault))
+\t\tsink = (int)fault;
+}
+"""
+
+#: Symbols the measurement provides itself, subtracted from the linked
+#: total so the figure is the runtime's and not this file's.
+EMBEDDER_OWN = ("memset", "memcpy", "memcmp", "strlen", "mcuscript_measure_entry")
+
 
 @dataclass(frozen=True, slots=True)
 class Measurement:
     flash: dict[str, int]  # per translation unit
+    linked: int  # a real image, support library included
     static_ram: int
     stack: dict[str, int]  # per translation unit, and they never nest
     program: int
@@ -199,6 +254,54 @@ def stack_usage(directory: Path) -> dict[str, int]:
     return bounds
 
 
+def symbol_sizes(tools: Toolchain, path: Path) -> dict[str, int]:
+    out = subprocess.run(
+        [tools.nm, "--print-size", "--radix=d", str(path)],
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    sizes = {}
+    for line in out.stdout.splitlines():
+        fields = line.split()
+        if len(fields) == 4:
+            sizes[fields[3]] = int(fields[1])
+    return sizes
+
+
+def link(tools: Toolchain, flags: list[str], keep: Path) -> int:
+    """Text of a real image, minus what this file contributed to it.
+
+    `--gc-sections` is what makes the figure honest in the other
+    direction too: an embedder that never asks for a refusal's name does
+    not link `names.c`, and the number says so.
+    """
+    embedder = keep / "embedder.c"
+    embedder.write_text(EMBEDDER, encoding="utf-8")
+    image = keep / "image.elf"
+    subprocess.run(
+        [
+            tools.cc,
+            *flags,
+            "-nostdlib",
+            "-nostartfiles",
+            "-Wl,--gc-sections",
+            "-Wl,-e,mcuscript_measure_entry",
+            "-Wl,--defsym,IMAGE=0",
+            "-Wl,--defsym,HOST=0",
+            *(str(RUNTIME / "src" / f"{name}.c") for name in SOURCES),
+            str(embedder),
+            "-lgcc",
+            "-o",
+            str(image),
+        ],
+        check=True,
+    )
+    text, _ = sections(tools, image)
+    sizes = symbol_sizes(tools, image)
+    return text - sum(sizes.get(name, 0) for name in EMBEDDER_OWN)
+
+
 def measure(tools: Toolchain, target: str, config: str, keep: Path) -> Measurement:
     flags = [
         *BASE,
@@ -230,19 +333,10 @@ def measure(tools: Toolchain, target: str, config: str, keep: Path) -> Measureme
     subprocess.run(
         [tools.cc, *flags, "-c", str(probe), "-o", str(keep / "probe.o")], check=True
     )
-    out = subprocess.run(
-        [tools.nm, "--print-size", "--radix=d", str(keep / "probe.o")],
-        capture_output=True,
-        text=True,
-        check=True,
-    )
-    sizes = {}
-    for line in out.stdout.splitlines():
-        fields = line.split()
-        if len(fields) == 4:
-            sizes[fields[3]] = int(fields[1])
+    sizes = symbol_sizes(tools, keep / "probe.o")
 
     return Measurement(
+        linked=link(tools, flags, keep),
         flash=flash,
         static_ram=static_ram,
         stack=stack_usage(keep),
@@ -290,33 +384,46 @@ def main() -> int:
                 work.mkdir()
                 results[target, config] = measure(tools, target, config, work)
 
-    print("**Flash, bytes.** Loader, verifier and interpreter together.\n")
+    print(
+        "**Flash, bytes.** A linked image: loader, verifier, interpreter and\n"
+        "the compiler's support library, with unreferenced code discarded.\n"
+    )
     rows = [["group set", *TARGETS]]
     for config in CONFIGS:
-        rows.append([config, *(f"{results[t, config].total_flash:,}" for t in TARGETS)])
+        rows.append([config, *(f"{results[t, config].linked:,}" for t in TARGETS)])
     print(table(rows, "l" + "r" * len(TARGETS)))
 
     reference = "cortex-m33"
     print(f"\n**What each group costs**, on {reference}: full minus that group.\n")
-    full = results[reference, "full"].total_flash
+    full = results[reference, "full"].linked
     rows = [["group", "bytes", "of the full build"]]
-    for config in ("no i64", "no float", "no call", "no bits"):
-        cost = full - results[reference, config].total_flash
+    for config in ("no i64", "no i64 division", "no float", "no call", "no bits"):
+        cost = full - results[reference, config].linked
         rows.append(
             [config.removeprefix("no "), f"{cost:,}", f"{100 * cost / full:.0f} %"]
         )
-    core = results[reference, "expressions"].total_flash
+    core = results[reference, "expressions"].linked
     rows.append(["core (mandatory)", f"{core:,}", f"{100 * core / full:.0f} %"])
     print(table(rows, "lrr"))
 
-    print(f"\n**Where the flash goes**, on {reference}, per translation unit.\n")
-    rows = [["", *(name + ".c" for name in SOURCES), "total"]]
+    print(
+        f"\n**This project's own code**, on {reference}, per translation unit —\n"
+        "object files, so no support library and no discarding. The gap to the\n"
+        "table above is what the *compiler* adds and what `names.c` costs the\n"
+        "embedders who report a refusal in words.\n"
+    )
+    rows = [["", *(name + ".c" for name in SOURCES), "total", "linked"]]
     for config in ("full", "expressions+float", "expressions"):
         m = results[reference, config]
         rows.append(
-            [config, *(f"{m.flash[n]:,}" for n in SOURCES), f"{m.total_flash:,}"]
+            [
+                config,
+                *(f"{m.flash[n]:,}" for n in SOURCES),
+                f"{m.total_flash:,}",
+                f"{m.linked:,}",
+            ]
         )
-    print(table(rows, "l" + "r" * (len(SOURCES) + 1)))
+    print(table(rows, "l" + "r" * (len(SOURCES) + 2)))
 
     print("\n**RAM, bytes.** None of it is static; every figure is the embedder's.\n")
     rows = [

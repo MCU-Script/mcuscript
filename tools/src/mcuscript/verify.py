@@ -119,6 +119,11 @@ def _code_regions(container: Container) -> list[tuple[int, int]]:
     own range is refused (§2.6), so the extent has to be defined, and
     defining it as a tiling is what makes "outside" mean something. It
     also leaves no unaccounted bytes in the section.
+
+    The records are required to arrive in code order (§4.3), so this is
+    one walk rather than a sort. That is a rule about the writer, and it
+    costs a writer nothing: code goes into the section in some order
+    already, and the records can be numbered in the same one.
     """
     n = len(container.functions)
     if n == 0:
@@ -130,31 +135,29 @@ def _code_regions(container: Container) -> list[tuple[int, int]]:
             )
         return []
 
-    order = sorted(range(n), key=lambda i: container.functions[i].code_offset)
-    regions: list[tuple[int, int]] = [(0, 0)] * n
+    regions: list[tuple[int, int]] = []
     expected = 0
-    for position, index in enumerate(order):
-        start = container.functions[index].code_offset
+    for index, fn in enumerate(container.functions):
+        start = fn.code_offset
         if start != expected:
             raise refuse(
                 Refusal.MALFORMED_SECTION,
-                where=container.functions[index].name,
+                where=fn.name,
                 detail=f"code starts at {start}, the previous function ends "
-                f"at {expected}",
+                f"at {expected}"
+                + ("" if index == 0 else "; records must be in code order"),
             )
-        last = position == n - 1
+        last = index == n - 1
         end = (
-            len(container.code)
-            if last
-            else (container.functions[order[position + 1]].code_offset)
+            len(container.code) if last else container.functions[index + 1].code_offset
         )
         if end <= start:
             raise refuse(
                 Refusal.MALFORMED_SECTION,
-                where=container.functions[index].name,
+                where=fn.name,
                 detail="empty code region",
             )
-        regions[index] = (start, end)
+        regions.append((start, end))
         expected = end
     return regions
 

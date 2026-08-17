@@ -41,10 +41,18 @@ every arithmetic handler and could not be removed at all.
 | 3 | `call` | `0x80`–`0x8F` | user-defined function calls |
 | 4 | `bits` | `0x90`–`0x9F` | bitwise operations and shifts on `i32` |
 | 5 | `loop` | `0xA0`–`0xAF` | **reserved** — counted loops; see §3.8 |
-| 6–31 | | | reserved, must be zero |
+| 6 | `i64div` | `0xB0`–`0xBF` | `DIV` and `REM` on `i64`; see §3.4 |
+| 7–31 | | | reserved, must be zero |
 
 `core` is mandatory. Every other group is optional in an
 implementation and required by a container only if it uses it.
+
+`i64div` is the one group that depends on another: its operands can
+only be produced by `i64`, so an implementation claiming `i64div`
+without `i64` accepts containers that cannot exist, and a container
+requiring `i64div` requires `i64` too. Groups are otherwise
+independent, and this one is a split rather than a new capability —
+see §3.4 for why it is worth the exception.
 
 ## 3.3 The `core` group
 
@@ -211,12 +219,13 @@ and are the only way a script can inspect a state rather than
 propagate it. They are what makes §1.3.1's fault avoidable: a script
 that wants to handle an absent sensor explicitly can.
 
-## 3.4 The `i64` group
+## 3.4 The `i64` and `i64div` groups
 
 | Opcode | Instruction | Effect |
 |---|---|---|
 | `0x40` | `CONST.i64 idx8` | `→ i64`, from the pool |
-| `0x41`–`0x46` | `ADD` `SUB` `MUL` `DIV` `REM` `NEG` `.i64` | as `i32`, 64-bit |
+| `0x41`–`0x43` | `ADD` `SUB` `MUL` `.i64` | as `i32`, 64-bit |
+| `0x46` | `NEG.i64` | as `i32`, 64-bit |
 | `0x48`–`0x4D` | `EQ` `NE` `LT` `LE` `GT` `GE` `.i64` | `i64 i64 → bool` |
 | `0x50` | `EXTEND.i32_i64` | `i32 → i64`, sign-extending |
 | `0x51` | `WRAP.i64_i32` | `i64 → i32`, keeping the low 32 bits |
@@ -228,6 +237,37 @@ compiler does.
 `WRAP` truncates silently rather than producing `invalid` on overflow.
 It is the explicit "I want the low half" operation; a script that wants
 a range check writes one.
+
+`0x44` and `0x45` are unassigned. Division moved out of this range when
+it became its own group, and the gap is left where it was rather than
+closed, so that a reader of an older document lands on nothing instead
+of on something else.
+
+### The `i64div` group
+
+| Opcode | Instruction | Effect |
+|---|---|---|
+| `0xB0` | `DIV.i64` | as `DIV.i32`, 64-bit; `invalid` on zero divisor and on `INT64_MIN / -1` |
+| `0xB1` | `REM.i64` | as `REM.i32`, 64-bit; `invalid` on zero divisor, `0` for `INT64_MIN % -1` |
+
+Two instructions in a group of their own, which needs a reason.
+
+64-bit division is the only arithmetic in this instruction set that a
+32-bit processor cannot do in registers. Every other operation here
+lowers to a handful of instructions; this one lowers to a call into the
+compiler's support library, and that routine is **larger than the rest
+of the `i64` group put together**. Measured on Cortex-M33, dropping
+`i64div` from a complete build removes 1,108 bytes — 698 of them the
+support routine — while the other thirteen `i64` instructions cost 376
+between them.
+
+Keeping the division in `i64` would therefore mean that any device
+wanting 64-bit *comparison* — a timestamp, an energy counter, a
+millisecond duration — pays three times over for an operation it is
+unlikely to perform. Splitting it is what makes `i64` affordable, and
+that is a stronger reason than the two opcodes suggest.
+
+A container requiring `i64div` requires `i64` as well (§3.2).
 
 ## 3.5 The `float` group
 

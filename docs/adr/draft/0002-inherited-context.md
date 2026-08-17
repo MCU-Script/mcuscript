@@ -1336,16 +1336,22 @@ asserting the results come apart (ADR 0004 §4.5, spec §1.5).
 And the **flash and RAM budget**, which this list called question 1 and
 which was the oldest unmeasured claim in the project. It is measured now,
 on three Cortex-M targets and on a real nRF5340, and the answer corrects
-the §1.3 and §2.7 estimate rather than confirming it: 8.3 KB of flash for
-an expression-only build and 10.5 KB for a complete one, where the guess
-was 1–2 KB. The guess was right about the *interpreter* — that is 1.5 KB
-— and silent about the loader and verifier, which are four times its
-size and are what "a pushed script must never crash a node" costs. The
-feature-module mechanism of §1.3 is now real rather than declared, and
-buys 3–6 % per group; the size decision that matters is which backend a
-device uses, because generated C links none of this. Figures, method and
-the on-hardware run: ADR 0004 §4.9 and §4.10, reproducible with
-`python tools/measure_footprint.py`.
+the §1.3 and §2.7 estimate rather than confirming it: 7.4 KB of flash for
+an expression-only build on a Cortex-M33 and 10.5 KB for a complete one,
+where the guess was 1–2 KB — and 14 KB complete on a Cortex-M0+, whose
+missing divide instruction and missing FPU are paid for out of the
+compiler's support library. The guess was right about the *interpreter*
+— that is 1.5 KB — and silent about the loader and verifier, which are
+roughly twice its size again and are what "a pushed script must never
+crash a node" costs. The feature-module mechanism of §1.3 is now real
+rather than declared, and buys 3–14 % per group; the size decision that
+matters is which backend a device uses, because generated C links none
+of this. Figures, method and the on-hardware run: ADR 0004 §4.9 and
+§4.10, reproducible with `python tools/measure_footprint.py`.
+
+Whether the verifier belongs on the device at all is now itself an open
+question (ADR 0004, Open) — raised by the measurement and settled on
+grounds that have nothing to do with it.
 
 The **C API toward embedders**, which this list called its largest open
 item, is gone too — not decided in the abstract but settled by having

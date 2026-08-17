@@ -76,6 +76,12 @@ length and then that many UTF-8 bytes, with no terminator. A record's
 the area, so a name is at most 255 bytes and the area at most 64 KiB.
 Identical names are stored once.
 
+**Records are in `code_offset` order**, and their regions tile `CODE`
+(§2.6.1); a table out of order is `malformed_section`. The order costs a
+writer nothing — code goes into the section in some sequence already,
+and the records can be numbered in the same one — and it saves a reader
+the only quadratic step in loading a container.
+
 **No two records name the same function** (`malformed_section`). The
 bytecode addresses functions by index and a VM would not notice, but a
 name is what the host invokes by and what a C backend turns into a

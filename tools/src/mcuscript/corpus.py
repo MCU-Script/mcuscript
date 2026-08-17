@@ -216,12 +216,16 @@ def _cases() -> list[Case]:
         "ok",
         "",
         "One container that requires every instruction group with "
-        "instructions in it: i64, float, call and bits alongside core.",
+        "instructions in it: i64, i64div, float, call and bits alongside "
+        "core.",
         _asm(
             ".const big i64 4294967296\n"
+            ".const two i64 2\n"
             ".const half f32 0.5\n"
             ".entry go -> i32\n"
             "  const.i64 big\n"
+            "  const.i64 two\n"
+            "  div.i64\n"
             "  wrap.i64_i32\n"
             "  const.i32.s8 3\n"
             "  and.i32\n"
@@ -454,6 +458,19 @@ def _cases() -> list[Case]:
         _raw(
             b"\x23\x23",
             functions=[Function("go", 0), Function("orphan", 1, invocable=False)],
+        ),
+    )
+    case(
+        "records-out-of-code-order",
+        "container",
+        "malformed_section",
+        "Two functions whose regions tile CODE, declared in the wrong "
+        "order (§4.3). The bytes are a valid program; only the table's "
+        "order is wrong, and a reader promised the order would compute "
+        "the second function's extent from the first one's start.",
+        _raw(
+            b"\x23\x23",
+            functions=[Function("second", 1), Function("first", 0)],
         ),
     )
     case(

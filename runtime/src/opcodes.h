@@ -37,6 +37,8 @@
 #define MCUSCRIPT_RANGE_BITS_HI 0x9F
 #define MCUSCRIPT_RANGE_LOOP_LO 0xA0
 #define MCUSCRIPT_RANGE_LOOP_HI 0xAF
+#define MCUSCRIPT_RANGE_I64DIV_LO 0xB0
+#define MCUSCRIPT_RANGE_I64DIV_HI 0xBF
 
 enum {
 	/* constants */
@@ -88,8 +90,6 @@ enum {
 	OP_ADD_I64 = 0x41,   /* add.i64 */
 	OP_SUB_I64 = 0x42,   /* sub.i64 */
 	OP_MUL_I64 = 0x43,   /* mul.i64 */
-	OP_DIV_I64 = 0x44,   /* div.i64 */
-	OP_REM_I64 = 0x45,   /* rem.i64 */
 	OP_NEG_I64 = 0x46,   /* neg.i64 */
 	OP_EQ_I64 = 0x48,    /* eq.i64 */
 	OP_NE_I64 = 0x49,    /* ne.i64 */
@@ -125,7 +125,11 @@ enum {
 	OP_XOR_I32 = 0x92,    /* xor.i32 */
 	OP_BITNOT_I32 = 0x93, /* bitnot.i32 */
 	OP_SHL_I32 = 0x94,    /* shl.i32 */
-	OP_SHR_I32 = 0x95     /* shr.i32 */
+	OP_SHR_I32 = 0x95,    /* shr.i32 */
+
+	/* -- the i64div group -- */
+	OP_DIV_I64 = 0xB0, /* div.i64 */
+	OP_REM_I64 = 0xB1  /* rem.i64 */
 };
 
 #endif /* MCUSCRIPT_OPCODES_H */

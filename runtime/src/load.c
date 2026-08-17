@@ -137,8 +137,6 @@ unsigned mcuscript_instruction_size(uint8_t opcode)
 	case OP_ADD_I64:
 	case OP_SUB_I64:
 	case OP_MUL_I64:
-	case OP_DIV_I64:
-	case OP_REM_I64:
 	case OP_NEG_I64:
 	case OP_EQ_I64:
 	case OP_NE_I64:
@@ -190,6 +188,13 @@ unsigned mcuscript_instruction_size(uint8_t opcode)
 		return 1;
 #endif
 
+#if MCUSCRIPT_GROUPS & MCUSCRIPT_GROUP_I64DIV
+	/* -- i64div ------------------------------------------------- */
+	case OP_DIV_I64:
+	case OP_REM_I64:
+		return 1;
+#endif
+
 	default:
 		return 0;
 	}
@@ -218,6 +223,8 @@ uint32_t mcuscript_opcode_group(uint8_t opcode)
 		return MCUSCRIPT_GROUP_BITS;
 	if (opcode >= MCUSCRIPT_RANGE_LOOP_LO && opcode <= MCUSCRIPT_RANGE_LOOP_HI)
 		return MCUSCRIPT_GROUP_LOOP;
+	if (opcode >= MCUSCRIPT_RANGE_I64DIV_LO && opcode <= MCUSCRIPT_RANGE_I64DIV_HI)
+		return MCUSCRIPT_GROUP_I64DIV;
 	return 0;
 }
 
@@ -532,40 +539,31 @@ static bool load_functions(mcuscript_program *program, section table, uint32_t c
 		}
 	}
 
-	/* Code regions tile CODE exactly (§2.6.1): sorted by offset, the
-	 * first starts at zero, each ends where the next begins. That is
-	 * what makes "a branch outside this function" decidable. */
+	/* Code regions tile CODE exactly (§2.6.1), and the records arrive in
+	 * code order (§4.3), so each region ends where the next one begins.
+	 * That is what makes "a branch outside this function" decidable.
+	 *
+	 * The order is required rather than reconstructed. A reader that
+	 * sorts has to compare every start against every other; a reader
+	 * that is promised the order walks once, and the promise costs the
+	 * writer nothing, because a compiler lays code out in some order
+	 * anyway and can as well number the records in it.
+	 */
 	if (count == 0)
 		return code_length == 0 ? true
 					: fail(diagnostic, MCUSCRIPT_MALFORMED_SECTION, 0);
 
-	/*
-	 * Each region runs from its own start to the next one up, or to the
-	 * end of the section. Three conditions make that a tiling, and each
-	 * is checked here rather than assumed: some function starts at zero,
-	 * every start is inside CODE, and no two share a start — a shared
-	 * one would produce an empty region, which is how the third is
-	 * caught without a sort.
-	 */
-	bool starts_at_zero = false;
 	for (uint8_t i = 0; i < count; i++) {
-		uint32_t start = program->functions[i].code_offset;
-		if (start == 0)
-			starts_at_zero = true;
-		if (start >= code_length)
-			return fail(diagnostic, MCUSCRIPT_MALFORMED_SECTION, start);
-		uint32_t end = code_length;
-		for (uint8_t j = 0; j < count; j++) {
-			uint32_t other = program->functions[j].code_offset;
-			if (j != i && other == start)
-				return fail(diagnostic, MCUSCRIPT_MALFORMED_SECTION, start);
-			if (other > start && other < end)
-				end = other;
-		}
+		uint32_t begin = program->functions[i].code_offset;
+		uint32_t end = (i + 1u < count) ? program->functions[i + 1].code_offset
+						: code_length;
+		/* First at zero, each after the one before, none empty, none
+		 * past the end — four conditions, one comparison each. */
+		if (begin != (i == 0 ? 0u : program->functions[i - 1].code_end) ||
+		    end <= begin || end > code_length)
+			return fail(diagnostic, MCUSCRIPT_MALFORMED_SECTION, begin);
 		program->functions[i].code_end = end;
 	}
-	if (!starts_at_zero)
-		return fail(diagnostic, MCUSCRIPT_MALFORMED_SECTION, 0);
 	return true;
 }
 
@@ -838,6 +836,14 @@ static bool verify_function(const mcuscript_program *program, section imports,
 			break;
 #endif
 
+#if MCUSCRIPT_GROUPS & MCUSCRIPT_GROUP_I64DIV
+		/* -- i64div ------------------------------------------- */
+		case OP_DIV_I64:
+		case OP_REM_I64:
+			ok = binary(&w, MCUSCRIPT_I64, MCUSCRIPT_I64);
+			break;
+#endif
+
 #if MCUSCRIPT_GROUPS & MCUSCRIPT_GROUP_I64
 		/* -- i64 ---------------------------------------------- */
 		case OP_CONST_I64: {
@@ -852,8 +858,6 @@ static bool verify_function(const mcuscript_program *program, section imports,
 		case OP_ADD_I64:
 		case OP_SUB_I64:
 		case OP_MUL_I64:
-		case OP_DIV_I64:
-		case OP_REM_I64:
 			ok = binary(&w, MCUSCRIPT_I64, MCUSCRIPT_I64);
 			break;
 		case OP_NEG_I64:

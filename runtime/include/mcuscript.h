@@ -95,11 +95,13 @@ extern "C" {
 #define MCUSCRIPT_GROUP_CALL (1u << 3)
 #define MCUSCRIPT_GROUP_BITS (1u << 4)
 #define MCUSCRIPT_GROUP_LOOP (1u << 5)
+#define MCUSCRIPT_GROUP_I64DIV (1u << 6)
 
 #ifndef MCUSCRIPT_GROUPS_IMPLEMENTED
 #define MCUSCRIPT_GROUPS_IMPLEMENTED                                          \
 	(MCUSCRIPT_GROUP_CORE | MCUSCRIPT_GROUP_I64 | MCUSCRIPT_GROUP_FLOAT | \
-	 MCUSCRIPT_GROUP_CALL | MCUSCRIPT_GROUP_BITS)
+	 MCUSCRIPT_GROUP_CALL | MCUSCRIPT_GROUP_BITS |                        \
+	 MCUSCRIPT_GROUP_I64DIV)
 #endif
 
 /*
@@ -119,6 +121,15 @@ extern "C" {
  * would accept a container this build cannot possibly run. */
 #if MCUSCRIPT_GROUPS & MCUSCRIPT_GROUP_LOOP
 #error "loop is reserved and empty: no build implements it"
+#endif
+
+/* `i64div` divides values only `i64` can put on the stack, so claiming
+ * it alone accepts containers that cannot exist. Dropping `i64` drops
+ * its division with it; dropping only the division is the useful half
+ * of the choice, and the one worth its own group (§3.4). */
+#if (MCUSCRIPT_GROUPS & MCUSCRIPT_GROUP_I64DIV) && \
+	!(MCUSCRIPT_GROUPS & MCUSCRIPT_GROUP_I64)
+#error "i64div needs i64: no instruction could produce its operands"
 #endif
 
 /* ------------------------------------------------------------------

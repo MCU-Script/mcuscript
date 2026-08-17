@@ -30,7 +30,7 @@ name = "ok-every-group"
 file = "ok-every-group.mcs"
 stage = "ok"
 refusal = ""
-description = "One container that requires every instruction group with instructions in it: i64, float, call and bits alongside core."
+description = "One container that requires every instruction group with instructions in it: i64, i64div, float, call and bits alongside core."
 
 [[case]]
 name = "ok-capped-recursion"
@@ -178,6 +178,13 @@ file = "unreachable-function.mcs"
 stage = "verification"
 refusal = "unreachable_code"
 description = "The same rule one level up: a function no entry point reaches. A VM would never notice; a C backend turns functions into file-local symbols and a C compiler rejects one nobody calls, so this is a container only one backend can express."
+
+[[case]]
+name = "records-out-of-code-order"
+file = "records-out-of-code-order.mcs"
+stage = "container"
+refusal = "malformed_section"
+description = "Two functions whose regions tile CODE, declared in the wrong order (§4.3). The bytes are a valid program; only the table's order is wrong, and a reader promised the order would compute the second function's extent from the first one's start."
 
 [[case]]
 name = "type-mismatch"

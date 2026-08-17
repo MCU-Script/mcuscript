@@ -192,37 +192,58 @@ instructions to implement. `python tools/measure_footprint.py`
 cross-compiles the whole matrix; the figures below are
 arm-zephyr-eabi-gcc 14.3.0 at `-Os`.
 
-**Flash, bytes.** Loader, verifier and interpreter together.
+**It measures a linked image, not object files, and that correction
+matters more than it sounds.** An object file shows the code this
+project writes. It does not show `__udivmoddi4`, `__aeabi_idiv` or the
+soft-float helpers — the *compiler* emits calls to those and the linker
+pulls them in, and on a Cortex-M0+ they outweigh several of the groups.
+The first version of this table was compiled and not linked, and it
+understated the m0+ figure by 28 % while overstating m33 by counting
+`names.c`, which `--gc-sections` discards for any embedder that does not
+report a refusal in words.
+
+**Flash, bytes.** A linked image, support library included, unreferenced
+code discarded.
 
 | group set | cortex-m0+ | cortex-m4f | cortex-m33 |
 |---|---:|---:|---:|
-| full | 10,941 | 10,507 | 10,491 |
-| no i64 | 10,153 | 9,975 | 9,975 |
-| no float | 10,369 | 9,907 | 9,897 |
-| no call | 10,493 | 10,135 | 10,119 |
-| no bits | 10,640 | 10,218 | 10,206 |
-| expressions + float | 9,433 | 9,299 | 9,279 |
-| expressions only | 8,813 | 8,339 | 8,325 |
+| full | 14,043 | 10,541 | 10,525 |
+| no i64 | 12,599 | 9,041 | 9,041 |
+| no i64 division | 13,311 | 9,425 | 9,417 |
+| no float | 10,307 | 9,933 | 9,925 |
+| no call | 13,555 | 10,125 | 10,109 |
+| no bits | 13,779 | 10,277 | 10,261 |
+| expressions + float | 11,875 | 8,365 | 8,349 |
+| expressions only | 8,061 | 7,391 | 7,375 |
 
-**The estimate was five times low, and it was low about the right
-thing.** ADR 0002 §8 carried 1–2 KB for an expression-only engine. An
-expression-only *interpreter* is 1,504 bytes on cortex-m33 — the
-estimate was close. What nobody costed is the other 5,954: the loader
-and the verifier. On cortex-m33 the split is
+**What each group costs on cortex-m33**, as full minus that group:
+`i64` 1,484 (14 %), of which **`i64div` alone is 1,108 (11 %)**;
+`float` 600 (6 %); `call` 416 (4 %); `bits` 264 (3 %).
 
-| | load.c | vm.c | names.c | total |
-|---|---:|---:|---:|---:|
-| full | 6,548 | 3,076 | 867 | 10,491 |
-| expressions + float | 6,332 | 2,080 | 867 | 9,279 |
-| expressions only | 5,954 | 1,504 | 867 | 8,325 |
+That `i64div` line is why it is a group at all (§3.4). Two instructions
+cost three times the other thirteen in their range, because 64-bit
+division is the one operation here that a 32-bit processor cannot do in
+registers. Splitting it out is what makes 64-bit *comparison* — a
+timestamp, an energy counter — affordable on a device that will never
+divide one.
+
+**The estimate was low, and it was low about the right thing.** ADR 0002
+§8 carried 1–2 KB for an expression-only engine. An expression-only
+*interpreter* is 1,504 bytes on cortex-m33 — the estimate was close.
+What nobody costed is the loader and the verifier around it:
+
+| | load.c | vm.c | names.c | own total | linked |
+|---|---:|---:|---:|---:|---:|
+| full | 6,542 | 3,112 | 867 | 10,521 | 10,525 |
+| expressions + float | 6,290 | 2,080 | 867 | 9,237 | 8,349 |
+| expressions only | 5,912 | 1,504 | 867 | 8,283 | 7,375 |
 
 so **the verifier costs four times the interpreter it protects**, and it
 barely shrinks when groups go, because most of it is the container walk,
 the CRC, the import resolution and the call-graph condensation — none of
-which is per-group. That is not a defect to optimise away. It is the
-price of "a pushed script must never crash a node", and it is worth
-naming rather than discovering later: dropping every optional group buys
-21 %, and the four optional groups cost 3–6 % each.
+which is per-group. That is the price of "a pushed script must never
+crash a node", and naming it is what put that promise itself on the
+agenda; see the Open section.
 
 The honest reading of the modularity requirement is therefore narrower
 than it was written. Feature modules are real and they work; they are
@@ -266,9 +287,11 @@ contributes to the answer.
   against the 732-byte bound above — the bound holds, with 27 % slack,
   which is about what summing whole frames should cost.
 - Built into a real Zephyr image with Zephyr's own flags rather than
-  this tool's, the three objects come to **10,539 bytes** against the
-  10,491 measured standalone. A 0.5 % gap, which is the measurement
-  method checking out.
+  this tool's, the three objects came to **10,539 bytes** against the
+  10,491 the tool then reported for the same three objects. A 0.5 % gap,
+  which is the method checking out. Both figures are object-file sums,
+  and §4.9's table has since moved to linked images for the reason given
+  there; the comparison stands as the like-for-like it was.
 
 The fixture was a throwaway Zephyr application and is not in this
 repository: a sample here would tie a standalone language project to one
@@ -295,7 +318,7 @@ this record of what the device said.
 - Generated C needs no runtime library at all — not the loader, not the
   VM, only a header of inline functions. A device that compiles its
   scripts in carries neither. §4.9 puts a number on what that saves:
-  everything, and everything is 8 to 11 KB.
+  everything, and everything is 7 to 14 KB.
 - **The container must declare every group its code uses**, and the
   runtime now checks it (§2.6.1). It did not, and the host verifier did,
   which made an under-declaring container a thing the two
@@ -318,11 +341,30 @@ this record of what the device said.
   container carrying a function nothing calls is refused rather than
   compiled — a C compiler rejects an unused static, and refusing at load
   keeps that from being a difference between the backends.
-- **The loader is where a small build's flash goes, and nobody has
-  tried to make it smaller.** §4.9 says it is 5,954 bytes of the 8,325 an
-  expression-only device pays. Two candidates are visible and neither is
-  costed: the refusal names are 867 bytes of string that an embedder
-  reporting a number instead of a word does not need, and the call-graph
-  condensation runs its full closure even for a build with no `call`
-  group. Both are measurements, not decisions, and neither is urgent
-  while the alternative backend costs nothing at all.
+- **The loader is where a small build's flash goes.** §4.9 says it is
+  5,912 bytes of the 7,375 an expression-only device pays, and roughly
+  two thirds of that is verification rather than parsing. Candidates
+  exist — the call-graph condensation runs its full closure even for a
+  build with no `call` group (728 bytes, measured); the per-import name
+  matching could be one interface hash in the header, which catches
+  strictly more, since renaming an entity is caught today but
+  *swapping two* is not.
+  None of them is worth costing until the question below is settled,
+  because it may remove the code they would trim.
+- **Whether a device-side verifier belongs in this project at all.**
+  Raised by the product owner on 2026-08-17, and the argument is
+  structural rather than about size: this language has two backends, and
+  a guarantee that holds on only one of them is not half a guarantee but
+  a contradiction. Transpiled C can be tampered with exactly as bytecode
+  can, and there the project offers nothing and intends to offer
+  nothing. A verifier on the bytecode side therefore invites an implicit
+  reading — *"MCUScript is safe"* — that the project cannot honour and
+  never claimed. The direction agreed is three contracts instead of one
+  promise: the reference compiler emits conforming containers, the
+  reference runtime executes conforming containers and is **undefined on
+  anything else**, and deciding whether arbitrary bytes conform is a
+  separate concern that an embedder addresses on the path from compiler
+  to device — identically for both backends. What survives in the loader
+  is identity, never well-formedness: magic, format version, profile
+  pin, group mask, CRC. Nothing is implemented yet; the specification
+  text changes first.

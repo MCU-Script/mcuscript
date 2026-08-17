@@ -334,6 +334,24 @@ bool mcuscript_invoke(const mcuscript_program *program, int entry, mcuscript_slo
 		}
 #endif
 
+#if MCUSCRIPT_GROUPS & MCUSCRIPT_GROUP_I64DIV
+		/* -- i64div --------------------------------------------- */
+		case OP_DIV_I64:
+		case OP_REM_I64: {
+			int64_t b = mcuscript_op_as_i64(values[sp - 1]);
+			int64_t a = mcuscript_op_as_i64(values[sp - 2]);
+			uint8_t state = mcuscript_op_worse(states[sp - 2], states[sp - 1]);
+			int64_t out = (opcode == OP_DIV_I64)
+					      ? mcuscript_op_div_i64(a, b, &state)
+					      : mcuscript_op_rem_i64(a, b, &state);
+			sp--;
+			values[sp - 1] = mcuscript_op_from_i64(out);
+			states[sp - 1] = state;
+			pc += 1;
+			break;
+		}
+#endif
+
 		case OP_ELSE:
 			/* The fallback carries its own state, so a fallback
 			 * that is itself absent does not become valid. */
@@ -372,20 +390,6 @@ bool mcuscript_invoke(const mcuscript_program *program, int entry, mcuscript_slo
 			sp--;
 			values[sp - 1] = mcuscript_op_from_i64(out);
 			states[sp - 1] = mcuscript_op_worse(states[sp - 1], states[sp]);
-			pc += 1;
-			break;
-		}
-		case OP_DIV_I64:
-		case OP_REM_I64: {
-			int64_t b = mcuscript_op_as_i64(values[sp - 1]);
-			int64_t a = mcuscript_op_as_i64(values[sp - 2]);
-			uint8_t state = mcuscript_op_worse(states[sp - 2], states[sp - 1]);
-			int64_t out = (opcode == OP_DIV_I64)
-					      ? mcuscript_op_div_i64(a, b, &state)
-					      : mcuscript_op_rem_i64(a, b, &state);
-			sp--;
-			values[sp - 1] = mcuscript_op_from_i64(out);
-			states[sp - 1] = state;
 			pc += 1;
 			break;
 		}
