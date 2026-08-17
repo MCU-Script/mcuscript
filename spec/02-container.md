@@ -229,12 +229,15 @@ at runtime checks a type, because in a conforming container nothing at
 runtime *can* be the wrong type.
 
 Point 5 is where a non-conforming container does the most damage, and
-naming that is more useful than pretending otherwise. The VM sizes its
-frame from those two numbers. A container claiming a depth of two while
-needing twenty overflows a buffer sized from its own claim, into
-whatever is next to it, on a device with no MMU. A producer that gets
-point 5 wrong has not produced a slow program or a wrong answer; it has
-produced something with no defined behaviour at all.
+naming that is more useful than pretending otherwise. A runtime's slot
+buffer is **one fixed array**, sized by the implementation; it does not
+grow to fit a container and need not read these numbers at all. So a
+container whose deepest call chain needs more slots than the
+implementation has does not get a bigger buffer — it writes past the one
+there is, into whatever is next to it, on a device with no MMU. A
+producer that gets point 5 wrong has not produced a slow program or a
+wrong answer; it has produced something with no defined behaviour at
+all.
 
 ### 2.6.0 Verifiers
 

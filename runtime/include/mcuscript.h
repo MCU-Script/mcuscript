@@ -322,20 +322,24 @@ typedef struct {
  * container. */
 #define MCUSCRIPT_ENTRY_INVOCABLE 0x01
 
+/*
+ * What running a function needs, and nothing else. `max_stack`,
+ * `max_call_depth` and `local_types` are in the record and are not
+ * here: they exist for a verifier to recompute (spec §2.6), and this
+ * runtime does not verify — it reads past them. A conforming container
+ * is one whose deepest call chain fits `MCUSCRIPT_MAX_SLOTS`, and that
+ * is a property of the container rather than a number this struct
+ * carries.
+ */
 typedef struct {
 	mcuscript_str name;
 	uint32_t code_offset;
-	uint32_t code_end;
 	uint8_t flags;
 	uint8_t return_type;
-	uint8_t max_stack;
-	uint8_t max_call_depth;
 	uint8_t recursion_cap;
-	/* Arguments the caller pushes; they are the first locals (§3.6), so
-	 * this is a prefix length into `local_types`. */
+	/* Arguments the caller pushes; they are the first locals (§3.6). */
 	uint8_t param_count;
 	uint8_t local_count;
-	const uint8_t *local_types;
 } mcuscript_function;
 
 typedef struct {
@@ -353,17 +357,22 @@ typedef struct {
 	const uint8_t *imports;
 	uint16_t import_offsets[MCUSCRIPT_MAX_IMPORTS];
 	uint8_t import_count;
+	/* The string area after the records. Kept because finding it means
+	 * walking every record, and linking needs it once per import. */
+	const uint8_t *import_names;
+	uint32_t import_names_length;
 	/* container import index -> host import index, resolved at load */
 	uint8_t import_map[MCUSCRIPT_MAX_IMPORTS];
 
 	mcuscript_function functions[MCUSCRIPT_MAX_FUNCTIONS];
 	uint8_t function_count;
 
-	/* The call graph, condensed at load. Two functions share a
-	 * recursion counter exactly when they share a component (§5.4). A
-	 * component is named by its lowest member, so the id is already a
-	 * bounded index and `component_cap` is addressed by it; the cap is
-	 * zero for a component that is not a cycle. */
+	/* The call graph's condensation, read from the records rather than
+	 * computed (§4.3). Two functions share a recursion counter exactly
+	 * when they share a component (§5.4). A component is named by its
+	 * lowest member, so the id is already a bounded index and
+	 * `component_cap` is addressed by it; the cap is zero for a
+	 * component that is not a cycle. */
 	uint8_t component[MCUSCRIPT_MAX_FUNCTIONS];
 	uint8_t component_cap[MCUSCRIPT_MAX_FUNCTIONS];
 
@@ -384,10 +393,21 @@ typedef struct {
  */
 
 /*
- * Parse, verify and link a container. Verification is unconditional:
- * there is no flag to skip it, because the VM sizes its frame from
- * numbers the container supplied and this is where they are recomputed
- * (spec §2.6).
+ * Parse and link a container.
+ *
+ * **This does not verify.** It establishes that the container is meant
+ * for this build — magic, format version, profile pin, instruction
+ * groups, checksum — and resolves the imports against `host`. It does
+ * not establish that the container is *conforming* (spec §2.6), and
+ * behaviour on a container that is not is undefined.
+ *
+ * That is the language's contract and not a shortcut: a program is
+ * equally expressible as this container or as C compiled into the
+ * firmware, nothing protects the C on its way to a device, and a
+ * guarantee only one of the two paths can carry would be read as one
+ * the language makes. If containers reach this function from somewhere
+ * untrusted, verify them first or authenticate the path — see
+ * `spec/02-container.md` §2.6.0 and ADR 0006.
  *
  * `bytes` must stay valid and unchanged for as long as `program` is
  * used. Returns true on success; on failure `diagnostic` says which

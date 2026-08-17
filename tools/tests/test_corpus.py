@@ -147,7 +147,7 @@ def test_every_stage_is_one_the_manifest_defines():
     assert {entry["stage"] for entry in ENTRIES} <= set(corpus.STAGES)
 
 
-# -- both loaders, one verdict --------------------------------------------
+# -- the verdicts ---------------------------------------------------------
 
 
 @pytest.mark.parametrize("entry", ENTRIES, ids=IDS)
@@ -159,7 +159,17 @@ def test_the_host_verifier_gives_the_expected_verdict(entry):
     assert load_on_the_host(blob) == expected, entry["description"]
 
 
-@pytest.mark.parametrize("entry", ENTRIES, ids=IDS)
+#: The cases the C runtime answers for, from the manifest's own
+#: `runtime` field. It does not verify (ADR 0006), so a container that
+#: is merely a *bad program* is not its business — it will load one and
+#: run it, and what happens then is undefined, which is not a thing to
+#: assert about. What it does answer for is identity, bytes it cannot
+#: parse, and the `ok` cases, which are the promise itself.
+RUNTIME_ENTRIES = [e for e in ENTRIES if e["runtime"]]
+RUNTIME_IDS = [e["name"] for e in RUNTIME_ENTRIES]
+
+
+@pytest.mark.parametrize("entry", RUNTIME_ENTRIES, ids=RUNTIME_IDS)
 def test_the_runtime_gives_the_expected_verdict(vm, tmp_path, entry):
     host = CORPUS / entry["host"] if "host" in entry else tmp_path / "empty.host"
     if "host" not in entry:
@@ -169,9 +179,36 @@ def test_the_runtime_gives_the_expected_verdict(vm, tmp_path, entry):
         capture_output=True,
         text=True,
         check=False,
+        # A container this suite hands the runtime is one the runtime is
+        # answerable for, so a hang is a defect and not undefined
+        # behaviour. The bound is here so that it fails as one.
+        timeout=30,
     )
     first = process.stdout.split("\n", 1)[0].split()
     refusal = first[1] if first[:1] == ["refused"] else ""
     assert refusal == entry["refusal"], (
         f"{entry['description']}\n  output: {process.stdout!r}"
     )
+
+
+def test_the_cases_a_runtime_does_not_owe_are_the_ones_it_cannot_answer():
+    """The exclusion above is load-bearing, so it is stated as a test.
+
+    If it silently became empty — the field dropped, the filter inverted
+    — the suite would go back to feeding the runtime containers whose
+    behaviour is undefined, and would hang rather than fail.
+
+    Every excluded case must be one where the container is a *bad
+    program* rather than unreadable bytes: the whole `verification`
+    stage, plus the three `container` cases that are judgements about a
+    program rather than a table a loader cannot step through.
+    """
+    excluded = [e for e in ENTRIES if not e["runtime"]]
+    assert excluded, "nothing excluded; has the manifest changed?"
+    assert {e["stage"] for e in excluded} <= {"verification", "container"}
+    assert {e["name"] for e in excluded if e["stage"] == "container"} == {
+        "entry-takes-parameters",
+        "records-out-of-code-order",
+        "duplicate-import",
+    }
+    assert all(e["stage"] != "verification" or not e["runtime"] for e in ENTRIES)

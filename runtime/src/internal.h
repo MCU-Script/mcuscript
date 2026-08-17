@@ -10,16 +10,8 @@
 
 #include "mcuscript.h"
 
-/* Instruction length, from the opcode alone (§3.1). Zero means the
- * opcode is not assigned in a group this build implements. */
-unsigned mcuscript_instruction_size(uint8_t opcode);
-
-/* The group bit an opcode falls into, from its range (§3.2). Zero for a
- * byte no group covers. Independent of what this build implements: it
- * is used to ask whether the *container* required the group. */
-uint32_t mcuscript_opcode_group(uint8_t opcode);
-
-/* A constant-pool entry, already known by the verifier to be an i32. */
+/* A constant-pool entry, of the type the instruction says it is. In a
+ * conforming container the instruction and the pool agree (§2.6). */
 int32_t mcuscript_constant_i32(const mcuscript_program *program, uint8_t index);
 int64_t mcuscript_constant_i64(const mcuscript_program *program, uint8_t index);
 uint32_t mcuscript_constant_f32_bits(const mcuscript_program *program, uint8_t index);

@@ -66,6 +66,7 @@ Each record:
 | 1 | `max_stack` | slots |
 | 1 | `max_call_depth` | frames below this one, `0` when it calls nothing |
 | 1 | `recursion_cap` | the cap of the call-graph cycle this belongs to, `0` for none (§5.4) |
+| 1 | `component` | the call-graph component this shares a recursion counter with (§5.4), named by its lowest member's function index |
 | 1 | `param_count` | arguments the caller pushes; at most `local_count` |
 | 1 | `local_count` | |
 | `local_count` | `local_types` | one type code per local, in index order |
@@ -88,14 +89,21 @@ name is what the host invokes by and what a C backend turns into a
 symbol — so two records sharing one would be a program only one backend
 can express, which is the thing this specification exists to prevent.
 
-`max_stack` and `max_call_depth` are what the VM allocates from, and it
-takes them as given. They are therefore the two fields a producer has
-the least freedom about: §2.6 point 5 requires them to be the values the
-code actually needs, and a container that gets them wrong is not a
-container with a wrong number in it but one whose behaviour is
-undefined. A verifier **recomputes and compares** them rather than
-asking whether they look plausible; that is the whole of what makes
-these two fields checkable at all.
+`max_stack` and `max_call_depth` are the two fields a producer has the
+least freedom about, and it is worth being exact about why, because the
+obvious reason is wrong. **A runtime does not allocate from them** — the
+slot buffer is one fixed array, sized by the implementation and not by
+the container, and a runtime need not read these fields at all. What
+they are for is to be **recomputable**: §2.6 point 5 requires them to be
+the values the code actually needs, and a verifier recomputes and
+compares rather than asking whether they look plausible.
+
+The danger they carry is therefore not a mis-sized allocation but an
+overrun of that fixed buffer. A container whose deepest call chain needs
+more slots than the implementation has does not get a bigger buffer; it
+writes past the one there is. That is why point 5 is where a
+non-conforming container does the most damage, and why these two numbers
+are the ones a verifier exists for.
 
 `recursion_cap` is the one number that cannot be derived: a cap is a
 *decision* the author made, not a property of the code (§5.4). What is
@@ -103,6 +111,26 @@ derivable is which functions form a cycle, so a conforming container has
 a cap on every cycle, one cap per cycle, and none on a function outside
 one (`recursion_cap_mismatch`) — a number that changes nothing is a
 compiler bug or an attempt to make one look harmless.
+
+`component` is that cycle, written down. §5.4's counter is per
+*component* rather than per function, so a runtime needs the grouping at
+every call — and finding it means condensing the call graph, which is
+the largest single thing a runtime would otherwise compute. Declaring it
+is what lets a runtime not have a call-graph algorithm in it at all.
+
+Its value is the **lowest function index in the component**, and a
+function in no cycle names itself. That rule exists so the field is
+reproducible: it has to be the same number in every implementation, and
+it has to be derivable from the function table without agreeing on an
+algorithm's traversal order first. Two functions share a recursion
+counter exactly when they share this value; a conforming container has
+one `recursion_cap` per component, on all of its members.
+
+A runtime reads `component` and believes it, with one exception: it is
+an index into the function table, and a runtime that indexes its own
+arrays with it must still establish that it is in range. That is the
+loader protecting itself rather than judging the container, which is the
+line §2.7 draws.
 
 `param_count` is what makes a call checkable. Arguments become the
 callee's first locals (§3.6) and the record does not otherwise

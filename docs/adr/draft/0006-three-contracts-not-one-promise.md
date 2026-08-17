@@ -5,8 +5,8 @@ SPDX-License-Identifier: Apache-2.0
 
 # 0006 — Three contracts, not one promise
 
-- Status: draft — decision taken, specification being rewritten to it,
-  runtime not yet changed.
+- Status: draft — decision taken, specification rewritten to it
+  (2026-08-17), runtime rebuilt to it (2026-08-18).
 - Date: 2026-08-17
 
 ## Context
@@ -108,19 +108,31 @@ Specific consequences of that split:
    56 bytes to avoid. It is not a security control and CRC-32 is
    trivially forged; saying so in the text is part of this decision,
    because the alternative is someone relying on it.
-5. **`max_stack` and `max_call_depth` stay in the container and are
-   believed.** The VM sizes its frame from them. Under the old rule they
-   were recomputed and compared, which made them nearly redundant; under
-   this one they are load-bearing, and a container that lies about them
-   is a non-conforming container whose behaviour is undefined — exactly
-   like every other kind of non-conforming container.
-6. **§2.6 point 1 moves from enforcement to obligation.** That an
+5. **`max_stack` and `max_call_depth` stay in the container and the
+   runtime does not read them at all.** This was stated wrongly when the
+   decision was written — "the VM sizes its frame from them" — and the
+   rewrite disproved it: the slot buffer is one fixed array sized by
+   `MCUSCRIPT_MAX_SLOTS`, and nothing at runtime consults either field.
+   The correction sharpens rather than weakens the point. Their purpose
+   is to be **recomputable** by a verifier, and the danger a wrong one
+   carries is not a mis-sized allocation but an overrun of the fixed
+   buffer. They are therefore the two fields a producer has the least
+   freedom about, and the two a verifier most earns its place on.
+6. **The call graph's condensation becomes a declared field.** The
+   runtime needs the grouping — §5.4's recursion counter is per cycle,
+   not per function — and computing it meant a reachability closure over
+   the call graph, which was the single largest thing in the loader.
+   `component` in the `ENTR` record (§4.3), named by its lowest member's
+   index so that every implementation writes the same number, replaces
+   an algorithm with a byte. It is the one declared field the runtime
+   still bounds-checks, because it indexes the runtime's own arrays.
+7. **§2.6 point 1 moves from enforcement to obligation.** That an
    opcode must belong to a group the header requires becomes a rule the
    compiler satisfies rather than one the loader polices. The header's
    group mask keeps its other job, which is contract-B business: it lets
    a narrowed build refuse a container it could not run, which is an
    identity question and not a safety one.
-7. **`spec/corpus/` changes what it is for.** It stops being "the
+8. **`spec/corpus/` changes what it is for.** It stops being "the
    verdict both loaders must reach" and becomes "the verdict a
    conforming *verifier* must reach". Its `ok` cases remain runtime
    tests; its refusal cases become host tests. It is also the most
@@ -162,25 +174,50 @@ too, and the sentence would be false about it.
   differential test that guards it is untouched. What goes is the test
   that held two verifiers to one verdict, and it goes because one of the
   two verifiers goes.
-- **Roughly 2.5 KB of reviewed, corpus-tested C leaves the runtime.**
-  That is a real loss and worth stating as one. The estimate for
-  contract B alone is ~2.1 KB for an expression-only build against 7.4 KB
-  today, and ~4 KB complete against 10.5 KB — estimated, not yet
-  measured, because the runtime has not been changed.
+- **Roughly 2.5 KB of reviewed, corpus-tested C left the runtime**, and
+  that is a real loss whatever the byte figures say. Measured on
+  2026-08-18, after the rebuild, on a Cortex-M33:
+
+  | | before | after |
+  |---|---:|---:|
+  | full | 10,525 | **5,652** |
+  | expressions only | 7,375 | **3,132** |
+  | `load.c` | 5,912–6,542 | **1,669, flat across every group set** |
+  | `mcuscript_program` | 436 B | 380 B |
+  | stack while loading | 732 B | 192 B |
+
+  The estimate above said ~2.1 KB and ~4 KB; the truth is 3.1 KB and
+  5.7 KB, so it was **a kilobyte too optimistic**. It came from the
+  per-function attribution table rather than from a build, which is the
+  kind of number ADR 0004 exists to stop trusting, and it is recorded
+  here rather than quietly corrected. The flat `load.c` figure is the
+  useful one: the loader used to shrink with the group mask because a
+  type checker has a case per opcode, and it no longer does, because
+  nothing in it knows what an instruction is.
 - **A future device-side verifier is a different project, not a
   regression.** If someone builds one, this specification tells them
   exactly what to decide and the corpus tells them what the answers are.
 
 ## Open
 
-- **The order of work.** The specification text changes first and the
-  runtime second, deliberately: a rewrite that arrives before its
-  justification is a rewrite nobody can review.
-- **Whether the loader keeps a bounded amount of structural checking
-  anyway** — not for safety, but because a loader that reads past the
-  end of a buffer while parsing a corrupt container is a bug in contract
-  B rather than an application of it. The line is that the loader must
-  not fall over on input it rejects; it need not diagnose why.
+- ~~**The order of work.**~~ Done in that order: specification on
+  2026-08-17, runtime on 2026-08-18.
+- ~~**Whether the loader keeps a bounded amount of structural
+  checking.**~~ Settled by writing it, as **bounds against the buffer
+  stay, judgements about content go**. A parser that walks off the end
+  of a container it was handed is a defect here whatever the container
+  was; a parser with an opinion about the container's stack depth is
+  doing another component's work. Two things fall on the "stays" side
+  and are worth naming because neither is obvious: a table claiming more
+  records than its section holds, and `component`, which is the one
+  declared field that indexes the runtime's own arrays.
+
+  The test suite needed the same line drawn through it. It used to hand
+  the runtime every corpus container; a runtime that no longer refuses
+  the bad ones will **run** them, and the first attempt hung rather than
+  failed. The manifest now records per case whether a runtime owes the
+  verdict, and every invocation of the runner has a timeout — so that if
+  that filter is ever wrong, it fails instead of stalling.
 - **An interface hash in the header**, replacing per-import name
   matching. It belongs to this decision because it is the same kind of
   question — identity, not well-formedness — and it catches strictly

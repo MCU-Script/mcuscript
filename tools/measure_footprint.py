@@ -385,8 +385,8 @@ def main() -> int:
                 results[target, config] = measure(tools, target, config, work)
 
     print(
-        "**Flash, bytes.** A linked image: loader, verifier, interpreter and\n"
-        "the compiler's support library, with unreferenced code discarded.\n"
+        "**Flash, bytes.** A linked image: loader, interpreter and the\n"
+        "compiler's support library, with unreferenced code discarded.\n"
     )
     rows = [["group set", *TARGETS]]
     for config in CONFIGS:

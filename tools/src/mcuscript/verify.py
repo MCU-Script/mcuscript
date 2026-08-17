@@ -47,10 +47,10 @@ class FunctionFacts:
     #: frames are not a resource.
     max_slots: int = 0
     #: Which strongly connected component of the call graph the function
-    #: belongs to. Two functions share a runtime recursion counter
-    #: exactly when they share this (§5.4). Only the *grouping* means
-    #: anything — the numbering is this implementation's, and the
-    #: runtime's condensation numbers the same components differently.
+    #: belongs to, named by its **lowest member's index** (§4.3). Two
+    #: functions share a runtime recursion counter exactly when they
+    #: share this (§5.4). The naming is normative rather than an
+    #: implementation's own, because the container declares it.
     component: int = 0
 
 
@@ -75,6 +75,16 @@ def verify(
                 Refusal.CALL_DEPTH_MISMATCH,
                 where=fn.name,
                 detail=f"declares {fn.max_call_depth}, needs {computed.max_call_depth}",
+            )
+        if fn.component != computed.component:
+            # A runtime takes this one on trust and shares a recursion
+            # counter by it, so a wrong grouping is a cap that does not
+            # bind — two functions in one cycle counting separately.
+            raise refuse(
+                Refusal.MALFORMED_SECTION,
+                where=fn.name,
+                detail=f"declares call-graph component {fn.component}, "
+                f"belongs to {computed.component}",
             )
     return facts
 
@@ -649,8 +659,13 @@ def _call_graph(
             fn.name: component_slot_total(component_of[index])
             for index, fn in enumerate(container.functions)
         },
+        # Named by the lowest member's index, not by Tarjan's numbering:
+        # this value is written into the container (§4.3), so it has to
+        # be the same in every implementation and derivable from the
+        # function table alone.
         component={
-            fn.name: component_of[index] for index, fn in enumerate(container.functions)
+            fn.name: min(components[component_of[index]])
+            for index, fn in enumerate(container.functions)
         },
     )
 

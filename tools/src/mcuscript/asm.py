@@ -320,6 +320,7 @@ class _Parser:
                 fn,
                 max_stack=facts[fn.name].max_stack,
                 max_call_depth=facts[fn.name].max_call_depth,
+                component=facts[fn.name].component,
             )
             for fn in container.functions
         ]

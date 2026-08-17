@@ -203,54 +203,80 @@ understated the m0+ figure by 28 % while overstating m33 by counting
 report a refusal in words.
 
 **Flash, bytes.** A linked image, support library included, unreferenced
-code discarded.
+code discarded. Measured after ADR 0006 removed the device-side
+verifier; the figures the verifier was still in are two paragraphs down.
 
 | group set | cortex-m0+ | cortex-m4f | cortex-m33 |
 |---|---:|---:|---:|
-| full | 14,043 | 10,541 | 10,525 |
-| no i64 | 12,599 | 9,041 | 9,041 |
-| no i64 division | 13,311 | 9,425 | 9,417 |
-| no float | 10,307 | 9,933 | 9,925 |
-| no call | 13,555 | 10,125 | 10,109 |
-| no bits | 13,779 | 10,277 | 10,261 |
-| expressions + float | 11,875 | 8,365 | 8,349 |
-| expressions only | 8,061 | 7,391 | 7,375 |
+| full | 8,834 | 5,652 | 5,652 |
+| no i64 | 7,618 | 4,220 | 4,220 |
+| no i64 division | 8,130 | 4,572 | 4,572 |
+| no float | 5,282 | 5,172 | 5,180 |
+| no call | 8,474 | 5,324 | 5,324 |
+| no bits | 8,594 | 5,420 | 5,420 |
+| expressions + float | 7,090 | 3,724 | 3,724 |
+| expressions only | 3,546 | 3,132 | 3,132 |
 
 **What each group costs on cortex-m33**, as full minus that group:
-`i64` 1,484 (14 %), of which **`i64div` alone is 1,108 (11 %)**;
-`float` 600 (6 %); `call` 416 (4 %); `bits` 264 (3 %).
+`i64` 1,432 (25 %), of which **`i64div` alone is 1,080 (19 %)**;
+`float` 472 (8 %); `call` 328 (6 %); `bits` 232 (4 %).
 
 That `i64div` line is why it is a group at all (§3.4). Two instructions
 cost three times the other thirteen in their range, because 64-bit
 division is the one operation here that a 32-bit processor cannot do in
 registers. Splitting it out is what makes 64-bit *comparison* — a
 timestamp, an energy counter — affordable on a device that will never
-divide one.
+divide one. The percentages are larger than they were only because the
+whole is smaller; the byte figures barely moved.
 
-**The estimate was low, and it was low about the right thing.** ADR 0002
-§8 carried 1–2 KB for an expression-only engine. An expression-only
-*interpreter* is 1,504 bytes on cortex-m33 — the estimate was close.
-What nobody costed is the loader and the verifier around it:
+**What ADR 0006 did to the numbers**, since the before-and-after is the
+clearest statement of what verification was costing:
+
+| cortex-m33 | with the verifier | without |
+|---|---:|---:|
+| full | 10,525 | **5,652** |
+| expressions only | 7,375 | **3,132** |
+| `load.c` | 5,912–6,542 | **1,669, flat** |
+| `mcuscript_program` | 436 B | 380 B |
+| stack while loading | 732 B | 192 B |
+
+The flat figure is the part worth pausing on. `load.c` used to shrink
+with the group mask, because a type checker has a case per opcode; it
+is now **the same size in every configuration**, since nothing in it
+knows what an instruction is. That is the cleanest confirmation
+available that the verifier is actually gone rather than merely
+disabled.
+
+**The old estimate was low, and it was low about the right thing.** ADR
+0002 §8 carried 1–2 KB for an expression-only engine. An expression-only
+*interpreter* is 1,504 bytes on cortex-m33 — the estimate was close, and
+it was silent about everything around it. That silence is now much
+cheaper than it was:
 
 | | load.c | vm.c | names.c | own total | linked |
 |---|---:|---:|---:|---:|---:|
-| full | 6,542 | 3,112 | 867 | 10,521 | 10,525 |
-| expressions + float | 6,290 | 2,080 | 867 | 9,237 | 8,349 |
-| expressions only | 5,912 | 1,504 | 867 | 8,283 | 7,375 |
+| full | 1,669 | 3,112 | 867 | 5,648 | 5,652 |
+| expressions + float | 1,669 | 2,080 | 867 | 4,616 | 3,724 |
+| expressions only | 1,669 | 1,504 | 867 | 4,040 | 3,132 |
 
-so **the verifier costs four times the interpreter it protects**, and it
-barely shrinks when groups go, because most of it is the container walk,
-the CRC, the import resolution and the call-graph condensation — none of
-which is per-group. That is the price of "a pushed script must never
-crash a node", and naming it is what put that promise itself on the
-agenda; see the Open section.
+ADR 0006 estimated ~2.1 KB expression-only and ~4 KB complete. The real
+figures are 3.1 KB and 5.7 KB, so that estimate was **a kilobyte too
+optimistic** — worth recording, because it was an estimate made from the
+attribution table rather than from a build, which is exactly the kind of
+number this document exists to stop trusting.
 
-The honest reading of the modularity requirement is therefore narrower
-than it was written. Feature modules are real and they work; they are
-not what makes an engine fit a small device. **What makes it fit is
-choosing the other backend** — generated C links no loader and no VM, so
-the same script costs zero of these bytes. §4.1's two backends are the
-size knob; the group mask is trim.
+The reading of the modularity requirement has moved twice, and where it
+has landed is worth stating plainly. When the verifier was in, feature
+modules were trim — a fifth of the whole at best — and the size lever
+was choosing the other backend. Without it, **the group mask is the
+larger share of what is left**: 2.5 KB of 5.7 on a Cortex-M33, since
+what remains is a dispatch loop and a parser, and the dispatch loop is
+the part that has groups. ADR 0002 §1.3's *"an expression-only device
+links an expression-only VM"* is now a fair description of what happens.
+
+Choosing the other backend is still the bigger knob — generated C links
+no loader and no VM, so the same script costs zero of these bytes — but
+it is no longer the only one that matters.
 
 **RAM, and none of it is static.** The runtime declares no writable
 data at all; every byte below is the embedder's, and sized by the macros
@@ -258,16 +284,22 @@ in `mcuscript.h` rather than by the container.
 
 | | bytes | set by |
 |---|---:|---|
-| `mcuscript_program` | 436 | `MAX_IMPORTS`, `MAX_FUNCTIONS`, `MAX_CONSTANTS` |
+| `mcuscript_program` | 380 | `MAX_IMPORTS`, `MAX_FUNCTIONS`, `MAX_CONSTANTS` |
 | `mcuscript_slots` | 576 | `MAX_SLOTS` (64 × 9) |
-| stack, load | ≤ 732 | transient; gone before the first invocation |
+| stack, load | ≤ 192 | transient; gone before the first invocation |
 | stack, invoke | ≤ 348 | transient |
 
 The two stack figures never add: `mcuscript_load` has long returned when
 `mcuscript_invoke` is called. Both are GCC's `-fstack-usage` summed over
 the translation unit, which is an upper bound and a safe one, because
-the runtime does not recurse — the same property the loader proves about
-the container, applied to the C that runs it.
+the runtime does not recurse.
+
+Loading used to be the deeper of the two at 732 bytes, and is now the
+shallower at 192: the walker held a type stack and a table of pending
+branches, and neither exists any more. `mcuscript_program` lost 56 bytes
+for the same reason — `code_end`, `max_stack`, `max_call_depth` and
+`local_types` were per-function fields nothing outside the verifier ever
+read.
 
 ### 4.10 It has been run on real hardware
 
@@ -341,30 +373,20 @@ this record of what the device said.
   container carrying a function nothing calls is refused rather than
   compiled — a C compiler rejects an unused static, and refusing at load
   keeps that from being a difference between the backends.
-- **The loader is where a small build's flash goes.** §4.9 says it is
-  5,912 bytes of the 7,375 an expression-only device pays, and roughly
-  two thirds of that is verification rather than parsing. Candidates
-  exist — the call-graph condensation runs its full closure even for a
-  build with no `call` group (728 bytes, measured); the per-import name
-  matching could be one interface hash in the header, which catches
-  strictly more, since renaming an entity is caught today but
-  *swapping two* is not.
-  None of them is worth costing until the question below is settled,
-  because it may remove the code they would trim.
-- **Whether a device-side verifier belongs in this project at all.**
-  Raised by the product owner on 2026-08-17, and the argument is
-  structural rather than about size: this language has two backends, and
-  a guarantee that holds on only one of them is not half a guarantee but
-  a contradiction. Transpiled C can be tampered with exactly as bytecode
-  can, and there the project offers nothing and intends to offer
-  nothing. A verifier on the bytecode side therefore invites an implicit
-  reading — *"MCUScript is safe"* — that the project cannot honour and
-  never claimed. The direction agreed is three contracts instead of one
-  promise: the reference compiler emits conforming containers, the
-  reference runtime executes conforming containers and is **undefined on
-  anything else**, and deciding whether arbitrary bytes conform is a
-  separate concern that an embedder addresses on the path from compiler
-  to device — identically for both backends. What survives in the loader
-  is identity, never well-formedness: magic, format version, profile
-  pin, group mask, CRC. Nothing is implemented yet; the specification
-  text changes first.
+- **The loader is no longer where a small build's flash goes.** It was
+  5,912 bytes of the 7,375 an expression-only device paid; it is now
+  1,669 of 3,132, and flat across every group set. Most of the
+  candidates listed here went with the verifier — the call-graph
+  condensation is a declared field (§4.3), and the branch-merge
+  machinery does not exist. **One survives, and is now the largest
+  single thing left in the loader**: per-import name matching could be a
+  single interface hash in the header, which would catch strictly more
+  than it does today, since renaming an entity is caught and *swapping
+  two* is not. That is a correctness argument before it is a size one.
+- **Whether a device-side verifier belongs in this project at all** —
+  **decided, and carried out.** ADR 0006 (2026-08-17) says no, on
+  structural grounds rather than about size: a guarantee that holds on
+  the bytecode path and cannot hold on the transpiled-C path invites the
+  reading that the language is safe when it is not. The specification
+  was rewritten first, and the runtime followed on 2026-08-18. What the
+  loader keeps is identity, never well-formedness.

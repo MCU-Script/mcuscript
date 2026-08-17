@@ -20,10 +20,13 @@
 /*
  * Opcode range per group, inclusive (§3.2). The ranges are disjoint so
  * that a build omitting a group omits a contiguous span of its dispatch
- * table, and so that the group of an opcode is a comparison rather than
- * a table — which is what §2.6 point 1 needs, since an opcode assigned to a
- * group the *container* does not require is undefined for that
- * container however complete the build is.
+ * table.
+ *
+ * Nothing in this runtime reads them: asking which group an opcode is
+ * in is a verifier's question, and this runtime does not verify (ADR
+ * 0006). They stay because they are the C statement of §3.2, and a test
+ * holds them against `tools/src/mcuscript/opcodes.py` — the two tables
+ * agreeing is worth more than the macros are worth removing.
  */
 #define MCUSCRIPT_RANGE_CORE_LO 0x01
 #define MCUSCRIPT_RANGE_CORE_HI 0x3F

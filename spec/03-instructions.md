@@ -17,7 +17,8 @@ word would cost more in flash than the unaligned loads cost in cycles,
 on a machine that spends most of its time in dispatch anyway.
 
 Opcode `0x00` is not assigned, so a run of zeroed flash decodes as an
-undefined opcode and is refused at verification rather than executed.
+undefined opcode — which a verifier refuses, and which no conforming
+container contains.
 
 Notation used below: `imm8`/`imm16` are signed immediates, `idx8` an
 unsigned index, `off16` a signed byte offset **relative to the first
@@ -188,7 +189,7 @@ whose answer was already determined.
 (§1.3.1).** A non-valid condition is a fault, not a branch taken by
 default.
 
-**Backward jumps are rejected by the verifier in specification
+**A conforming container has no backward jumps in specification
 version 0.1** — see §3.8.
 
 `off16` is measured from the byte after the operand, so `JMP 0` is a
@@ -331,11 +332,12 @@ version.
 
 ## 3.8 Loops, and why there are none yet
 
-**The verifier rejects any backward jump.** Every entry point's control
-flow graph is therefore acyclic, and combined with the call-graph cap
-(§5.4) that makes termination provable at load time by inspection
-rather than by counting instructions at runtime, which is what removes
-the need for an execution budget in the VM (§5.6).
+**A conforming container has no backward jump.** Every entry point's
+control flow graph is therefore acyclic, and combined with the
+call-graph cap (§5.4) that makes termination a property of the container
+rather than something to enforce by counting instructions at runtime —
+which is what removes the need for an execution budget in the VM
+(§5.6).
 
 Loops are a reserved group, and the shape is already constrained by
 that promise: a counted loop with a bound the compiler can evaluate,
@@ -373,8 +375,8 @@ end:    STORE.H 1           ; fan.speed                []
 ```
 
 33 bytes, maximum stack depth 2. The depth is what goes in the entry
-point's record (§4.3) and what the verifier recomputes rather than
-believes (§2.6).
+point's record (§4.3), and what a verifier recomputes rather than
+believes (§2.6 point 5).
 
 The `JMP +2 → end` before `L2` is not removable, even though `end`
 follows: without it, execution would fall into `L2` and push a second

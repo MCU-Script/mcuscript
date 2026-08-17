@@ -108,6 +108,14 @@ entry to any of its members and decremented on return; exceeding the
 cap is a fault (§5.5). Being invoked counts as an entry, so an entry
 point inside a cycle occupies the first of its cap.
 
+The counter is per **cycle**, not per function, and that is what the
+`component` field of §4.3 is for. `a → b → a → b → a` must reach a cap
+of 5 exactly as `a → a → a → a → a` does; with a counter each, neither
+function would ever reach it. Which functions form a cycle is derivable
+from the code, but deriving it means condensing the call graph, so the
+container declares the grouping and a runtime reads it — one field
+instead of an algorithm.
+
 In the VM the counter lives beside the frame machinery, so it is per
 invocation and unwinding a fault cannot leave it wrong. In generated C
 — where MCUScript functions become ordinary C functions on the

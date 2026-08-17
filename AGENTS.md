@@ -19,16 +19,16 @@ reference embedder, not its owner — do not let its requirements read as
 governance.
 
 **The back end exists; the language does not.** The container format,
-both verifiers, the VM and the C backend are written and tested, and
-every instruction the specification defines works in both backends.
-There is no surface syntax and no compiler — programs are written in
-the assembler in `tools/src/mcuscript/asm.py`.
+the verifier, the VM and the C backend are written and tested, and every
+instruction the specification defines works in both backends. There is
+no surface syntax and no compiler — programs are written in the
+assembler in `tools/src/mcuscript/asm.py`.
 
-**One of those two verifiers is being removed** (ADR 0006, 2026-08-17).
-The specification has been rewritten to it; the runtime has not yet
-followed. Until it does, the C loader still verifies and the tests still
-expect it to — so a change in that area is a scheduled removal, not a
-defect to fix in passing.
+There used to be **two** verifiers, one of them in the C runtime. It was
+removed on 2026-08-18 (ADR 0006). The runtime parses, links and runs; it
+does not judge. Do not add a check back to it without reading that ADR
+first — "the loader should really catch this" is the exact reasoning it
+argues against.
 
 So the split to keep in mind is: everything below the container is
 **decided and executed**, and everything above it is still a

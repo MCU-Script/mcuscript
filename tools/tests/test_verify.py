@@ -288,13 +288,20 @@ def test_a_forged_call_depth_is_refused():
 # -- the call graph -------------------------------------------------------
 
 
-def _two_functions(code_a: bytes, code_b: bytes, *, cap_a=0, cap_b=0) -> Container:
+def _two_functions(
+    code_a: bytes, code_b: bytes, *, cap_a=0, cap_b=0, components=(0, 1)
+) -> Container:
+    """Two functions, in separate components unless told otherwise.
+
+    `components` is declared rather than derived because §4.3 makes it a
+    field of the record; a cycle spanning both is `components=(0, 0)`.
+    """
     return build(
         code_a + code_b,
         groups=Group.CORE.mask | Group.CALL.mask,
         functions=[
-            Function("a", 0, recursion_cap=cap_a),
-            Function("b", len(code_a), recursion_cap=cap_b),
+            Function("a", 0, recursion_cap=cap_a, component=components[0]),
+            Function("b", len(code_a), recursion_cap=cap_b, component=components[1]),
         ],
     )
 

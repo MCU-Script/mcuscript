@@ -45,14 +45,14 @@ never heard of MCUHome is a design goal, not a side effect.
 
 **The back end works; there is no language yet.** All five chapters of
 [the specification](spec/) are written and implemented — the container
-format, two verifiers, the VM in C, and the C backend — and a
+format, the verifier, the VM in C, and the C backend — and a
 differential test runs the same container through both backends and
 compares the bytes. Every instruction the specification defines works
 end to end in both of them.
 
 What does **not** exist is the part a user would see: there is no
 surface syntax and no compiler. Programs are written in an assembler,
-on purpose — it lets the format, the verifiers, the VM and the C
+on purpose — it lets the format, the verifier, the VM and the C
 backend be built against each other before anybody argues about how an
 `if` should look. The sketches below are still sketches.
 
@@ -98,20 +98,18 @@ differential tests.
 
 ## What it costs
 
-Measured on linked images, not estimated: the engine is **7.4 KB of
-flash** on a Cortex-M33 for an expression-only build and **10.5 KB**
-with every instruction group, no static RAM, and about 1 KB the embedder
+Measured on linked images, not estimated: the engine is **3.1 KB of
+flash** on a Cortex-M33 for an expression-only build and **5.7 KB** with
+every instruction group, no static RAM, and about 1 KB the embedder
 declares for a loaded program and its slots. On a Cortex-M0+, which has
-neither a divide instruction nor an FPU, the full build is 14 KB —
-the compiler's support library is part of the bill, which is also why
-64-bit division is a group you can leave out.
+neither a divide instruction nor an FPU, the full build is 8.8 KB — the
+compiler's support library is part of the bill, which is also why 64-bit
+division is a group you can leave out.
 
-Roughly two thirds of that is the loader and its verification; the
-interpreter alone is 1.5 KB. That proportion is why the next change is
-not an optimisation: [ADR 0006](docs/adr/draft/0006-three-contracts-not-one-promise.md)
-takes the device-side verifier out, for reasons of scope rather than
-size, and the runtime it leaves is estimated at ~2.1 KB expression-only
-and ~4 KB complete.
+Half of that is the interpreter and the other half is what the
+instruction groups add, so leaving groups out is most of what there is
+to leave out. The loader is 1.7 KB and the same size in every
+configuration, because it does not know what an instruction is.
 
 Which is also the honest answer to "will it fit": if it does not, the
 second backend costs nothing at all, because generated C links neither

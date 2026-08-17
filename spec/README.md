@@ -7,7 +7,7 @@ SPDX-License-Identifier: Apache-2.0
 
 - Specification version: **0.1.0-draft**
 - Status: **complete in draft, and fully executed.** All five chapters
-  have an implementation: two verifiers, an interpreter and a C backend,
+  have an implementation: a verifier, an interpreter and a C backend,
   and a differential test that runs the same container through both
   backends and compares the bytes. **Every instruction the document
   defines works end to end in both backends** — `core`, `i64`, `float`,

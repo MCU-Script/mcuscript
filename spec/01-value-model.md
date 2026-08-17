@@ -19,9 +19,10 @@ The bytecode has four types and no others:
 Types are a property of the *instruction*, not of the value: `ADD.i32`
 and `ADD.i64` are different instructions, and a value on the stack
 carries no type tag at runtime. The type of every stack position is
-instead known statically, and the load-time verifier proves it (§2.6).
-This is WebAssembly's arrangement, and it is what lets the runtime be
-untagged without being unsafe.
+instead known statically, and a conforming container is one in which it
+holds along every path (§2.6). This is WebAssembly's arrangement, and it
+is what lets the runtime be untagged: nothing checks a type at runtime
+because in a conforming container nothing can be the wrong type.
 
 **Deliberately absent, with reasons:**
 
@@ -79,7 +80,7 @@ is written down as one (§3.3) rather than quietly widening the rule.
 Its effect is still statically known, which is all the arithmetic below
 actually needs.
 
-That sentence is what makes the compiler's stack-depth computation, the
+That sentence is what makes the compiler's stack-depth computation, a
 verifier's recomputation of it, and the static allocation of the stack
 all straightforward. It is worth more than the
 bytes. eBPF makes the same trade for the same reason, on hosts that are

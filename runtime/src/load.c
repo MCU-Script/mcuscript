@@ -2,9 +2,24 @@
  * SPDX-FileCopyrightText: 2026 The MCUScript Contributors
  * SPDX-License-Identifier: Apache-2.0
  *
- * Loading: parse the container (§2), verify the code (§2.6), resolve
- * the imports (§4.5). Everything here treats its input as hostile,
- * because after the compiler released it, it is.
+ * Loading: parse the container (§2) and resolve the imports (§4.5).
+ *
+ * **This does not verify** (ADR 0006). Every check here answers one
+ * question — *is this container meant for me* — and none of them asks
+ * whether it is a good program. That is a decision about what this
+ * language is for rather than a shortcut: the same source is equally
+ * expressible as this container or as C built into the firmware,
+ * nothing guards the C on its way to a device, and a runtime that
+ * policed its input would give one of two interchangeable paths a
+ * guarantee the other cannot carry. Deciding whether arbitrary bytes
+ * are a conforming container is a verifier's job (§2.6.0), and where
+ * one belongs is the embedder's call.
+ *
+ * What that leaves is a rule for the code below: **bounds against the
+ * buffer stay, judgements about content go.** A parser that walks off
+ * the end of a container it was handed is a defect here, whatever the
+ * container was; a parser that has an opinion about the container's
+ * stack depth is doing another component's work.
  */
 
 #include <string.h>
@@ -17,8 +32,7 @@
 #define FORMAT_VERSION 1
 
 /* ------------------------------------------------------------------
- * Small readers. Nothing in a container is trusted to be in range, so
- * every read goes through a bound.
+ * Small readers
  */
 
 static uint16_t read_u16(const uint8_t *p)
@@ -37,16 +51,15 @@ static int32_t read_i32(const uint8_t *p)
 	return (int32_t)read_u32(p);
 }
 
-static int16_t read_i16(const uint8_t *p)
-{
-	return (int16_t)read_u16(p);
-}
-
 /*
  * CRC-32/ISO-HDLC, bitwise. A table would be four to eight times faster
  * and cost 256 to 1024 bytes of flash on a device that runs this once
  * per load; the loop is the right trade here, and an embedder that
  * disagrees can supply its own.
+ *
+ * This catches a flipped bit — a mangled encoding, a truncated
+ * transfer, a bad flash write — and nothing else. It is not a security
+ * control (§2.7).
  */
 static uint32_t crc32(const uint8_t *data, size_t length, size_t skip_from,
 		      size_t skip_to)
@@ -60,10 +73,6 @@ static uint32_t crc32(const uint8_t *data, size_t length, size_t skip_from,
 	}
 	return ~crc;
 }
-
-/* ------------------------------------------------------------------
- * Diagnostics
- */
 
 static bool fail(mcuscript_diagnostic *diagnostic, mcuscript_refusal refusal,
 		 uint32_t where)
@@ -80,152 +89,12 @@ static bool fail(mcuscript_diagnostic *diagnostic, mcuscript_refusal refusal,
 static bool fail_named(mcuscript_diagnostic *diagnostic, mcuscript_refusal refusal,
 		       uint32_t where, mcuscript_str name)
 {
-	fail(diagnostic, refusal, where);
-	if (diagnostic != NULL)
+	if (diagnostic != NULL) {
+		diagnostic->refusal = refusal;
+		diagnostic->where = where;
 		diagnostic->name = name;
-	return false;
-}
-
-/* ------------------------------------------------------------------
- * Instruction sizes
- */
-
-unsigned mcuscript_instruction_size(uint8_t opcode)
-{
-	switch (opcode) {
-	/* -- core --------------------------------------------------- */
-	case OP_CONST_TRUE:
-	case OP_CONST_FALSE:
-	case OP_DROP:
-	case OP_DUP:
-	case OP_ADD_I32:
-	case OP_SUB_I32:
-	case OP_MUL_I32:
-	case OP_DIV_I32:
-	case OP_REM_I32:
-	case OP_NEG_I32:
-	case OP_EQ_I32:
-	case OP_NE_I32:
-	case OP_LT_I32:
-	case OP_LE_I32:
-	case OP_GT_I32:
-	case OP_GE_I32:
-	case OP_NOT:
-	case OP_RET:
-	case OP_RET_V:
-	case OP_ELSE:
-	case OP_IS_VALID:
-	case OP_IS_UNAVAILABLE:
-	case OP_IS_INVALID:
-		return 1;
-	case OP_CONST_I32_S8:
-	case OP_CONST_I32:
-	case OP_LOAD_L:
-	case OP_STORE_L:
-	case OP_LOAD_H:
-	case OP_STORE_H:
-	case OP_CALL_H:
-		return 2;
-	case OP_CONST_I32_S16:
-	case OP_JMP:
-	case OP_JMP_IF_FALSE:
-	case OP_JMP_IF_TRUE:
-		return 3;
-
-#if MCUSCRIPT_GROUPS & MCUSCRIPT_GROUP_I64
-	/* -- i64 ---------------------------------------------------- */
-	case OP_ADD_I64:
-	case OP_SUB_I64:
-	case OP_MUL_I64:
-	case OP_NEG_I64:
-	case OP_EQ_I64:
-	case OP_NE_I64:
-	case OP_LT_I64:
-	case OP_LE_I64:
-	case OP_GT_I64:
-	case OP_GE_I64:
-	case OP_EXTEND_I32_I64:
-	case OP_WRAP_I64_I32:
-		return 1;
-	case OP_CONST_I64:
-		return 2;
-#endif
-
-#if MCUSCRIPT_GROUPS & MCUSCRIPT_GROUP_FLOAT
-	/* -- float -------------------------------------------------- */
-	case OP_ADD_F32:
-	case OP_SUB_F32:
-	case OP_MUL_F32:
-	case OP_DIV_F32:
-	case OP_NEG_F32:
-	case OP_EQ_F32:
-	case OP_NE_F32:
-	case OP_LT_F32:
-	case OP_LE_F32:
-	case OP_GT_F32:
-	case OP_GE_F32:
-	case OP_CONVERT_I32_F32:
-	case OP_TRUNC_F32_I32:
-		return 1;
-	case OP_CONST_F32:
-		return 2;
-#endif
-
-#if MCUSCRIPT_GROUPS & MCUSCRIPT_GROUP_CALL
-	/* -- call --------------------------------------------------- */
-	case OP_CALL:
-		return 2;
-#endif
-
-#if MCUSCRIPT_GROUPS & MCUSCRIPT_GROUP_BITS
-	/* -- bits --------------------------------------------------- */
-	case OP_AND_I32:
-	case OP_OR_I32:
-	case OP_XOR_I32:
-	case OP_BITNOT_I32:
-	case OP_SHL_I32:
-	case OP_SHR_I32:
-		return 1;
-#endif
-
-#if MCUSCRIPT_GROUPS & MCUSCRIPT_GROUP_I64DIV
-	/* -- i64div ------------------------------------------------- */
-	case OP_DIV_I64:
-	case OP_REM_I64:
-		return 1;
-#endif
-
-	default:
-		return 0;
 	}
-}
-
-/*
- * The group an opcode belongs to, from its range alone (§3.2). Zero for
- * a byte in no group's range — which the caller treats exactly like an
- * unassigned opcode, because that is what it is.
- *
- * This stays defined for every group, including ones this build does
- * not implement: it answers a question about the *container*, and the
- * answer must not depend on the build.
- */
-uint32_t mcuscript_opcode_group(uint8_t opcode)
-{
-	if (opcode >= MCUSCRIPT_RANGE_CORE_LO && opcode <= MCUSCRIPT_RANGE_CORE_HI)
-		return MCUSCRIPT_GROUP_CORE;
-	if (opcode >= MCUSCRIPT_RANGE_I64_LO && opcode <= MCUSCRIPT_RANGE_I64_HI)
-		return MCUSCRIPT_GROUP_I64;
-	if (opcode >= MCUSCRIPT_RANGE_FLOAT_LO && opcode <= MCUSCRIPT_RANGE_FLOAT_HI)
-		return MCUSCRIPT_GROUP_FLOAT;
-	if (opcode >= MCUSCRIPT_RANGE_CALL_LO && opcode <= MCUSCRIPT_RANGE_CALL_HI)
-		return MCUSCRIPT_GROUP_CALL;
-	if (opcode >= MCUSCRIPT_RANGE_BITS_LO && opcode <= MCUSCRIPT_RANGE_BITS_HI)
-		return MCUSCRIPT_GROUP_BITS;
-	if (opcode >= MCUSCRIPT_RANGE_LOOP_LO && opcode <= MCUSCRIPT_RANGE_LOOP_HI)
-		return MCUSCRIPT_GROUP_LOOP;
-	if (opcode >= MCUSCRIPT_RANGE_I64DIV_LO && opcode <= MCUSCRIPT_RANGE_I64DIV_HI)
-		return MCUSCRIPT_GROUP_I64DIV;
-	return 0;
+	return false;
 }
 
 /* ------------------------------------------------------------------
@@ -290,13 +159,6 @@ typedef struct {
 	bool present;
 } section;
 
-static bool is_type_code(uint8_t code, bool allow_void)
-{
-	if (code == MCUSCRIPT_VOID)
-		return allow_void;
-	return code >= MCUSCRIPT_I32 && code <= MCUSCRIPT_BOOL;
-}
-
 static bool walk_sections(const uint8_t *bytes, size_t length, section *code,
 			  section *constants, section *entries, section *imports,
 			  mcuscript_diagnostic *diagnostic)
@@ -310,10 +172,6 @@ static bool walk_sections(const uint8_t *bytes, size_t length, section *code,
 		uint32_t padded = size + ((4u - (size & 3u)) & 3u);
 		if (offset + 8u + padded > length || offset + 8u + padded < offset)
 			return fail(diagnostic, MCUSCRIPT_MALFORMED_SECTION, (uint32_t)offset);
-		for (int i = 0; i < 4; i++)
-			if (type[i] < 0x20 || type[i] > 0x7E)
-				return fail(diagnostic, MCUSCRIPT_MALFORMED_SECTION,
-					    (uint32_t)offset);
 
 		section *target = NULL;
 		if (memcmp(type, "CODE", 4) == 0)
@@ -325,6 +183,9 @@ static bool walk_sections(const uint8_t *bytes, size_t length, section *code,
 		else if (memcmp(type, "HOST", 4) == 0)
 			target = imports;
 		else if (type[0] >= 'A' && type[0] <= 'Z')
+			/* Critical and unknown: §2.3 says this container needs
+			 * something this build has never heard of, which is an
+			 * identity answer and not a judgement. */
 			return fail(diagnostic, MCUSCRIPT_UNKNOWN_CRITICAL_SECTION,
 				    (uint32_t)offset);
 
@@ -345,6 +206,12 @@ static bool walk_sections(const uint8_t *bytes, size_t length, section *code,
 
 /* ------------------------------------------------------------------
  * Tables
+ *
+ * Each of these walks a table to find where its entries start, and
+ * stops at the first thing it cannot walk past. A type code it does not
+ * know is one of those: the width of a constant follows from its type,
+ * so an unrecognised type is not a bad program, it is a table this code
+ * cannot step through.
  */
 
 static bool load_constants(mcuscript_program *program, section pool,
@@ -362,9 +229,8 @@ static bool load_constants(mcuscript_program *program, section pool,
 	for (uint8_t i = 0; i < count; i++) {
 		if (offset >= pool.length)
 			return fail(diagnostic, MCUSCRIPT_MALFORMED_SECTION, offset);
-		uint8_t type = pool.data[offset];
 		uint32_t width;
-		switch (type) {
+		switch (pool.data[offset]) {
 		case MCUSCRIPT_I32:
 		case MCUSCRIPT_F32:
 			width = 4;
@@ -380,8 +246,6 @@ static bool load_constants(mcuscript_program *program, section pool,
 		program->constant_offsets[i] = (uint16_t)offset;
 		offset += 1u + width;
 	}
-	if (offset != pool.length)
-		return fail(diagnostic, MCUSCRIPT_MALFORMED_SECTION, offset);
 	return true;
 }
 
@@ -400,76 +264,23 @@ static bool load_imports(mcuscript_program *program, section table,
 	for (uint8_t i = 0; i < count; i++) {
 		if (offset + 8u > table.length)
 			return fail(diagnostic, MCUSCRIPT_MALFORMED_SECTION, offset);
-		const uint8_t *record = table.data + offset;
-		uint8_t kind = record[2];
-		uint8_t access = record[3];
-		uint8_t type = record[4];
-		uint8_t parameters = record[7];
+		uint8_t parameters = table.data[offset + 7];
 		if (offset + 8u + parameters > table.length)
 			return fail(diagnostic, MCUSCRIPT_MALFORMED_SECTION, offset);
-		if (kind != MCUSCRIPT_KIND_ENTITY && kind != MCUSCRIPT_KIND_FUNCTION)
-			return fail(diagnostic, MCUSCRIPT_MALFORMED_SECTION, offset);
-		if (!is_type_code(type, kind == MCUSCRIPT_KIND_FUNCTION))
-			return fail(diagnostic, MCUSCRIPT_MALFORMED_SECTION, offset);
-		if (kind == MCUSCRIPT_KIND_ENTITY) {
-			if (access != MCUSCRIPT_ACCESS_READ && access != MCUSCRIPT_ACCESS_WRITE &&
-			    access != MCUSCRIPT_ACCESS_BOTH)
-				return fail(diagnostic, MCUSCRIPT_MALFORMED_SECTION, offset);
-			if (parameters != 0)
-				return fail(diagnostic, MCUSCRIPT_MALFORMED_SECTION, offset);
-		} else if (access != MCUSCRIPT_ACCESS_NONE) {
-			return fail(diagnostic, MCUSCRIPT_MALFORMED_SECTION, offset);
-		} else if (parameters > MCUSCRIPT_MAX_PARAMETERS) {
+		if (parameters > MCUSCRIPT_MAX_PARAMETERS)
 			return fail(diagnostic, MCUSCRIPT_BUILD_LIMIT, parameters);
-		}
-		for (uint8_t p = 0; p < parameters; p++)
-			if (!is_type_code(record[8 + p], false))
-				return fail(diagnostic, MCUSCRIPT_MALFORMED_SECTION, offset);
 		program->import_offsets[i] = (uint16_t)offset;
 		offset += 8u + parameters;
 	}
-
-	/* Names live after the records. */
-	const uint8_t *area = table.data + offset;
-	uint32_t area_length = table.length - offset;
-	for (uint8_t i = 0; i < count; i++) {
-		const uint8_t *record = table.data + program->import_offsets[i];
-		mcuscript_str name;
-		if (!read_name(area, area_length, read_u16(record), &name))
-			return fail(diagnostic, MCUSCRIPT_MALFORMED_SECTION, i);
-		for (uint8_t j = 0; j < i; j++) {
-			mcuscript_str other;
-			/* Reading a name that a previous round already read
-			 * cannot fail — but saying so in a comment leaves the
-			 * compiler to assume it, and at -O2 it will not. */
-			if (!read_name(area, area_length,
-				       read_u16(table.data + program->import_offsets[j]),
-				       &other))
-				return fail(diagnostic, MCUSCRIPT_MALFORMED_SECTION, j);
-			if (other.length == name.length &&
-			    memcmp(other.bytes, name.bytes, name.length) == 0)
-				return fail_named(diagnostic, MCUSCRIPT_DUPLICATE_IMPORT, i,
-						  name);
-		}
-	}
+	program->import_names = table.data + offset;
+	program->import_names_length = table.length - offset;
 	return true;
 }
 
-static bool import_name(const mcuscript_program *program, section table, uint8_t index,
-			mcuscript_str *out)
-{
-	uint32_t records_end = 1;
-	for (uint8_t i = 0; i < program->import_count; i++) {
-		const uint8_t *record = table.data + program->import_offsets[i];
-		uint32_t end = program->import_offsets[i] + 8u + record[7];
-		if (end > records_end)
-			records_end = end;
-	}
-	return read_name(table.data + records_end, table.length - records_end,
-			 read_u16(table.data + program->import_offsets[index]), out);
-}
+/* The fixed part of an ENTR record (§4.3), before `local_types`. */
+#define RECORD_SIZE 14u
 
-static bool load_functions(mcuscript_program *program, section table, uint32_t code_length,
+static bool load_functions(mcuscript_program *program, section table,
 			   mcuscript_diagnostic *diagnostic)
 {
 	if (table.length < 1)
@@ -478,9 +289,6 @@ static bool load_functions(mcuscript_program *program, section table, uint32_t c
 	if (count > MCUSCRIPT_MAX_FUNCTIONS)
 		return fail(diagnostic, MCUSCRIPT_BUILD_LIMIT, count);
 	program->function_count = count;
-
-	/* The fixed part of an ENTR record (§4.3), before `local_types`. */
-#define RECORD_SIZE 13u
 
 	uint32_t offset = 1;
 	uint16_t name_offsets[MCUSCRIPT_MAX_FUNCTIONS];
@@ -493,30 +301,23 @@ static bool load_functions(mcuscript_program *program, section table, uint32_t c
 		fn->code_offset = read_u32(record + 2);
 		fn->flags = record[6];
 		fn->return_type = record[7];
-		fn->max_stack = record[8];
-		fn->max_call_depth = record[9];
+		/* record[8] is max_stack and record[9] max_call_depth: a
+		 * verifier's business, stepped over here (§4.3). */
 		fn->recursion_cap = record[10];
-		fn->param_count = record[11];
-		fn->local_count = record[12];
-		if (fn->flags & (uint8_t)~MCUSCRIPT_ENTRY_INVOCABLE)
-			return fail(diagnostic, MCUSCRIPT_RESERVED_FIELD_SET, i);
-		if (!is_type_code(fn->return_type, true))
+		uint8_t component = record[11];
+		fn->param_count = record[12];
+		fn->local_count = record[13];
+		/* The one field read from a record that indexes an array. A
+		 * component is named by its lowest member, so it is a function
+		 * index — and this loader believes the container about
+		 * everything except whether that index is inside the table. */
+		if (component >= count)
 			return fail(diagnostic, MCUSCRIPT_MALFORMED_SECTION, offset);
-		if (fn->param_count > fn->local_count)
-			return fail(diagnostic, MCUSCRIPT_MALFORMED_SECTION, offset);
-		/* The host invokes by name and passes nothing (§4.3). */
-		if ((fn->flags & MCUSCRIPT_ENTRY_INVOCABLE) && fn->param_count != 0)
-			return fail(diagnostic, MCUSCRIPT_ENTRY_TAKES_PARAMETERS, i);
+		program->component[i] = component;
 		if (offset + RECORD_SIZE + fn->local_count > table.length)
 			return fail(diagnostic, MCUSCRIPT_MALFORMED_SECTION, offset);
-		fn->local_types = record + RECORD_SIZE;
-		for (uint8_t l = 0; l < fn->local_count; l++)
-			if (!is_type_code(fn->local_types[l], false))
-				return fail(diagnostic, MCUSCRIPT_MALFORMED_SECTION, offset);
 		offset += RECORD_SIZE + fn->local_count;
 	}
-
-#undef RECORD_SIZE
 
 	const uint8_t *area = table.data + offset;
 	uint32_t area_length = table.length - offset;
@@ -525,675 +326,37 @@ static bool load_functions(mcuscript_program *program, section table, uint32_t c
 			       &program->functions[i].name))
 			return fail(diagnostic, MCUSCRIPT_MALFORMED_SECTION, i);
 
-	/* Names must be distinct: the bytecode calls by index and would not
-	 * care, but the host invokes by name and a C backend makes a symbol
-	 * of it, so two records sharing one is a program only one backend
-	 * can express (§4.3). */
-	for (uint8_t i = 0; i < count; i++) {
-		for (uint8_t j = 0; j < i; j++) {
-			mcuscript_str a = program->functions[i].name;
-			mcuscript_str b = program->functions[j].name;
-			if (a.length == b.length && memcmp(a.bytes, b.bytes, a.length) == 0)
-				return fail_named(diagnostic, MCUSCRIPT_MALFORMED_SECTION, i,
-						  a);
-		}
-	}
-
-	/* Code regions tile CODE exactly (§2.6.1), and the records arrive in
-	 * code order (§4.3), so each region ends where the next one begins.
-	 * That is what makes "a branch outside this function" decidable.
-	 *
-	 * The order is required rather than reconstructed. A reader that
-	 * sorts has to compare every start against every other; a reader
-	 * that is promised the order walks once, and the promise costs the
-	 * writer nothing, because a compiler lays code out in some order
-	 * anyway and can as well number the records in it.
-	 */
-	if (count == 0)
-		return code_length == 0 ? true
-					: fail(diagnostic, MCUSCRIPT_MALFORMED_SECTION, 0);
-
-	for (uint8_t i = 0; i < count; i++) {
-		uint32_t begin = program->functions[i].code_offset;
-		uint32_t end = (i + 1u < count) ? program->functions[i + 1].code_offset
-						: code_length;
-		/* First at zero, each after the one before, none empty, none
-		 * past the end — four conditions, one comparison each. */
-		if (begin != (i == 0 ? 0u : program->functions[i - 1].code_end) ||
-		    end <= begin || end > code_length)
-			return fail(diagnostic, MCUSCRIPT_MALFORMED_SECTION, begin);
-		program->functions[i].code_end = end;
-	}
-	return true;
-}
-
-/* ------------------------------------------------------------------
- * Verification (§2.6)
- *
- * One forward pass in address order. That is possible only because
- * backward jumps are rejected (§3.8), and it is what keeps the memory
- * bounded: the walk has to remember a stack shape per *outstanding
- * forward branch*, not per instruction.
- *
- * The host-side verifier in tools/ uses a worklist instead, and reports
- * which path produced a conflict. Two algorithms over one specification
- * is deliberate — a corpus binds them together, and agreement between
- * two different methods is worth more than agreement between two copies
- * of one.
- */
-
-typedef struct {
-	uint8_t types[MCUSCRIPT_MAX_STACK];
-	uint8_t depth;
-} shape;
-
-typedef struct {
-	uint32_t target;
-	shape stack;
-	bool used;
-} pending_branch;
-
-typedef struct {
-	const mcuscript_program *program;
-	section imports;
-	const mcuscript_function *fn;
-	shape stack;
-	bool reachable;
-	uint8_t high_water;
-	pending_branch pending[MCUSCRIPT_MAX_PENDING_BRANCHES];
-	uint8_t pending_count;
-	mcuscript_diagnostic *diagnostic;
-	uint32_t pc;
-} walker;
-
-static bool push_type(walker *w, uint8_t type)
-{
-	if (w->stack.depth >= MCUSCRIPT_MAX_STACK)
-		return fail(w->diagnostic, MCUSCRIPT_BUILD_LIMIT, w->pc);
-	w->stack.types[w->stack.depth++] = type;
-	if (w->stack.depth > w->high_water)
-		w->high_water = w->stack.depth;
-	return true;
-}
-
-static bool pop_type(walker *w, uint8_t want, uint8_t *got)
-{
-	if (w->stack.depth == 0)
-		return fail(w->diagnostic, MCUSCRIPT_STACK_UNDERFLOW, w->pc);
-	uint8_t type = w->stack.types[--w->stack.depth];
-	if (want != MCUSCRIPT_VOID && type != want)
-		return fail(w->diagnostic, MCUSCRIPT_TYPE_MISMATCH, w->pc);
-	if (got != NULL)
-		*got = type;
-	return true;
-}
-
-static bool binary(walker *w, uint8_t operand, uint8_t result)
-{
-	return pop_type(w, operand, NULL) && pop_type(w, operand, NULL) &&
-	       push_type(w, result);
-}
-
-static bool unary(walker *w, uint8_t operand, uint8_t result)
-{
-	return pop_type(w, operand, NULL) && push_type(w, result);
-}
-
-static bool same_shape(const shape *a, const shape *b)
-{
-	return a->depth == b->depth && memcmp(a->types, b->types, a->depth) == 0;
-}
-
-static bool record_branch(walker *w, uint32_t target)
-{
-	for (uint8_t i = 0; i < w->pending_count; i++) {
-		if (w->pending[i].used || w->pending[i].target != target)
-			continue;
-		if (!same_shape(&w->pending[i].stack, &w->stack))
-			return fail(w->diagnostic, MCUSCRIPT_INCONSISTENT_JOIN, target);
-		return true;
-	}
-	for (uint8_t i = 0; i < w->pending_count; i++) {
-		if (!w->pending[i].used)
-			continue;
-		w->pending[i].target = target;
-		w->pending[i].stack = w->stack;
-		w->pending[i].used = false;
-		return true;
-	}
-	if (w->pending_count >= MCUSCRIPT_MAX_PENDING_BRANCHES)
-		return fail(w->diagnostic, MCUSCRIPT_BUILD_LIMIT, target);
-	w->pending[w->pending_count].target = target;
-	w->pending[w->pending_count].stack = w->stack;
-	w->pending[w->pending_count].used = false;
-	w->pending_count++;
-	return true;
-}
-
-static bool merge_at(walker *w, uint32_t pc)
-{
-	for (uint8_t i = 0; i < w->pending_count; i++) {
-		if (w->pending[i].used || w->pending[i].target != pc)
-			continue;
-		if (w->reachable) {
-			if (!same_shape(&w->pending[i].stack, &w->stack))
-				return fail(w->diagnostic, MCUSCRIPT_INCONSISTENT_JOIN, pc);
-		} else {
-			w->stack = w->pending[i].stack;
-			w->reachable = true;
-			if (w->stack.depth > w->high_water)
-				w->high_water = w->stack.depth;
-		}
-		w->pending[i].used = true;
-	}
-	return true;
-}
-
-static bool constant_type(const mcuscript_program *program, uint8_t index, uint8_t *type)
-{
-	if (index >= program->constant_count)
-		return false;
-	*type = program->constants[program->constant_offsets[index]];
-	return true;
-}
-
-static bool verify_function(const mcuscript_program *program, section imports,
-			    const mcuscript_function *fn, uint8_t *computed_stack,
-			    mcuscript_diagnostic *diagnostic)
-{
-	walker w;
-	memset(&w, 0, sizeof w);
-	w.program = program;
-	w.imports = imports;
-	w.fn = fn;
-	w.reachable = true;
-	w.diagnostic = diagnostic;
-
-	const uint8_t *code = program->code;
-	uint32_t pc = fn->code_offset;
-	while (pc < fn->code_end) {
-		w.pc = pc;
-		if (!merge_at(&w, pc))
-			return false;
-		if (!w.reachable)
-			return fail(diagnostic, MCUSCRIPT_UNREACHABLE_CODE, pc);
-
-		uint8_t opcode = code[pc];
-		unsigned size = mcuscript_instruction_size(opcode);
-		if (size == 0)
-			return fail(diagnostic, MCUSCRIPT_UNDEFINED_OPCODE, pc);
-		/*
-		 * §2.6 point 1: an opcode assigned to a group the header does not
-		 * require is undefined *for this container*, however complete
-		 * the build is. Without this, a container could under-declare
-		 * its groups and slip past the check of §2.5 — which is the
-		 * one thing standing between a narrowed build and an
-		 * instruction it does not implement.
-		 */
-		if (!(program->required_groups & mcuscript_opcode_group(opcode)))
-			return fail(diagnostic, MCUSCRIPT_UNDEFINED_OPCODE, pc);
-		if (pc + size > fn->code_end)
-			return fail(diagnostic, MCUSCRIPT_TRUNCATED_INSTRUCTION, pc);
-		uint8_t index = (size >= 2) ? code[pc + 1] : 0;
-		bool ok = true;
-
-		switch (opcode) {
-		case OP_CONST_I32_S8:
-		case OP_CONST_I32_S16:
-			ok = push_type(&w, MCUSCRIPT_I32);
-			break;
-		case OP_CONST_I32: {
-			uint8_t type;
-			if (!constant_type(program, index, &type))
-				return fail(diagnostic, MCUSCRIPT_INDEX_OUT_OF_RANGE, pc);
-			if (type != MCUSCRIPT_I32)
-				return fail(diagnostic, MCUSCRIPT_TYPE_MISMATCH, pc);
-			ok = push_type(&w, MCUSCRIPT_I32);
-			break;
-		}
-		case OP_CONST_TRUE:
-		case OP_CONST_FALSE:
-			ok = push_type(&w, MCUSCRIPT_BOOL);
-			break;
-		case OP_LOAD_L:
-			if (index >= fn->local_count)
-				return fail(diagnostic, MCUSCRIPT_INDEX_OUT_OF_RANGE, pc);
-			ok = push_type(&w, fn->local_types[index]);
-			break;
-		case OP_STORE_L:
-			if (index >= fn->local_count)
-				return fail(diagnostic, MCUSCRIPT_INDEX_OUT_OF_RANGE, pc);
-			ok = pop_type(&w, fn->local_types[index], NULL);
-			break;
-		case OP_LOAD_H:
-		case OP_STORE_H:
-		case OP_CALL_H: {
-			if (index >= program->import_count)
-				return fail(diagnostic, MCUSCRIPT_INDEX_OUT_OF_RANGE, pc);
-			import_view imp;
-			import_at(program, index, &imp);
-			if (opcode == OP_CALL_H) {
-				if (imp.kind != MCUSCRIPT_KIND_FUNCTION)
-					return fail(diagnostic, MCUSCRIPT_KIND_MISMATCH, pc);
-				for (uint8_t p = imp.parameter_count; p > 0; p--)
-					if (!pop_type(&w, imp.parameter_types[p - 1], NULL))
-						return false;
-				ok = (imp.type == MCUSCRIPT_VOID) ? true
-								  : push_type(&w, imp.type);
-				break;
-			}
-			if (imp.kind != MCUSCRIPT_KIND_ENTITY)
-				return fail(diagnostic, MCUSCRIPT_KIND_MISMATCH, pc);
-			if (opcode == OP_LOAD_H) {
-				if (!(imp.access & MCUSCRIPT_ACCESS_READ))
-					return fail(diagnostic, MCUSCRIPT_ACCESS_DENIED, pc);
-				ok = push_type(&w, imp.type);
-			} else {
-				if (!(imp.access & MCUSCRIPT_ACCESS_WRITE))
-					return fail(diagnostic, MCUSCRIPT_ACCESS_DENIED, pc);
-				ok = pop_type(&w, imp.type, NULL);
-			}
-			break;
-		}
-		case OP_DROP:
-			ok = pop_type(&w, MCUSCRIPT_VOID, NULL);
-			break;
-		case OP_DUP: {
-			uint8_t type;
-			ok = pop_type(&w, MCUSCRIPT_VOID, &type) && push_type(&w, type) &&
-			     push_type(&w, type);
-			break;
-		}
-		case OP_ADD_I32:
-		case OP_SUB_I32:
-		case OP_MUL_I32:
-		case OP_DIV_I32:
-		case OP_REM_I32:
-			ok = binary(&w, MCUSCRIPT_I32, MCUSCRIPT_I32);
-			break;
-		case OP_NEG_I32:
-			ok = unary(&w, MCUSCRIPT_I32, MCUSCRIPT_I32);
-			break;
-		case OP_EQ_I32:
-		case OP_NE_I32:
-		case OP_LT_I32:
-		case OP_LE_I32:
-		case OP_GT_I32:
-		case OP_GE_I32:
-			ok = binary(&w, MCUSCRIPT_I32, MCUSCRIPT_BOOL);
-			break;
-#if MCUSCRIPT_GROUPS & MCUSCRIPT_GROUP_BITS
-		/* -- bits --------------------------------------------- */
-		case OP_BITNOT_I32:
-			ok = unary(&w, MCUSCRIPT_I32, MCUSCRIPT_I32);
-			break;
-		case OP_AND_I32:
-		case OP_OR_I32:
-		case OP_XOR_I32:
-		case OP_SHL_I32:
-		case OP_SHR_I32:
-			ok = binary(&w, MCUSCRIPT_I32, MCUSCRIPT_I32);
-			break;
-#endif
-
-#if MCUSCRIPT_GROUPS & MCUSCRIPT_GROUP_I64DIV
-		/* -- i64div ------------------------------------------- */
-		case OP_DIV_I64:
-		case OP_REM_I64:
-			ok = binary(&w, MCUSCRIPT_I64, MCUSCRIPT_I64);
-			break;
-#endif
-
-#if MCUSCRIPT_GROUPS & MCUSCRIPT_GROUP_I64
-		/* -- i64 ---------------------------------------------- */
-		case OP_CONST_I64: {
-			uint8_t type;
-			if (!constant_type(program, index, &type))
-				return fail(diagnostic, MCUSCRIPT_INDEX_OUT_OF_RANGE, pc);
-			if (type != MCUSCRIPT_I64)
-				return fail(diagnostic, MCUSCRIPT_TYPE_MISMATCH, pc);
-			ok = push_type(&w, MCUSCRIPT_I64);
-			break;
-		}
-		case OP_ADD_I64:
-		case OP_SUB_I64:
-		case OP_MUL_I64:
-			ok = binary(&w, MCUSCRIPT_I64, MCUSCRIPT_I64);
-			break;
-		case OP_NEG_I64:
-			ok = unary(&w, MCUSCRIPT_I64, MCUSCRIPT_I64);
-			break;
-		case OP_EQ_I64:
-		case OP_NE_I64:
-		case OP_LT_I64:
-		case OP_LE_I64:
-		case OP_GT_I64:
-		case OP_GE_I64:
-			ok = binary(&w, MCUSCRIPT_I64, MCUSCRIPT_BOOL);
-			break;
-		case OP_EXTEND_I32_I64:
-			ok = unary(&w, MCUSCRIPT_I32, MCUSCRIPT_I64);
-			break;
-		case OP_WRAP_I64_I32:
-			ok = unary(&w, MCUSCRIPT_I64, MCUSCRIPT_I32);
-			break;
-#endif
-
-#if MCUSCRIPT_GROUPS & MCUSCRIPT_GROUP_FLOAT
-		/* -- float -------------------------------------------- */
-		case OP_CONST_F32: {
-			uint8_t type;
-			if (!constant_type(program, index, &type))
-				return fail(diagnostic, MCUSCRIPT_INDEX_OUT_OF_RANGE, pc);
-			if (type != MCUSCRIPT_F32)
-				return fail(diagnostic, MCUSCRIPT_TYPE_MISMATCH, pc);
-			ok = push_type(&w, MCUSCRIPT_F32);
-			break;
-		}
-		case OP_ADD_F32:
-		case OP_SUB_F32:
-		case OP_MUL_F32:
-		case OP_DIV_F32:
-			ok = binary(&w, MCUSCRIPT_F32, MCUSCRIPT_F32);
-			break;
-		case OP_NEG_F32:
-			ok = unary(&w, MCUSCRIPT_F32, MCUSCRIPT_F32);
-			break;
-		case OP_EQ_F32:
-		case OP_NE_F32:
-		case OP_LT_F32:
-		case OP_LE_F32:
-		case OP_GT_F32:
-		case OP_GE_F32:
-			ok = binary(&w, MCUSCRIPT_F32, MCUSCRIPT_BOOL);
-			break;
-		case OP_CONVERT_I32_F32:
-			ok = unary(&w, MCUSCRIPT_I32, MCUSCRIPT_F32);
-			break;
-		case OP_TRUNC_F32_I32:
-			ok = unary(&w, MCUSCRIPT_F32, MCUSCRIPT_I32);
-			break;
-#endif
-
-#if MCUSCRIPT_GROUPS & MCUSCRIPT_GROUP_CALL
-		/* -- call --------------------------------------------- */
-		case OP_CALL: {
-			if (index >= program->function_count)
-				return fail(diagnostic, MCUSCRIPT_INDEX_OUT_OF_RANGE, pc);
-			const mcuscript_function *callee = &program->functions[index];
-			/* The arguments are the callee's first locals (§3.6), so
-			 * its signature is a prefix of its local table. */
-			for (uint8_t p = callee->param_count; p > 0; p--)
-				if (!pop_type(&w, callee->local_types[p - 1], NULL))
-					return false;
-			ok = (callee->return_type == MCUSCRIPT_VOID)
-				     ? true
-				     : push_type(&w, callee->return_type);
-			break;
-		}
-#endif
-
-		/* -- core, continued ---------------------------------- */
-		case OP_NOT:
-			ok = pop_type(&w, MCUSCRIPT_BOOL, NULL) && push_type(&w, MCUSCRIPT_BOOL);
-			break;
-		case OP_ELSE: {
-			uint8_t fallback, value;
-			ok = pop_type(&w, MCUSCRIPT_VOID, &fallback) &&
-			     pop_type(&w, MCUSCRIPT_VOID, &value);
-			if (ok && fallback != value)
-				return fail(diagnostic, MCUSCRIPT_TYPE_MISMATCH, pc);
-			ok = ok && push_type(&w, value);
-			break;
-		}
-		case OP_IS_VALID:
-		case OP_IS_UNAVAILABLE:
-		case OP_IS_INVALID:
-			ok = pop_type(&w, MCUSCRIPT_VOID, NULL) && push_type(&w, MCUSCRIPT_BOOL);
-			break;
-		case OP_RET:
-			if (fn->return_type != MCUSCRIPT_VOID || w.stack.depth != 0)
-				return fail(diagnostic, MCUSCRIPT_UNBALANCED_RETURN, pc);
-			w.reachable = false;
-			break;
-		case OP_RET_V:
-			if (fn->return_type == MCUSCRIPT_VOID)
-				return fail(diagnostic, MCUSCRIPT_UNBALANCED_RETURN, pc);
-			if (!pop_type(&w, fn->return_type, NULL))
-				return false;
-			if (w.stack.depth != 0)
-				return fail(diagnostic, MCUSCRIPT_UNBALANCED_RETURN, pc);
-			w.reachable = false;
-			break;
-		case OP_JMP:
-		case OP_JMP_IF_FALSE:
-		case OP_JMP_IF_TRUE: {
-			if (opcode != OP_JMP && !pop_type(&w, MCUSCRIPT_BOOL, NULL))
-				return false;
-			int32_t delta = read_i16(code + pc + 1);
-			int64_t target = (int64_t)pc + (int64_t)size + delta;
-			if (target <= (int64_t)pc)
-				return fail(diagnostic, MCUSCRIPT_BACKWARD_BRANCH, pc);
-			if (target >= (int64_t)fn->code_end)
-				return fail(diagnostic, MCUSCRIPT_BAD_BRANCH_TARGET, pc);
-			if (!record_branch(&w, (uint32_t)target))
-				return false;
-			if (opcode == OP_JMP)
-				w.reachable = false;
-			break;
-		}
-		default:
-			return fail(diagnostic, MCUSCRIPT_UNDEFINED_OPCODE, pc);
-		}
-		if (!ok)
-			return false;
-		pc += size;
-	}
-
-	if (w.reachable)
-		return fail(diagnostic, MCUSCRIPT_BAD_BRANCH_TARGET, fn->code_end);
-	/* A branch target the pass never landed on is a target that is not
-	 * an instruction boundary — the pc walked straight past it. */
-	for (uint8_t i = 0; i < w.pending_count; i++)
-		if (!w.pending[i].used)
-			return fail(diagnostic, MCUSCRIPT_BAD_BRANCH_TARGET,
-				    w.pending[i].target);
-
-	*computed_stack = w.high_water;
-	return true;
-}
-
-/* ------------------------------------------------------------------
- * The call graph (§5.4)
- *
- * The host verifier uses Tarjan's algorithm; this one does not, and the
- * difference is on purpose. Tarjan needs an explicit stack whose depth
- * is the graph's, and a device cannot have one that grows. What it can
- * have is a reachability matrix: `MCUSCRIPT_MAX_FUNCTIONS` is small by
- * design, one bit per pair fits in bytes, and everything below falls out
- * of it — `i` and `j` share a component when each reaches the other, and
- * a component is a cycle when a member reaches itself.
- *
- * Cubic in the function count, over a count that is eight. Two methods
- * over one specification, again.
- */
-
-#define ROW_BYTES ((MCUSCRIPT_MAX_FUNCTIONS + 7u) / 8u)
-
-typedef uint8_t adjacency[MCUSCRIPT_MAX_FUNCTIONS][ROW_BYTES];
-
-static bool bit_get(const uint8_t *row, uint8_t i)
-{
-	return ((row[i / 8u] >> (i % 8u)) & 1u) != 0u;
-}
-
-static void bit_set(uint8_t *row, uint8_t i)
-{
-	row[i / 8u] = (uint8_t)(row[i / 8u] | (1u << (i % 8u)));
-}
-
-static uint32_t frame_slots(const mcuscript_function *fn)
-{
-	return (uint32_t)fn->local_count + fn->max_stack;
-}
-
-static bool analyze_calls(mcuscript_program *program, mcuscript_diagnostic *diagnostic)
-{
-	uint8_t n = program->function_count;
-	adjacency edge;
-	adjacency reach;
-	memset(edge, 0, sizeof edge);
-
-	for (uint8_t i = 0; i < n; i++) {
-		const mcuscript_function *fn = &program->functions[i];
-		uint32_t pc = fn->code_offset;
-		while (pc < fn->code_end) {
-			if (program->code[pc] == OP_CALL)
-				bit_set(edge[i], program->code[pc + 1]);
-			unsigned size = mcuscript_instruction_size(program->code[pc]);
-			/* Verification already refused an undefined opcode, so
-			 * this cannot fire — but a zero step here would be a
-			 * device hanging in its loader, and that is worth two
-			 * lines even when it is unreachable. */
-			if (size == 0)
-				return fail(diagnostic, MCUSCRIPT_UNDEFINED_OPCODE, pc);
-			pc += size;
-		}
-	}
-	memcpy(reach, edge, sizeof reach);
-
-	/* Warshall: reach[i][j] becomes "some path of one or more calls". */
-	for (uint8_t k = 0; k < n; k++)
-		for (uint8_t i = 0; i < n; i++)
-			if (bit_get(reach[i], k))
-				for (uint8_t b = 0; b < ROW_BYTES; b++)
-					reach[i][b] = (uint8_t)(reach[i][b] | reach[k][b]);
-
-	/* A function nothing can reach is `unreachable_code` one level up
-	 * (§2.6.1): it cannot run, and a container should mean one thing. */
-	for (uint8_t i = 0; i < n; i++) {
-		if (program->functions[i].flags & MCUSCRIPT_ENTRY_INVOCABLE)
-			continue;
-		bool reached = false;
-		for (uint8_t j = 0; j < n && !reached; j++)
-			if ((program->functions[j].flags & MCUSCRIPT_ENTRY_INVOCABLE) &&
-			    bit_get(reach[j], i))
-				reached = true;
-		if (!reached)
-			return fail_named(diagnostic, MCUSCRIPT_UNREACHABLE_CODE, i,
-					  program->functions[i].name);
-	}
-
-	/* A component is named by its lowest member, which is an index into
-	 * the function table and therefore already a bounded array index. */
-	for (uint8_t i = 0; i < n; i++) {
-		uint8_t representative = i;
-		for (uint8_t j = 0; j < i; j++) {
-			if (bit_get(reach[i], j) && bit_get(reach[j], i)) {
-				representative = program->component[j];
-				break;
-			}
-		}
-		program->component[i] = representative;
-	}
-
-	/* Per component: what it costs on its own, and what an invocation
-	 * entering it costs in total — its own cost plus the deepest chain
-	 * it can call into. */
-	uint32_t own_frames[MCUSCRIPT_MAX_FUNCTIONS];
-	uint32_t own_slots[MCUSCRIPT_MAX_FUNCTIONS];
-	uint32_t total_frames[MCUSCRIPT_MAX_FUNCTIONS];
-	uint32_t total_slots[MCUSCRIPT_MAX_FUNCTIONS];
-	memset(own_frames, 0, sizeof own_frames);
-	memset(own_slots, 0, sizeof own_slots);
+	/* A component's cap is the cap its members declare (§5.4). They all
+	 * declare the same one in a conforming container; this takes the
+	 * last, which is the cheapest way to take one of them. */
 	memset(program->component_cap, 0, sizeof program->component_cap);
-
-	for (uint8_t r = 0; r < n; r++) {
-		if (program->component[r] != r)
-			continue;
-		bool cyclic = bit_get(reach[r], r);
-		uint8_t cap = 0;
-		uint32_t widest = 0;
-		bool first = true;
-		for (uint8_t i = 0; i < n; i++) {
-			if (program->component[i] != r)
-				continue;
-			if (first) {
-				cap = program->functions[i].recursion_cap;
-				first = false;
-			} else if (program->functions[i].recursion_cap != cap) {
-				return fail_named(diagnostic, MCUSCRIPT_UNCAPPED_RECURSION, i,
-						  program->functions[i].name);
-			}
-			if (frame_slots(&program->functions[i]) > widest)
-				widest = frame_slots(&program->functions[i]);
-		}
-		if (cyclic && cap == 0)
-			return fail_named(diagnostic, MCUSCRIPT_UNCAPPED_RECURSION, r,
-					  program->functions[r].name);
-		if (!cyclic && cap != 0)
-			return fail_named(diagnostic, MCUSCRIPT_RECURSION_CAP_MISMATCH, r,
-					  program->functions[r].name);
-		program->component_cap[r] = cap;
-		/* One counter per component, incremented on entry to any of its
-		 * members, so a capped component contributes `cap` frames however
-		 * the cycle is spelled (§5.4). Which member fills those frames is
-		 * data, so the slots go by the widest of them. */
-		own_frames[r] = cyclic ? cap : 1u;
-		own_slots[r] = own_frames[r] * widest;
-	}
-	memcpy(total_frames, own_frames, sizeof total_frames);
-	memcpy(total_slots, own_slots, sizeof total_slots);
-
-	/* Longest path over the condensation, by relaxation. The graph is
-	 * acyclic once components are collapsed, so `n` passes converge —
-	 * and there is no recursion here to blow a device's stack while
-	 * checking a program that cannot recurse. */
-	for (uint8_t pass = 0; pass < n; pass++) {
-		for (uint8_t i = 0; i < n; i++) {
-			uint8_t from = program->component[i];
-			for (uint8_t j = 0; j < n; j++) {
-				uint8_t to = program->component[j];
-				if (to == from || !bit_get(edge[i], j))
-					continue;
-				if (own_frames[from] + total_frames[to] > total_frames[from])
-					total_frames[from] =
-						own_frames[from] + total_frames[to];
-				if (own_slots[from] + total_slots[to] > total_slots[from])
-					total_slots[from] = own_slots[from] + total_slots[to];
-			}
-		}
-	}
-
-	for (uint8_t i = 0; i < n; i++) {
-		uint8_t r = program->component[i];
-		if (total_frames[r] - 1u != program->functions[i].max_call_depth)
-			return fail_named(diagnostic, MCUSCRIPT_CALL_DEPTH_MISMATCH,
-					  total_frames[r] - 1u, program->functions[i].name);
-		if (total_frames[r] > MCUSCRIPT_MAX_CALL_DEPTH)
-			return fail_named(diagnostic, MCUSCRIPT_BUILD_LIMIT, total_frames[r],
-					  program->functions[i].name);
-		/* The slot buffer is one for the whole device (§5.1), so what
-		 * has to fit is the deepest chain, not one frame. */
-		if (total_slots[r] > MCUSCRIPT_MAX_SLOTS)
-			return fail_named(diagnostic, MCUSCRIPT_BUILD_LIMIT, total_slots[r],
-					  program->functions[i].name);
-	}
+	for (uint8_t i = 0; i < count; i++)
+		program->component_cap[program->component[i]] =
+			program->functions[i].recursion_cap;
 	return true;
 }
+
+#undef RECORD_SIZE
 
 /* ------------------------------------------------------------------
  * Linking (§4.5)
+ *
+ * The one part of loading that is neither parsing nor a header check,
+ * and it stays for the same reason the header checks do: an import the
+ * host does not offer, or offers with another signature, means this
+ * container was built against a different firmware. That is identity.
  */
 
-static bool link_imports(mcuscript_program *program, section table,
-			 const mcuscript_host *host, mcuscript_diagnostic *diagnostic)
+static bool link_imports(mcuscript_program *program, const mcuscript_host *host,
+			 mcuscript_diagnostic *diagnostic)
 {
 	for (uint8_t i = 0; i < program->import_count; i++) {
 		import_view imp;
 		import_at(program, i, &imp);
 		mcuscript_str name;
-		if (!import_name(program, table, i, &name))
+		if (!read_name(program->import_names, program->import_names_length,
+			       read_u16(program->imports + program->import_offsets[i]),
+			       &name))
 			return fail(diagnostic, MCUSCRIPT_MALFORMED_SECTION, i);
 
 		uint8_t found = 0xFF;
@@ -1281,26 +444,9 @@ bool mcuscript_load(mcuscript_program *program, const uint8_t *bytes, size_t len
 		return false;
 	if (!load_imports(program, imports, diagnostic))
 		return false;
-	if (!load_functions(program, entries, code.length, diagnostic))
+	if (!load_functions(program, entries, diagnostic))
 		return false;
-
-	for (uint8_t i = 0; i < program->function_count; i++) {
-		mcuscript_function *fn = &program->functions[i];
-		uint8_t computed = 0;
-		if (!verify_function(program, imports, fn, &computed, diagnostic))
-			return false;
-		if (computed != fn->max_stack)
-			return fail_named(diagnostic, MCUSCRIPT_STACK_DEPTH_MISMATCH, computed,
-					  fn->name);
-	}
-
-	/* Only now: the call graph reads every function's verified
-	 * `max_stack`, and it walks the code by instruction length, which
-	 * the pass above is what makes safe. */
-	if (!analyze_calls(program, diagnostic))
-		return false;
-
-	if (!link_imports(program, imports, host, diagnostic))
+	if (!link_imports(program, host, diagnostic))
 		return false;
 
 	program->host = host;

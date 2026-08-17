@@ -153,6 +153,11 @@ def run(runner: Path, tmp_path: Path, source: str, host: str, *, blob=None) -> R
         capture_output=True,
         text=True,
         check=False,
+        # The runtime does not verify (ADR 0006), so a container this
+        # suite hands it must be one it is answerable for. A hang then
+        # means a defect, and this is what turns it into a failure
+        # instead of a stalled run.
+        timeout=30,
     )
     return Result(process)
 
@@ -402,13 +407,23 @@ def test_a_host_function_that_signals_failure_faults(runner, tmp_path):
 # -- refusals -------------------------------------------------------------
 
 
-def test_the_c_loader_recomputes_the_declared_stack_depth(runner, tmp_path):
+def test_a_forged_stack_depth_is_not_this_loader_s_business(runner, tmp_path):
+    """`max_stack` is read past, not recomputed (ADR 0006).
+
+    This is the sharpest form of the change, so it is pinned rather than
+    left implicit: a container declaring 99 slots for a program that
+    uses one used to be `stack_depth_mismatch`, and is now simply loaded
+    — the runtime never reads the field, because nothing it does is
+    sized from it. `MCUSCRIPT_MAX_SLOTS` bounds the buffer, and fitting
+    inside it is a property of a conforming container (§2.6 point 5).
+    """
     from dataclasses import replace
 
     container = assemble(PROFILE + ".entry go\n  const.true\n  drop\n  ret\n")
     container.functions = [replace(container.functions[0], max_stack=99)]
     result = run(runner, tmp_path, "", "", blob=container.encode())
-    assert result.refusal == "stack_depth_mismatch"
+    assert result.refusal is None
+    assert result.code == 0
 
 
 def test_a_container_for_another_profile_is_refused(runner, tmp_path):
@@ -692,12 +707,23 @@ def test_a_flipped_bit_is_refused_before_anything_runs(runner, tmp_path):
     assert result.refusal == "bad_checksum"
 
 
-# -- refusals the call graph produces -------------------------------------
+# -- what the loader no longer decides ------------------------------------
 #
-# The host verifier refuses these too, and by the same names — but it
-# does so with Tarjan's algorithm over a worklist, and this one with a
-# reachability matrix in fixed memory. Two methods over one
-# specification is only worth something if both are asked.
+# Ten tests used to live here, each feeding the C loader a container the
+# call-graph analysis refused: an uncapped cycle, a cap on a function in
+# no cycle, an orphan function, a call to a function that is not there,
+# an entry point with parameters, two functions sharing a name, a chain
+# too deep or too wide for this build, and two forged resource numbers.
+#
+# They are gone because the loader is (ADR 0006). Every one of those
+# containers is non-conforming, this runtime is undefined on
+# non-conforming input, and a test that asserts a particular refusal is
+# a test that the undefined behaves a certain way. The rules themselves
+# did not go anywhere: the host verifier still refuses all ten, by the
+# same names, and `spec/corpus/` holds them as the verdicts a conforming
+# verifier owes.
+#
+# What is worth testing here instead is the boundary itself.
 
 
 def _handmade(functions, code: bytes, **fields) -> bytes:
@@ -714,105 +740,83 @@ def _handmade(functions, code: bytes, **fields) -> bytes:
     return container.encode(required_groups=container.required_groups)
 
 
-def test_the_c_loader_refuses_an_uncapped_cycle(runner, tmp_path):
-    from mcuscript.container import Function
+def _recrc(blob: bytes) -> bytes:
+    """Fix the checksum after editing a byte, so the container has one
+    defect rather than two and the loader answers about the right one."""
+    import struct
+    import zlib
 
-    blob = _handmade([Function("go", 0, max_call_depth=0)], b"\x80\x00\x23")
-    result = run(runner, tmp_path, "", "", blob=blob)
-    assert result.refusal == "uncapped_recursion"
+    crc = zlib.crc32(blob[:24] + b"\0\0\0\0" + blob[28:]) & 0xFFFFFFFF
+    return blob[:24] + struct.pack("<I", crc) + blob[28:]
 
 
-def test_the_c_loader_refuses_a_cap_on_a_function_in_no_cycle(runner, tmp_path):
+def test_the_loader_accepts_a_container_it_used_to_refuse(runner, tmp_path):
+    """The change is real, and this is what makes it visible.
+
+    A cap on a function in no cycle was `recursion_cap_mismatch` until
+    2026-08-18. It is now a container this runtime loads and runs: the
+    number changes nothing about a function that cannot recurse, so a
+    conforming container would not carry it, and noticing that is a
+    verifier's job rather than a device's.
+    """
     from mcuscript.container import Function
 
     blob = _handmade([Function("go", 0, recursion_cap=5)], b"\x23")
     result = run(runner, tmp_path, "", "", blob=blob)
-    assert result.refusal == "recursion_cap_mismatch"
+    assert result.refusal is None
+    assert result.code == 0
 
 
-def test_the_c_loader_refuses_a_function_no_entry_point_reaches(runner, tmp_path):
-    from mcuscript.container import Function
+def test_the_host_verifier_still_refuses_it(tmp_path):
+    """The other half of the pair above: the rule did not disappear."""
+    from mcuscript.container import Container, Function
+    from mcuscript.errors import Refused
+    from mcuscript.opcodes import Group
+    from mcuscript.verify import verify
 
-    blob = _handmade(
-        [Function("go", 0), Function("orphan", 1, invocable=False)], b"\x23\x23"
+    container = Container(
+        code=b"\x23",
+        functions=[Function("go", 0, recursion_cap=5)],
+        required_groups=Group.CORE.mask,
+        profile_id=1,
     )
-    result = run(runner, tmp_path, "", "", blob=blob)
-    assert result.refusal == "unreachable_code"
-    assert result.refusal_subject == "orphan"
+    with pytest.raises(Refused) as caught:
+        verify(container)
+    assert caught.value.refusal.value == "recursion_cap_mismatch"
 
 
-def test_the_c_loader_refuses_a_call_to_a_function_that_is_not_there(runner, tmp_path):
-    from mcuscript.container import Function
+def test_the_loader_still_refuses_what_it_cannot_parse(runner, tmp_path):
+    """The line is bounds, not judgement.
 
-    blob = _handmade([Function("go", 0)], b"\x80\x07\x23")
-    result = run(runner, tmp_path, "", "", blob=blob)
-    assert result.refusal == "index_out_of_range"
-
-
-def test_the_c_loader_refuses_an_entry_point_with_parameters(runner, tmp_path):
-    from mcuscript.container import Function
-    from mcuscript.opcodes import ValType
-
-    blob = _handmade(
-        [Function("go", 0, local_types=(ValType.I32,), param_count=1)], b"\x23"
-    )
-    result = run(runner, tmp_path, "", "", blob=blob)
-    assert result.refusal == "entry_takes_parameters"
-
-
-def test_the_c_loader_refuses_two_functions_with_one_name(runner, tmp_path):
-    from mcuscript.container import Function
-
-    blob = _handmade(
-        [Function("go", 0), Function("go", 1, invocable=False)], b"\x23\x23"
-    )
-    result = run(runner, tmp_path, "", "", blob=blob)
-    # A VM addresses functions by index and would not care; a C backend
-    # would emit one symbol twice (§4.3).
+    A record table that claims more records than the section holds is
+    not a bad program — it is a table this code cannot step through, and
+    walking off the end of it would be a defect in the loader whatever
+    the container was.
+    """
+    container = assemble(PROFILE + ".entry go\n  ret\n")
+    blob = bytearray(container.encode())
+    entr = blob.index(b"ENTR")
+    # Eight is the most this build holds, so it is past the section
+    # without being past the build limit — which is a different refusal
+    # and would answer a different question.
+    blob[entr + 8] = 8  # the record count; the section carries one
+    result = run(runner, tmp_path, "", "", blob=_recrc(bytes(blob)))
     assert result.refusal == "malformed_section"
 
 
-def test_a_cap_deeper_than_this_build_allows_is_refused(runner, tmp_path):
-    # MCUSCRIPT_MAX_CALL_DEPTH is 8 by default, and `go` plus nine
-    # frames of `down` is ten. This is not a malformed container — it is
-    # one this build cannot run, and the two are different refusals on
-    # purpose, because the fix is a rebuild and not a recompile.
-    container = assemble(
-        PROFILE + ".entry go\n  call down\n  ret\n"
-        ".fn down\n  .cap 9\n  call down\n  ret\n"
-    )
-    result = run(runner, tmp_path, "", "", blob=container.encode())
-    assert result.refusal == "build_limit"
-    assert result.out.split()[3] == "10"
+def test_the_loader_still_refuses_a_component_outside_the_table(runner, tmp_path):
+    """The one field read from a record that indexes an array (§4.3).
 
-
-def test_a_chain_that_needs_more_slots_than_this_build_has_is_refused(runner, tmp_path):
-    # Eight frames fit; their slots do not. Seven frames of ten slots is
-    # 70 against MCUSCRIPT_MAX_SLOTS of 64 — and the buffer is one for
-    # the whole device, so what has to fit is the chain and not the
-    # widest frame in it.
-    locals_ = "".join(f"  .local s{i} i32\n" for i in range(10))
-    container = assemble(
-        PROFILE + ".entry go\n  call down\n  ret\n"
-        ".fn down\n  .cap 7\n" + locals_ + "  call down\n  ret\n"
-    )
-    result = run(runner, tmp_path, "", "", blob=container.encode())
-    assert result.refusal == "build_limit"
-    assert result.out.split()[3] == "70"
-
-
-def test_the_c_loader_recomputes_the_declared_call_depth(runner, tmp_path):
-    from dataclasses import replace
-
-    container = assemble(
-        PROFILE + ".entry go\n  call helper\n  ret\n.fn helper\n  ret\n"
-    )
-    container.functions = [
-        replace(container.functions[0], max_call_depth=4),
-        container.functions[1],
-    ]
-    result = run(runner, tmp_path, "", "", blob=container.encode())
-    assert result.refusal == "call_depth_mismatch"
+    Believing it would index `component_cap` out of bounds, which is the
+    loader's own memory and not the container's problem — so this is a
+    bound and not a judgement, and it stays.
+    """
+    container = assemble(PROFILE + ".entry go\n  ret\n")
+    blob = bytearray(container.encode())
+    entr = blob.index(b"ENTR")
+    blob[entr + 8 + 1 + 11] = 9  # the record's `component`, table holds one
+    result = run(runner, tmp_path, "", "", blob=_recrc(bytes(blob)))
+    assert result.refusal == "malformed_section"
 
 
 # -- the specification's worked example -----------------------------------

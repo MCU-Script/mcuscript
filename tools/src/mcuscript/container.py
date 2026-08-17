@@ -73,6 +73,13 @@ class Function:
     #: or 0 when it is in no cycle (§5.4). Written by the compiler,
     #: recomputed by the verifier.
     recursion_cap: int = 0
+    #: Which call-graph cycle this function shares a recursion counter
+    #: with (§5.4): the lowest function index in its strongly connected
+    #: component, and its own index when it is in no cycle. Declared
+    #: rather than derived, because a runtime needs the *grouping* at
+    #: every call and condensing a call graph to find it is the single
+    #: largest thing a runtime would otherwise have to compute.
+    component: int = 0
     #: Arguments the caller pushes. They *are* the first locals (§3.6),
     #: so this is a prefix length into ``local_types`` rather than a
     #: second list — the caller and the callee cannot then disagree
@@ -498,6 +505,7 @@ def _encode_functions(functions: list[Function]) -> bytes:
         out.append(fn.max_stack)
         out.append(fn.max_call_depth)
         out.append(fn.recursion_cap)
+        out.append(fn.component)
         out.append(fn.param_count)
         out.append(len(fn.local_types))
         out += bytes(int(t) for t in fn.local_types)
@@ -518,6 +526,7 @@ def _decode_functions(data: bytes) -> list[Function]:
         max_stack = cur.u8()
         max_call_depth = cur.u8()
         recursion_cap = cur.u8()
+        component = cur.u8()
         param_count = cur.u8()
         local_count = cur.u8()
         locals_ = tuple(cur.type_code() for _ in range(local_count))
@@ -550,6 +559,7 @@ def _decode_functions(data: bytes) -> list[Function]:
                 local_types=locals_,
                 invocable=bool(flags & ENTRY_INVOCABLE),
                 recursion_cap=recursion_cap,
+                component=component,
                 param_count=param_count,
             )
         )
