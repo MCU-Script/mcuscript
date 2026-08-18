@@ -43,18 +43,22 @@ never heard of MCUHome is a design goal, not a side effect.
 
 ## Status
 
-**The back end works; there is no language yet.** All five chapters of
-[the specification](spec/) are written and implemented — the container
-format, the verifier, the VM in C, and the C backend — and a
-differential test runs the same container through both backends and
-compares the bytes. Every instruction the specification defines works
-end to end in both of them.
+**The back end works; the language is specified and not built.**
+Chapters 1 to 5 of [the specification](spec/) are written and
+implemented — the container format, the verifier, the VM in C, and the C
+backend — and a differential test runs the same container through both
+backends and compares the bytes. Every instruction the specification
+defines works end to end in both of them.
 
-What does **not** exist is the part a user would see: there is no
-surface syntax and no compiler. Programs are written in an assembler,
-on purpose — it lets the format, the verifier, the VM and the C
-backend be built against each other before anybody argues about how an
-`if` should look. The sketches below are still sketches.
+[Chapter 6](spec/06-syntax.md) is the surface syntax, and it is a
+document rather than a program: it plans the whole language, marks every
+construct **built**, **planned** or **excluded**, and names the four
+instructions the built half still needs. **There is no compiler.**
+Programs are written in an assembler, on purpose — it let the format,
+the verifier, the VM and the C backend be built against each other
+before anybody argued about how an `if` should look. The sketches below
+follow chapter 6, and until a compiler exists they are still
+sketches.
 
 Do not depend on this repository. The specification is at
 `0.1.0-draft` and says so; ADR 0002 marks each remaining item as
@@ -119,11 +123,10 @@ real nRF5340 are in
 `python tools/measure_footprint.py` reproduces it wherever there is an
 ARM cross compiler.
 
-## Mostly sketches
+## What it looks like
 
-To make the above concrete. The two kinds of absence below are decided;
-everything else here is a proposal, recorded as *on the table* in
-[ADR 0002 §2](docs/adr/draft/0002-inherited-context.md):
+Decided and written down in [chapter 6](spec/06-syntax.md), and not yet
+compiled by anything:
 
 ```
 fan.speed = match temp { > 28°C -> 3, > 25°C -> 2, else -> 0 }
@@ -142,10 +145,13 @@ Two kinds of absence, not one: a sensor that has no reading yet is
 fault is `invalid` and must not be quietly papered over. Collapsing
 them into a single `null` is what makes template languages fragile.
 
-Which units exist is deliberately **not** the language's business. The
-language knows the mechanism (suffix → dimension → base unit); a
-**profile** supplies the table. `°C`, `%` and `lux` come from a home
-profile that an embedder ships — which is what keeps a general language
+Which units exist is deliberately **not** the language's business, and
+there is no exception: it fixes no dimension and no base unit, not even
+for time, and it has no clock of its own. The language knows the
+mechanism — suffix → dimension → base unit, plus the notations for
+durations (`3h 45min`) and points in time (`@"2026-08-18 13:25"`) — and
+a **profile** supplies the table. `°C`, `%` and `lux` come from a home
+profile that an embedder ships, which is what keeps a general language
 from quietly becoming a home-automation one.
 
 ## The specification
@@ -179,6 +185,14 @@ from the real result.
   two backends are kept identical, decided while writing them
 - [0005](docs/adr/draft/0005-the-conformance-corpus.md) — the
   conformance corpus: what binds the two loaders to one verdict
+- [0006](docs/adr/draft/0006-three-contracts-not-one-promise.md) — what
+  this project guarantees, and why the runtime stopped verifying
+- [0007](docs/adr/draft/0007-loops-are-bounded-not-metered.md) — loops,
+  bounded by a guard rather than by an instruction budget
+- [0008](docs/adr/draft/0008-the-language-owns-no-dimensions.md) — why
+  the language fixes no unit, no base unit and no clock
+- [0009](docs/adr/draft/0009-the-surface-syntax.md) — the surface
+  syntax, planned whole before any of it is compiled
 
 ## Contributing
 

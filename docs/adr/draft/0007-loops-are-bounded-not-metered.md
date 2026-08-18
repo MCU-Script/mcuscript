@@ -145,14 +145,24 @@ gets them, and it is not worth designing the bytecode twice.
   component in the `ENTR` record and enforced by runtime-held counters;
   the loop bound is an ordinary local the producer initialises. Both are
   right for their case, but a later version might notice they are one
-  concept and say so once.
-- **Whether a producer must write the bound, and what it defaults to,**
-  is a surface-syntax question and belongs to M3. The shape proposed
-  and not yet built: the compiler emits no guard at all when it can see
-  the count (`for i in 0..10` is a bare backward branch, and costs
-  nothing at run time), and requires a written bound exactly when it
-  cannot. The provisional default, if any, sits beside the recursion
-  cap's provisional 5 — see ADR 0002 §8 question 4.
+  concept and say so once. The surface language does say so, with one
+  word for both: `limit` (ADR 0009, decisions 12 and 13).
+- ~~**Whether a producer must write the bound**~~ — **answered by
+  ADR 0009, and the shape proposed here was wrong.** This entry read:
+  *"the compiler emits no guard at all when it can see the count
+  (`for i in 0..10` is a bare backward branch, and costs nothing at run
+  time)"*. That contradicts §3.8.1 of this ADR's own specification text,
+  which requires **every** backward branch to land on a `LOOP.GUARD` —
+  and §3.8.1 is the half that is right. Dropping the guard where a count
+  is visible means a verifier that establishes termination structurally
+  instead, which is the dominator computation decision 5 was written to
+  avoid. The answer is that every loop carries a guard, and for a range
+  the producer initialises the counter to `b - a + 1`: the bound is the
+  range, the writer never sees it, and one decrement per turn is what it
+  costs. A written bound is required exactly where the count is not
+  visible — `while c limit 600` — and the recursion cap's provisional
+  default (ADR 0002 §8 question 4) is untouched, because a loop has no
+  default to be provisional about.
 - **`iteration_limit` is reported with the entry point and the source
   position, like every fault, but not with which loop.** Nothing in the
   container names a loop. If diagnostics want that, the `dbug` section

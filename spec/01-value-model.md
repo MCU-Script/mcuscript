@@ -189,10 +189,19 @@ crashes, nothing warns, the numbers are just a thousand times off. The
 container therefore pins the profile's identity and version in its
 header, and a mismatch is a refusal at load (§2.4), not a best effort.
 
-The one base unit this specification does fix, because the language
-itself uses it, is time: **`i64` milliseconds**. Millisecond resolution
-with a 32-bit base would overflow after about 24.9 days, which is not a
-lifetime for a device that is expected to run for years.
+**This specification fixes no base unit at all**, not even for time
+(ADR 0008). An earlier version fixed one — `i64` milliseconds — on the
+grounds that the language itself used it, and nothing in the language
+does: the loop guard counts turns, the recursion cap counts entries, and
+no instruction, type or fault mentions a duration. A profile therefore
+owns each dimension whole: its data type, its named base unit, its units
+with a factor and an optional offset, and optionally a mark that the
+dimension is **cyclic**.
+
+A profile may declare no dimensions at all. Then every number in a
+script is a bare number, every unit suffix is an error, and the rest of
+this section has nothing to bite on — which is a legitimate way to use
+this language rather than a degenerate case.
 
 ## 1.5 Numeric semantics
 

@@ -18,11 +18,15 @@ sequence, release cadence, copyright line and domain
 reference embedder, not its owner — do not let its requirements read as
 governance.
 
-**The back end exists; the language does not.** The container format,
-the verifier, the VM and the C backend are written and tested, and every
-instruction the specification defines works in both backends. There is
-no surface syntax and no compiler — programs are written in the
-assembler in `tools/src/mcuscript/asm.py`.
+**The back end exists; the language is specified and not built.** The
+container format, the verifier, the VM and the C backend are written and
+tested, and every instruction the specification defines works in both
+backends. The surface syntax is `spec/06-syntax.md` (ADR 0009) — a
+document, with no code behind it yet — so **there is no compiler**, and
+programs are written in the assembler in `tools/src/mcuscript/asm.py`.
+Chapter 6 marks every construct **built**, **planned** or **excluded**;
+"built" there means *this is what M3 implements*, not *this works
+today*.
 
 There used to be **two** verifiers, one of them in the C runtime. It was
 removed on 2026-08-18 (ADR 0006). The runtime parses, links and runs; it
@@ -31,8 +35,10 @@ first — "the loader should really catch this" is the exact reasoning it
 argues against.
 
 So the split to keep in mind is: everything below the container is
-**decided and executed**, and everything above it is still a
-*proposal*. Before writing anything in the second half, read
+**decided and executed**; the surface syntax is **decided and not
+executed**; and everything else above the container — profiles, the
+embedding — is still a *proposal*. Before writing anything in the last
+of those, read
 [docs/adr/draft/0002-inherited-context.md](docs/adr/draft/0002-inherited-context.md)
 — it marks every item as **decided**, **recorded direction** or **on
 the table**, and implementing something from the third bucket as though

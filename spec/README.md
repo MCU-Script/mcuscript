@@ -6,13 +6,17 @@ SPDX-License-Identifier: Apache-2.0
 # The MCUScript specification
 
 - Specification version: **0.1.0-draft**
-- Status: **complete in draft, and fully executed.** All five chapters
-  have an implementation: a verifier, an interpreter and a C backend,
-  and a differential test that runs the same container through both
-  backends and compares the bytes. **Every instruction the document
-  defines works end to end in both backends** — `core`, `i64`,
-  `i64div`, `float`, `call`, `bits` and `loop`. No group is reserved
-  any more.
+- Status: **chapters 1 to 5 are complete in draft and fully executed.**
+  Each has an implementation — a verifier, an interpreter and a C
+  backend — and a differential test that runs the same container through
+  both backends and compares the bytes. **Every instruction the document
+  defines works end to end in both backends**: `core`, `i64`, `i64div`,
+  `float`, `call`, `bits` and `loop`. No group is reserved any more.
+- **Chapter 6, the surface syntax, is specified and not yet
+  implemented.** It plans the whole language, marks every construct
+  **built**, **planned** or **excluded**, and names the four `core`
+  instructions the built half still needs (§6.13). Nothing above the
+  container exists as code.
 
 This is the contract. Everything else in this repository is an
 implementation of it, including the reference compiler, the VM and the
@@ -30,15 +34,17 @@ the embedder's concern, identically for either backend.
 ## What is specified here, and what is not
 
 Specified: the value model, the binary container, the instruction set
-and its semantics, the loading and linking rules, and the errors. A
-conforming implementation agrees with this document on all of them.
+and its semantics, the loading and linking rules, the errors, and the
+surface syntax. A conforming implementation agrees with this document on
+all of them.
 
 **Not** specified, on purpose:
 
-- **The surface syntax.** A compiler reads source and emits a
-  container; this document describes the container. The language's
-  grammar gets its own document, and a second front end producing
-  conforming containers is legitimate.
+- **That a compiler must accept this grammar.** Chapter 6 specifies the
+  surface syntax, and it is normative for programs written in *this*
+  language — but a compiler conforms by the containers it emits, not by
+  the source it accepts, so a second front end over a different grammar
+  remains legitimate.
 - **How a container reaches a device**, what vouches for it, and where
   it is stored. It may arrive over an authenticated channel, be
   embedded in a firmware image, or sit on a filesystem as a file.
@@ -57,7 +63,9 @@ conforming implementation agrees with this document on all of them.
   literal may carry a unit suffix, a suffix belongs to a dimension, a
   dimension normalizes to a base unit — and a **profile** supplies the
   table. Profiles are versioned separately and pinned in the container
-  header.
+  header. This holds without exception: **no dimension and no base unit
+  is fixed here, not even for time** (§1.4, ADR 0008), and a profile
+  that declares none at all is legal.
 
 ## The two backends
 
@@ -116,9 +124,10 @@ against.
 | [03-instructions.md](03-instructions.md) | The instruction set, group by group, with a worked example |
 | [04-linking.md](04-linking.md) | The constant, entry-point and import tables; name resolution; every error |
 | [05-execution.md](05-execution.md) | Invocation, frames, recursion, faults, termination |
+| [06-syntax.md](06-syntax.md) | **The surface syntax** — lexical structure, expressions, statements, inference, and the whole language planned including what is not built |
 | [corpus/](corpus/) | **Containers, with the verdict each must get.** Not prose — how an implementation checks itself against the four documents above |
 
-All five exist in draft, and each round of work on them changes the
+All six exist in draft, and each round of work on them changes the
 ones before. Writing 3 to 5 changed 1 and 2 twice: `DUP` turned out to
 be the one instruction that pushes more than it pops, and the group
 table gained two entries.

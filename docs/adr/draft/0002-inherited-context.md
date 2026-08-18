@@ -594,10 +594,14 @@ Also on the table, as things to nail down before any compiler code:
   humidity sensor is compared with °C. *"the point where units go from a nice
   feature to real error prevention."*
 
-Two internal contradictions were left unresolved in the conversation
-and are carried into §8: the time base is given once as `int32` ms and
-once as `int64` ms, and the percent base unit is left open (0–100 vs.
-0–255 vs. 0–1000, *"depending on what your actuators expect"*).
+Two internal contradictions were left unresolved in the conversation.
+One is **dissolved rather than settled**: the time base is given once as
+`int32` ms and once as `int64` ms, and ADR 0008 removed the question by
+removing the premise — the language fixes no base unit for anything, so
+the data type and the base unit of a time dimension are a profile's to
+choose together, where the trade-off is visible. The other stands: the
+percent base unit is left open (0–100 vs. 0–255 vs. 0–1000, *"depending
+on what your actuators expect"*), and is carried into §8.
 
 ### 2.7 On the table: the bytecode container and the VM
 
@@ -904,21 +908,17 @@ things that would otherwise be discovered by writing them wrong first.
    JVM comparison is what finally settled it in the other direction:
    the JVM ships one execution path, and a `.class` file has no
    equivalent of "transpile it to C and build it into the firmware".
-7. **The time base is `int64` milliseconds — and it does not fit a
-   32-bit cell.** The conversation gave the base as `int32` ms in one
-   place and `int64` in another; the product owner settled it on
-   2026-08-16: **milliseconds as `int64`**. Millisecond resolution is
-   kept, and the ~24.9-day overflow of `int32` ms is gone.
-   The consequence is now the spec's problem rather than an open
-   choice: §2.7 says stack cells are 32 bits and every opcode pushes at
-   most one result, and a 64-bit value satisfies neither. Either
-   64-bit values occupy **two cells** — which changes the stack-effect
-   arithmetic that the compiler's depth computation and the verifier
-   both rest on, and needs its own opcode set (`ADD_I64`, …) and a rule
-   for how a two-cell value is addressed as a local — or the cell
-   widens, which costs RAM on every script. The C backend has neither
-   problem, which makes this a place where the two backends could
-   diverge if the VM's rules are left implicit.
+7. ~~**The time base is `int64` milliseconds — and it does not fit a
+   32-bit cell.**~~ **Answered in two halves, and the second one by
+   deletion.** The mechanical half went first: §1.2 fixed 8-byte slots,
+   so a 64-bit value occupies one slot like everything else and none of
+   the two-cell apparatus this entry feared was ever needed. The rest
+   went on 2026-08-18 (ADR 0008): the language fixes **no** base unit,
+   for time or anything else, because nothing in it uses one — the loop
+   guard counts turns, the recursion cap counts entries, and no
+   instruction mentions a duration. A profile owns each dimension whole,
+   including its data type, so *whether* time is 64-bit is a choice made
+   where its price is visible rather than a tax the language levies.
 8. **The HOST table's failure modes are unnamed.** Name not in the
    registry, type mismatch, dimension mismatch, duplicate name, a write
    to a read-only entity, an opcode from a group this build did not
@@ -1396,9 +1396,9 @@ before writing the VM would have been guessing. What is left:
 
 | # | Question | From |
 |---|---|---|
-| 3 | The grammar. The specification deliberately does not cover syntax, and the ternary conflict of §3.2 is still unresolved | §2.5, §3.2 |
+| 3 | ~~The grammar~~ — **answered 2026-08-18 (ADR 0009, `spec/06-syntax.md`).** The whole surface is planned, each construct marked built / planned / excluded, and the ternary conflict of §3.2 is resolved in favour of §2.5: there is no `? :`, the if-expression is the conditional. What is left is a compiler | §2.5, §3.2 |
 | 4 | The recursion cap's **default** is provisionally **5** (product owner, 2026-08-16), and provisionally is the whole answer: the mechanism is specified and enforced (spec §5.4, ADR 0004 §4.7), but which number annoys the fewest authors is a thing real use decides. Nothing depends on it yet — a container declares its cap and the assembler requires one, so the default exists only for a compiler that does not | §2.8 |
-| 5 | ~~The counted-loop construct~~ — **answered 2026-08-18 (ADR 0007).** The bytecode half, at least: one instruction, `LOOP.GUARD`, and termination is kept provable the way §5.4 already kept it for recursion. What is left is the *source* form and who writes the bound, which is M3's | spec §3.8 |
+| 5 | ~~The counted-loop construct~~ — **answered 2026-08-18 (ADR 0007).** The bytecode half, at least: one instruction, `LOOP.GUARD`, and termination is kept provable the way §5.4 already kept it for recursion. What is left is the *source* form and who writes the bound, which is M3's — **also answered now** (ADR 0009): `for i in a..b` takes its bound from the range, `while c limit n` requires one, and every loop carries a guard | spec §3.8 |
 | 6 | The percent base unit (0–100 / 0–255 / 0–1000). A profile question, but the first profile must answer it; Matter uses 0–254 for level and 0–10000 for percent100ths | §2.6 |
 | 8 | The host compiler's implementation language. A compiler only Python embedders can run is a different product from one anybody can | §1.4 |
 | 9 | How the non-developer validation actually gets done, given that the product owner has said he cannot judge it himself | §2.2g, §2.9 |
