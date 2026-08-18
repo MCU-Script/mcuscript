@@ -86,11 +86,19 @@ word somebody will have used as an entity name in between.
 3.14      0.5              1.5e-3
 ```
 
-An underscore may separate digits and is ignored. A number containing
-`.` or an exponent is `f32`; every other number is `i32`, or `i64` if
-the profile's dimension for it says so (§6.5.4). A literal too large for
-its type is an error stating both the literal and the range, never a
-wrap.
+An underscore may separate digits and is ignored. A number **without a
+suffix** takes its type from its form: `f32` if it contains `.` or an
+exponent, `i32` otherwise. A literal too large for its type is an error
+stating both the literal and the range, never a wrap.
+
+A number **with a suffix** takes its type from its dimension instead
+(§6.1.5), and the written form says nothing about it. A profile that
+holds temperature as tenths of a degree in an `i32` makes `24.5°C` the
+integer 245, and `24.55°C` an error that names the step the profile
+works in rather than a value silently rounded. This is the rule that
+keeps dimensioned arithmetic free of accidental float: `target + 0.5°C`
+is integer arithmetic in that profile, and neither literal had to be
+written differently to make it so.
 
 There is no unary-minus-in-a-literal: `-5` is negation applied to `5`,
 which matters only in that `-2147483648` is written as it reads and
@@ -255,11 +263,17 @@ compilation unit, and a compiler must let it be set.
 on <name> { … }
 ```
 
-An entry point takes no parameters and returns nothing (§5.2). `on` is
-the vocabulary rather than `fn`, because that is the shape the audience
-already thinks in — something happened, so do this — and because it
-names the thing correctly: an entry point is what a host calls when
-something happened, and what "something" is belongs to the host.
+An entry point takes **no parameters** — the host has no argument
+channel, and a script reads what triggered it from an entity — and it
+**may return a value**, which the host takes or ignores as it chooses
+(§5.1). The formula of §6.2.2 is the case where it does; a rule that
+only writes entities is the case where it does not.
+
+`on` is the vocabulary rather than `fn`, because that is the shape the
+audience already thinks in — something happened, so do this — and
+because it names the thing correctly: an entry point is what a host
+calls when something happened, and what "something" is belongs to the
+host.
 
 Two entry points with the same name are an error. An entry point may
 call functions and may not be called.
@@ -419,13 +433,16 @@ in practice means a `bool` subject with both spelled out. Exhaustiveness
 is checked, and a missing `else` is an error rather than a value nobody
 chose.
 
-**Validity is part of the pattern language.** Without an `unavailable`
-or `invalid` arm, a non-valid subject yields that same state without any
-arm being evaluated — the whole match propagates like an arithmetic
-operator. With such an arm, the arm wins. And an arm may *produce* a
-non-valid value: `invalid -> invalid` is the way a script says that a
-faulted reading stays faulted rather than becoming a number somebody
-will later mistake for a measurement.
+**Validity is part of the pattern language.** A non-valid subject is
+handled by the arm for *its own* state if there is one, and otherwise
+propagates: the match yields that same state and no arm is evaluated at
+all. The two states are independent — a match may catch `unavailable`
+and let `invalid` through, which is usually what a script wants, since a
+wait has a sensible substitute and a defect does not.
+
+An arm may also *produce* a non-valid value: `invalid -> invalid` is the
+way a script says that a faulted reading stays faulted rather than
+becoming a number somebody will later mistake for a measurement.
 
 `invalid -> invalid` and the propagation rule above both need something
 the container does not have: **two `core` instructions that push a
@@ -616,9 +633,10 @@ someone needs it, the spelling must not be invented under pressure.
 
 ### 6.4.5 `return` — built
 
-`return` leaves a function; `return <expression>` gives it a value. A
-function that falls off its end yields its last expression. An entry
-point returns nothing, and `return <expression>` in one is an error.
+`return` leaves a function or an entry point; `return <expression>`
+gives it a value. A function or entry point that falls off its end
+yields its last expression, and one whose last statement is not an
+expression yields nothing.
 
 ## 6.5 Types, dimensions and inference
 
