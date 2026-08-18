@@ -56,6 +56,7 @@ result yet.
 | [0004](draft/0004-two-backends-one-container.md) | Two backends, one container: the format, the VM, the C lowering, and what they cost |
 | [0005](draft/0005-the-conformance-corpus.md) | The conformance corpus |
 | [0006](draft/0006-three-contracts-not-one-promise.md) | Three contracts, not one promise |
+| [0007](draft/0007-loops-are-bounded-not-metered.md) | Loops are bounded, not metered |
 
 Start with [0002](draft/0002-inherited-context.md). It marks every item
 as **decided**, **recorded direction** or **on the table**, and its §8

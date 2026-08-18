@@ -41,7 +41,7 @@ every arithmetic handler and could not be removed at all.
 | 2 | `float` | `0x60`–`0x7F` | `f32` arithmetic, comparison, conversion |
 | 3 | `call` | `0x80`–`0x8F` | user-defined function calls |
 | 4 | `bits` | `0x90`–`0x9F` | bitwise operations and shifts on `i32` |
-| 5 | `loop` | `0xA0`–`0xAF` | **reserved** — counted loops; see §3.8 |
+| 5 | `loop` | `0xA0`–`0xAF` | the bound on a backward branch; see §3.8 |
 | 6 | `i64div` | `0xB0`–`0xBF` | `DIV` and `REM` on `i64`; see §3.4 |
 | 7–31 | | | reserved, must be zero |
 
@@ -189,8 +189,10 @@ whose answer was already determined.
 (§1.3.1).** A non-valid condition is a fault, not a branch taken by
 default.
 
-**A conforming container has no backward jumps in specification
-version 0.1** — see §3.8.
+**A backward jump is allowed only under the bound of §3.8**, and needs
+the `loop` group even though the jump itself is a `core` instruction:
+what the group declares is that the container contains cycles, which is
+the one thing a build without it must be able to refuse at load.
 
 `off16` is measured from the byte after the operand, so `JMP 0` is a
 no-op and the encoder never needs a bias.
@@ -330,25 +332,64 @@ not write bit manipulation, and a formula device should not carry
 instructions for it. There are no `i64` bitwise operations in this
 version.
 
-## 3.8 Loops, and why there are none yet
+## 3.8 The `loop` group
 
-**A conforming container has no backward jump.** Every entry point's
-control flow graph is therefore acyclic, and combined with the
-call-graph cap (§5.4) that makes termination a property of the container
-rather than something to enforce by counting instructions at runtime —
-which is what removes the need for an execution budget in the VM
-(§5.6).
+| Code | Mnemonic | Size | Stack | Effect |
+|---|---|---|---|---|
+| `0xA0` | `LOOP.GUARD` | 2 | `→` | decrements the `i32` local named by `idx8`; a result below zero is the `iteration_limit` fault (§5.5) |
 
-Loops are a reserved group, and the shape is already constrained by
-that promise: a counted loop with a bound the compiler can evaluate,
-not a general backward branch. A construct whose iteration count
-depends on data would put termination back into the runtime and take
-the budget question with it.
+**The group contains one instruction, and repetition is not it.**
+`JMP` already carries a signed offset, so a backward branch needs no
+encoding this specification does not have. What a build without `loop`
+lacks is not the ability to jump backwards but the *bound* — and since
+running a cycle unbounded is exactly the outcome the bound exists to
+prevent, such a build must refuse the container rather than do its
+best. That is why a container with a cycle requires the group.
 
-Nothing in this version needs them. The worked examples in this domain
-are formulas and threshold ladders; the one construct that looks like
-iteration — "hold above the threshold for two minutes" — is a host-side
-trigger condition, not a loop in a script.
+`LOOP.GUARD` touches the operand stack not at all. Its counter is an
+ordinary local, set by ordinary instructions, and that is a deliberate
+choice over runtime-owned machinery: a local costs the frame nothing it
+was not already paying, nests correctly because the producer zeroes it
+on entry, and lowers to a plain countdown in generated C. A counter
+never given a value is zero (§5.3), so it faults on the first turn —
+the safe direction for the default to fail in.
+
+### 3.8.1 What makes a cycle conforming
+
+Two properties, and a conforming container has both for every backward
+branch:
+
+1. **The branch lands on a `LOOP.GUARD`.** Not merely somewhere inside
+   the body — *on* it. A guard reached only on some paths through the
+   body would not run on every turn, and then it would bound nothing.
+2. **Nothing in the loop assigns the guard's counter.** The body may
+   read it; a `STORE.L` to it inside the loop restarts the countdown
+   and the bound never arrives.
+
+Together they are a termination proof, and the shape of that proof is
+worth stating because it explains what is *not* required. Each turn of
+the cycle runs the guard exactly once; the guard strictly decreases an
+`i32` that the cycle does not otherwise change; an `i32` is finite.
+Termination therefore follows without anyone evaluating the bound.
+Nothing reads the number to decide whether it is reasonable, no
+implementation carries a maximum, and a data-dependent iteration count
+is perfectly conforming — the count decides how many turns happen, the
+counter decides how many turns *can*.
+
+This is the same arrangement as the recursion cap (§5.4), for the same
+reason: a bound is a statement about the worst case, and whether a
+particular run reaches it is data. Both are therefore enforced while
+running, in both backends, and both keep the property that a runtime
+counts only what a specific instruction tells it to — never
+instructions in general.
+
+### 3.8.2 What this does not add
+
+There is still **no execution budget**: no per-instruction counter, no
+per-opcode cost, nothing in the dispatch loop (§5.6). That was the
+expensive reading of "bound the program", and it is the one this
+specification continues to refuse. A guard is paid for by the loop that
+asked for it, and a container without cycles pays nothing.
 
 ## 3.9 A worked example
 

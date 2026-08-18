@@ -135,14 +135,20 @@ project does not permit.
 
 ## 5.5 Faults
 
-A fault ends the invocation. There are three, and there are deliberately
+A fault ends the invocation. There are four, and there are deliberately
 no others:
 
 | Fault | Cause |
 |---|---|
 | `absent_condition` | a conditional branch reached a `bool` that is not `valid` (§1.3.1) |
 | `recursion_limit` | a cycle's counter exceeded its cap (§5.4) |
+| `iteration_limit` | a loop's counter ran out (§3.8) |
 | `host_fault` | a host function signalled failure |
+
+The middle two are the same fault twice, over the language's two ways
+of repeating work. Neither says the program was wrong — a bound is a
+worst case, and reaching it means this run needed more turns than the
+producer allowed for.
 
 Everything else that could have been a fault is a value instead.
 Division by zero yields `invalid`; an out-of-range float conversion
@@ -165,24 +171,32 @@ only that a fault be reported and that the invocation stop.
 
 ## 5.6 Termination
 
-Every invocation terminates. This is proved at load, not enforced at
-runtime:
+Every invocation of a conforming container terminates, and the proof
+comes from the container's shape rather than from metering:
 
-- the control flow graph of each function is acyclic, because backward
-  jumps are rejected (§3.8);
-- the call graph's cycles all carry a finite cap (§5.4).
+- every cycle in a function's control flow graph turns on a guarded
+  counter that the cycle does not reset (§3.8.1);
+- every cycle in the call graph carries a finite cap (§5.4).
 
-Together those bound the number of instructions an invocation can
-execute by a number that follows from the container. So there is no
-instruction budget, no counter in the dispatch loop, and no per-opcode
-cost — which matters twice over: the interpreter's inner loop stays
-small, and the C backend has nothing artificial to reproduce. An instruction counter is natural in a
-VM and absurd in compiled C, and requiring one would have put the two
-backends at odds over their own arithmetic.
+Those are the only two ways this language repeats work, so together
+they bound the number of instructions an invocation can execute by a
+number that follows from the container. Both are checked while running,
+because both bounds are worst cases and no static reading can say what
+a particular run will do with its data.
 
-When counted loops arrive (§3.8) the proof extends to them by their
-bound, and the property is meant to survive: a construct that could
-make termination undecidable does not belong in this language.
+What does **not** follow, and is refused deliberately, is an execution
+budget: there is no instruction counter, nothing in the dispatch loop,
+and no per-opcode cost. That matters twice over. The interpreter's
+inner loop stays small, and the C backend has nothing artificial to
+reproduce — an instruction counter is natural in a VM and absurd in
+compiled C, and requiring one would have put the two backends at odds
+over their own arithmetic. A guard and a recursion counter are the
+opposite kind of thing: each is one named instruction's own arithmetic,
+paid for only by the construct that asked for it, and each lowers to C
+a C programmer would have written.
+
+The property is meant to survive future versions: a construct that
+could make termination undecidable does not belong in this language.
 
 ## 5.7 Writes and when they land
 

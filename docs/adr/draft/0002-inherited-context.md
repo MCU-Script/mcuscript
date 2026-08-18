@@ -1022,10 +1022,20 @@ individually as load-time errors, modelled on the JVM's linking-error
 hierarchy.
 
 **Termination is proved, not metered.** With loops bounded (§2.4) and
-recursion capped (§2.8), a script's termination is provable at load
-time the way eBPF proves it — so there is no per-opcode counter, the
-runtime counts nothing, and the C backend has nothing awkward to
+recursion capped (§2.8), a script's termination follows from the
+container the way eBPF's does — so there is no per-opcode counter, no
+budget in the dispatch loop, and nothing awkward for the C backend to
 imitate. This is the half of gap 10 that belongs to the language.
+
+One word of it turned out to be wrong, and ADR 0007 corrects it:
+*proved at load* was too strong. Both bounds are statements about the
+worst case, and whether a particular run reaches one is data, so both
+are enforced while running — a counter per loop, a counter per
+call-graph cycle. The proof still comes from the container; what the
+container proves is that a bound exists, not that it is never reached.
+The distinction matters because it is the difference between two
+counters a program asked for and a counter on every instruction, which
+is the thing being refused here.
 
 The other half does not. Whether a partly-run script's writes are
 undone, and whether a script can observe its own write, are **host
@@ -1388,7 +1398,7 @@ before writing the VM would have been guessing. What is left:
 |---|---|---|
 | 3 | The grammar. The specification deliberately does not cover syntax, and the ternary conflict of §3.2 is still unresolved | §2.5, §3.2 |
 | 4 | The recursion cap's **default** is provisionally **5** (product owner, 2026-08-16), and provisionally is the whole answer: the mechanism is specified and enforced (spec §5.4, ADR 0004 §4.7), but which number annoys the fewest authors is a thing real use decides. Nothing depends on it yet — a container declares its cap and the assembler requires one, so the default exists only for a compiler that does not | §2.8 |
-| 5 | The counted-loop construct, reserved as a group but undesigned — and it must keep termination provable | spec §3.8 |
+| 5 | ~~The counted-loop construct~~ — **answered 2026-08-18 (ADR 0007).** The bytecode half, at least: one instruction, `LOOP.GUARD`, and termination is kept provable the way §5.4 already kept it for recursion. What is left is the *source* form and who writes the bound, which is M3's | spec §3.8 |
 | 6 | The percent base unit (0–100 / 0–255 / 0–1000). A profile question, but the first profile must answer it; Matter uses 0–254 for level and 0–10000 for percent100ths | §2.6 |
 | 8 | The host compiler's implementation language. A compiler only Python embedders can run is a different product from one anybody can | §1.4 |
 | 9 | How the non-developer validation actually gets done, given that the product owner has said he cannot judge it himself | §2.2g, §2.9 |

@@ -211,6 +211,8 @@ def _walk(
     at: dict[int, Stack] = {}
     covered = bytearray(end - start)
     work: list[tuple[int, Stack]] = [(start, ())]
+    successors: dict[int, set[int]] = {}
+    back_edges: list[tuple[int, int]] = []
     high_water = 0
 
     def where(pc: int) -> str:
@@ -266,21 +268,19 @@ def _walk(
                 break
             if op.is_branch:
                 target = after + operand
-                if target <= pc:
-                    raise refuse(
-                        Refusal.BACKWARD_BRANCH,
-                        where=where(pc),
-                        detail=f"jumps to {target - start}, at or before itself",
-                    )
                 if not (start <= target < end):
                     raise refuse(
                         Refusal.BAD_BRANCH_TARGET,
                         where=where(pc),
                         detail=f"target {target - start} is outside {fn.name}'s code",
                     )
+                successors.setdefault(pc, set()).add(target)
+                if target <= pc:
+                    back_edges.append((pc, target))
                 work.append((target, stack))
                 if op.name == "jmp":
                     break
+            successors.setdefault(pc, set()).add(after)
             if after >= end:
                 raise refuse(
                     Refusal.BAD_BRANCH_TARGET,
@@ -291,7 +291,75 @@ def _walk(
             pc = after
 
     _check_coverage(covered, fn)
+    _check_termination(code, fn, start, back_edges, successors)
     return high_water
+
+
+def _check_termination(
+    code: bytes,
+    fn: Function,
+    start: int,
+    back_edges: list[tuple[int, int]],
+    successors: dict[int, set[int]],
+) -> None:
+    """Every cycle in the control flow graph is bounded (§3.8).
+
+    The proof this looks for is deliberately the crudest one that works.
+    A back edge is a cycle, so make each back edge land on a
+    ``loop.guard``: then the guard runs on every traversal, and since it
+    decrements an ``i32`` that the loop does not otherwise write, the
+    cycle can turn at most as many times as that counter's entry value.
+    Termination follows from the counter being finite, not from anyone
+    reading the number — which is why nothing here evaluates the bound
+    and why the runtime does not carry one.
+
+    Requiring the guard **at** the loop header rather than merely
+    somewhere inside it is what keeps this a comparison instead of a
+    dominator computation. A guard buried in an ``if`` inside the body
+    would not run on every turn, and a producer that wants a bound
+    writes it at the top anyway.
+    """
+    if not back_edges:
+        return
+
+    predecessors: dict[int, set[int]] = {}
+    for pc, targets in successors.items():
+        for target in targets:
+            predecessors.setdefault(target, set()).add(pc)
+
+    for branch, header in back_edges:
+        where = f"{fn.name}+{branch - start}"
+        guard = BY_CODE.get(code[header])
+        if guard is None or guard.poly is not Poly.LOOP_GUARD:
+            raise refuse(
+                Refusal.UNGUARDED_LOOP,
+                where=where,
+                detail=f"jumps back to {header - start}, which is not a loop.guard",
+            )
+        counter = code[header + 1]
+
+        # The natural loop of this back edge: the header, plus every
+        # node that reaches the branch without going through the header.
+        body = {header}
+        pending = [branch]
+        while pending:
+            node = pending.pop()
+            if node in body:
+                continue
+            body.add(node)
+            pending.extend(predecessors.get(node, ()))
+
+        for node in sorted(body):
+            op = BY_CODE.get(code[node])
+            if op is None or op.poly is not Poly.LOCAL_SET:
+                continue
+            if code[node + 1] == counter:
+                raise refuse(
+                    Refusal.LOOP_COUNTER_WRITTEN,
+                    where=f"{fn.name}+{node - start}",
+                    detail=f"local {counter} is the counter of the loop at "
+                    f"{header - start}, so the bound would not hold",
+                )
 
 
 def _check_coverage(covered: bytearray, fn: Function) -> None:
@@ -374,6 +442,15 @@ def _apply(
             _pool(container, operand, ValType.I32, where)
         return rest + op.pushes
 
+    if op.poly is Poly.LOOP_GUARD:
+        want = _local(fn, operand, where)
+        if want is not ValType.I32:
+            raise refuse(
+                Refusal.TYPE_MISMATCH,
+                where=where,
+                detail=f"a loop counter is i32, local {operand} is {want}",
+            )
+        return stack
     if op.poly is Poly.LOCAL_GET:
         return (*stack, _local(fn, operand, where))
     if op.poly is Poly.LOCAL_SET:

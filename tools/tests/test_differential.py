@@ -298,6 +298,123 @@ def test_a_join_after_two_arms_agrees(vm, cc, tmp_path):
         agree(vm, cc, tmp_path, source, f"entity read i32 a dim 1 {state}\n")
 
 
+# -- loops -----------------------------------------------------------------
+#
+# The backward branch is where the two lowerings stop resembling each
+# other most: the VM assigns `pc` and the C jumps to a label whose
+# operand-stack variables were laid out on an earlier pass. Agreement
+# here is the claim that reading the depth out of the verifier's map,
+# rather than walking it forward, was the right call.
+
+
+def _countdown(limit: int, stop: int, *, body: str = "") -> str:
+    """`acc = sum(range(stop))`, under a guard that allows `limit` turns."""
+    return (
+        PROFILE
+        + ".entry go -> i32\n"
+        + "  .local acc i32\n  .local i i32\n  .local n i32\n"
+        + "  const.i32.s8 0\n  store.l acc\n"
+        + "  const.i32.s8 0\n  store.l i\n"
+        + f"  const.i32.s8 {limit}\n  store.l n\n"
+        + "top:\n"
+        + "  loop.guard n\n"
+        + f"  load.l i\n  const.i32.s8 {stop}\n  ge.i32\n  jmp_if_true out\n"
+        + body
+        + "  load.l acc\n  load.l i\n  add.i32\n  store.l acc\n"
+        + "  load.l i\n  const.i32.s8 1\n  add.i32\n  store.l i\n"
+        + "  jmp top\n"
+        + "out:\n  load.l acc\n  ret_v\n"
+    )
+
+
+@pytest.mark.parametrize("stop", [0, 1, 5])
+def test_a_bounded_loop_agrees(vm, cc, tmp_path, stop):
+    agree(vm, cc, tmp_path, _countdown(20, stop))
+
+
+def test_a_loop_that_runs_out_of_turns_agrees(vm, cc, tmp_path):
+    """Including the fault and the exit code.
+
+    The counter is one short of what the loop needs, so both backends
+    have to stop in the same place — and the C one has to unwind
+    through its `done:` label rather than fall out of the function.
+    """
+    agree(vm, cc, tmp_path, _countdown(4, 5))
+
+
+def test_a_loop_whose_counter_is_never_set_agrees(vm, cc, tmp_path):
+    """Zero turns allowed, so the guard faults on the first one.
+
+    This is the default a producer gets by forgetting the bound, and
+    the two backends reach it by different routes: the VM's locals are
+    zeroed slots, the generated C's are initialised declarations.
+    """
+    source = (
+        PROFILE
+        + ".entry go -> i32\n"
+        + "  .local n i32\n"
+        + "top:\n  loop.guard n\n  jmp top\n"
+    )
+    agree(vm, cc, tmp_path, source)
+
+
+def test_nested_loops_agree(vm, cc, tmp_path):
+    """Two counters, the inner one reset by the outer body.
+
+    Resetting a counter is forbidden *inside* its own loop and required
+    just outside it, which is the one place the rule could be read the
+    wrong way round.
+    """
+    source = (
+        PROFILE
+        + ".entry go -> i32\n"
+        + "  .local acc i32\n  .local i i32\n  .local j i32\n"
+        + "  .local outer i32\n  .local inner i32\n"
+        + "  const.i32.s8 0\n  store.l acc\n"
+        + "  const.i32.s8 0\n  store.l i\n"
+        + "  const.i32.s8 10\n  store.l outer\n"
+        + "o_top:\n  loop.guard outer\n"
+        + "  load.l i\n  const.i32.s8 3\n  ge.i32\n  jmp_if_true o_out\n"
+        + "  const.i32.s8 0\n  store.l j\n"
+        + "  const.i32.s8 10\n  store.l inner\n"
+        + "i_top:\n  loop.guard inner\n"
+        + "  load.l j\n  const.i32.s8 4\n  ge.i32\n  jmp_if_true i_out\n"
+        + "  load.l acc\n  const.i32.s8 1\n  add.i32\n  store.l acc\n"
+        + "  load.l j\n  const.i32.s8 1\n  add.i32\n  store.l j\n"
+        + "  jmp i_top\n"
+        + "i_out:\n"
+        + "  load.l i\n  const.i32.s8 1\n  add.i32\n  store.l i\n"
+        + "  jmp o_top\n"
+        + "o_out:\n  load.l acc\n  ret_v\n"
+    )
+    assert agree(vm, cc, tmp_path, source).output.split()[2] == "12"
+
+
+def test_a_loop_around_a_host_write_agrees_in_order(vm, cc, tmp_path):
+    """The writes must land in the same order as well as the same count.
+
+    A loop is the cheapest way to get many writes out of one program,
+    and write *order* is the part of the host boundary a reordered
+    lowering would break silently.
+    """
+    source = (
+        PROFILE
+        + ".entity write i32 out dim 1\n"
+        + ".entry go\n"
+        + "  .local i i32\n  .local n i32\n"
+        + "  const.i32.s8 0\n  store.l i\n"
+        + "  const.i32.s8 10\n  store.l n\n"
+        + "top:\n  loop.guard n\n"
+        + "  load.l i\n  const.i32.s8 4\n  ge.i32\n  jmp_if_true out\n"
+        + "  load.l i\n  store.h out\n"
+        + "  load.l i\n  const.i32.s8 1\n  add.i32\n  store.l i\n"
+        + "  jmp top\n"
+        + "out:\n  ret\n"
+    )
+    run = agree(vm, cc, tmp_path, source, "entity write i32 out dim 1\n")
+    assert run.output.count("write ") == 4
+
+
 # -- the generated source itself -------------------------------------------
 
 

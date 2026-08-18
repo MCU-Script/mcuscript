@@ -15,8 +15,12 @@ already proved, so nothing here has to check them.
 
 **The lowering is the stack machine, not a reconstructed expression
 tree.** Each operand-stack position becomes a pair of C variables and
-each branch becomes a forward ``goto``, which the no-backward-jumps rule
-makes legal by construction. The result reads like a machine and
+each branch becomes a ``goto``. Backward ones are no harder than
+forward ones, and for the reason that matters here: the depth at every
+pc is read out of the verifier's map rather than walked forward, so a
+loop's header already has the depth its back edge must agree with —
+which is the ``inconsistent_join`` check, doing this backend's work for
+it. The result reads like a machine and
 compiles like one: any optimizing compiler puts those variables in
 registers and the redundant copies vanish. Reconstructing `a + b * c`
 would produce prettier C and one more chance to be wrong, and prettier
@@ -28,6 +32,12 @@ at run time, because for a compiled-in program the embedder's registry
 is known at build time — so a script referring to something that is not
 there is a link error, at the moment the firmware is built, which is
 strictly earlier than the load-time refusal the VM would give.
+
+**Loops need nothing from this backend beyond the guard.** A bounded
+loop is a backward ``goto`` plus one decrement-and-test on an ordinary
+local, so the C compiler sees an ordinary countdown and optimises it
+like one. Keeping the counter a local rather than runtime machinery is
+what makes that true on both sides.
 
 **Calls become C calls, and the recursion cap becomes a counter.** C has
 no cap of its own, so the transpiler emits one per call-graph cycle
@@ -394,7 +404,10 @@ def _function(
     lines.append("\t(void)result_value;")
     lines.append("\t(void)result_state;")
     lines.append("\t(void)fault;")
-    for i in range(fn.param_count):
+    # Locals as well as parameters: `loop.guard` is the one instruction
+    # that touches a local's value and never its validity, so a counter
+    # used for nothing else leaves its state variable unread.
+    for i in range(len(fn.local_types)):
         value, state = _local(i)
         lines.append(f"\t(void){value};")
         lines.append(f"\t(void){state};")
@@ -669,6 +682,16 @@ def _instruction(
         return [
             f"{top} = ({top_state} == {wanted}) ? 1u : 0u;",
             f"{top_state} = MCUSCRIPT_VALID;",
+        ]
+
+    if name == "loop.guard":
+        value, _ = _local(index)
+        return [
+            f"{value} = mcuscript_op_from_i32(mcuscript_op_as_i32({value}) - 1);",
+            f"if (mcuscript_op_as_i32({value}) < 0) {{",
+            "\t*fault = MCUSCRIPT_ITERATION_LIMIT;",
+            "\tgoto done;",
+            "}",
         ]
 
     if name == "jmp":

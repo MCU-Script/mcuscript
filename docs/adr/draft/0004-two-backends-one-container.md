@@ -38,8 +38,11 @@ source level.
 ### 4.2 The lowering is the stack machine, not an expression tree
 
 Each operand-stack position becomes a pair of C variables — the value
-and its validity state — and each branch becomes a forward `goto`, which
-the no-backward-jumps rule (spec §3.8) makes legal by construction.
+and its validity state — and each branch becomes a `goto`. Backward
+ones cost this backend nothing extra, because it reads each pc's stack
+shape out of the verifier's recorded map instead of walking it forward:
+a loop header already carries the depth its back edge must agree with,
+and `inconsistent_join` is what makes them agree (ADR 0007).
 
 Reconstructing `a + b * c` from the stack is possible and would produce
 C a human would rather read. It is not done, because the generated C is
@@ -187,8 +190,9 @@ rested on that.
 It is now real: the dispatch cases, the verifier's type rules and the
 instruction-length table are each compiled per group, the group bits
 moved to the installed header where a build system can reach them, and
-`core` is mandatory while `loop` is a compile error because it has no
-instructions to implement. `python tools/measure_footprint.py`
+`core` is mandatory and every other group is droppable, `loop`
+included since ADR 0007 gave it an instruction.
+`python tools/measure_footprint.py`
 cross-compiles the whole matrix; the figures below are
 arm-zephyr-eabi-gcc 14.3.0 at `-Os`.
 
@@ -208,18 +212,31 @@ verifier; the figures the verifier was still in are two paragraphs down.
 
 | group set | cortex-m0+ | cortex-m4f | cortex-m33 |
 |---|---:|---:|---:|
-| full | 8,786 | 5,596 | 5,596 |
-| no i64 | 7,578 | 4,164 | 4,172 |
-| no i64 division | 8,090 | 4,524 | 4,524 |
-| no float | 5,242 | 5,124 | 5,124 |
-| no call | 8,434 | 5,276 | 5,276 |
-| no bits | 8,546 | 5,372 | 5,372 |
+| full | 8,842 | 5,980 | 5,980 |
+| no i64 | 7,634 | 4,268 | 4,276 |
+| no i64 division | 8,162 | 4,900 | 4,900 |
+| no float | 5,322 | 5,412 | 5,412 |
+| no call | 8,506 | 5,612 | 5,612 |
+| no bits | 8,602 | 5,444 | 5,444 |
+| no loop | 8,786 | 5,596 | 5,596 |
 | expressions + float | 7,042 | 3,668 | 3,676 |
 | expressions only | 3,482 | 3,084 | 3,084 |
 
 **What each group costs on cortex-m33**, as full minus that group:
-`i64` 1,432 (25 %), of which **`i64div` alone is 1,080 (19 %)**;
-`float` 472 (8 %); `call` 328 (6 %); `bits` 232 (4 %).
+`i64` 1,704 (28 %), of which **`i64div` alone is 1,080 (18 %)**;
+`float` 568 (9 %); `call` 368 (6 %); `bits` 536 (9 %); `loop` 384
+(6 %).
+
+The `expressions only` row is the one to read against `full`: a device
+that evaluates formulas links 3,084 bytes, and everything above that is
+something it asked for.
+
+**`loop` is the one figure that is not what it looks like**, and ADR
+0007 measures it apart: 48 of those 384 bytes are the instruction, and
+310 are the dispatch table re-lowering itself because `0xA0` is the
+only opcode in the gap between `bits` and `i64div`. It is a cost of the
+group layout, which is also what makes every other row in this table
+possible.
 
 That `i64div` line is why it is a group at all (§3.4). Two instructions
 cost three times the other thirteen in their range, because 64-bit
@@ -255,9 +272,9 @@ cheaper than it was:
 
 | | load.c | vm.c | names.c | own total | linked |
 |---|---:|---:|---:|---:|---:|
-| full | 1,617 | 3,112 | 867 | 5,596 | 5,596 |
-| expressions + float | 1,617 | 2,080 | 867 | 4,564 | 3,676 |
-| expressions only | 1,621 | 1,504 | 867 | 3,992 | 3,084 |
+| full | 1,621 | 3,492 | 887 | 6,000 | 5,980 |
+| expressions + float | 1,617 | 2,080 | 887 | 4,584 | 3,676 |
+| expressions only | 1,621 | 1,504 | 887 | 4,012 | 3,084 |
 
 ADR 0006 estimated ~2.1 KB expression-only and ~4 KB complete. The real
 figures are 3.1 KB and 5.6 KB, so that estimate was **a kilobyte too
@@ -269,7 +286,7 @@ The reading of the modularity requirement has moved twice, and where it
 has landed is worth stating plainly. When the verifier was in, feature
 modules were trim — a fifth of the whole at best — and the size lever
 was choosing the other backend. Without it, **the group mask is the
-larger share of what is left**: 2.5 KB of 5.7 on a Cortex-M33, since
+larger share of what is left**: 2.9 KB of 6.0 on a Cortex-M33, since
 what remains is a dispatch loop and a parser, and the dispatch loop is
 the part that has groups. ADR 0002 §1.3's *"an expression-only device
 links an expression-only VM"* is now a fair description of what happens.
@@ -284,9 +301,9 @@ in `mcuscript.h` rather than by the container.
 
 | | bytes | set by |
 |---|---:|---|
-| `mcuscript_program` | 380 | `MAX_IMPORTS`, `MAX_FUNCTIONS`, `MAX_CONSTANTS` |
+| `mcuscript_program` | 372 | `MAX_IMPORTS`, `MAX_FUNCTIONS`, `MAX_CONSTANTS` |
 | `mcuscript_slots` | 576 | `MAX_SLOTS` (64 × 9) |
-| stack, load | ≤ 192 | transient; gone before the first invocation |
+| stack, load | ≤ 176 | transient; gone before the first invocation |
 | stack, invoke | ≤ 348 | transient |
 
 The two stack figures never add: `mcuscript_load` has long returned when
@@ -295,11 +312,15 @@ the translation unit, which is an upper bound and a safe one, because
 the runtime does not recurse.
 
 Loading used to be the deeper of the two at 732 bytes, and is now the
-shallower at 192: the walker held a type stack and a table of pending
+shallower at 176: the walker held a type stack and a table of pending
 branches, and neither exists any more. `mcuscript_program` lost 56 bytes
 for the same reason — `code_end`, `max_stack`, `max_call_depth` and
 `local_types` were per-function fields nothing outside the verifier ever
-read.
+read — and then another 8 to the import hash, which replaced a name
+pointer and a length with a `uint32_t` per import. Those last two
+figures were carried forward rather than re-measured when the hash
+landed; 380 and 192 appear in ADR 0006's table for that reason and are
+the pre-hash numbers.
 
 ### 4.10 It has been run on real hardware
 
@@ -314,7 +335,9 @@ contributes to the answer.
   entity. The host runner, given the same container and the same world,
   returns and writes the same. Two architectures, one answer.
 - `sizeof(mcuscript_program)` is 436 and `sizeof(mcuscript_slots)` 576
-  on the device, matching the cross-compiled table exactly.
+  on the device, matching the cross-compiled table exactly. Both
+  `mcuscript_program` figures are the pre-ADR-0006 ones; the run has not
+  been repeated since, and it is the *agreement* that was the point.
 - Stack high-water across `mcuscript_load` is **536 bytes** measured,
   against the 732-byte bound above — the bound holds, with 27 % slack,
   which is about what summing whole frames should cost.

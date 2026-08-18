@@ -42,7 +42,9 @@ def test_faults_match_chapter_five():
     assert specified == implemented
 
 
-def test_there_are_exactly_three_faults():
+def test_there_are_exactly_four_faults():
     # §5.5 says so in words, and the sentence is load-bearing: everything
-    # else that could have been a fault is a value instead.
-    assert len(Fault) == 3
+    # else that could have been a fault is a value instead. The number
+    # moved once, when `loop` stopped being reserved, and the point of
+    # pinning it is that the next one has to be argued for as well.
+    assert len(Fault) == 4

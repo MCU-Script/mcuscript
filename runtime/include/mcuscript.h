@@ -100,7 +100,7 @@ extern "C" {
 #ifndef MCUSCRIPT_GROUPS_IMPLEMENTED
 #define MCUSCRIPT_GROUPS_IMPLEMENTED                                          \
 	(MCUSCRIPT_GROUP_CORE | MCUSCRIPT_GROUP_I64 | MCUSCRIPT_GROUP_FLOAT | \
-	 MCUSCRIPT_GROUP_CALL | MCUSCRIPT_GROUP_BITS |                        \
+	 MCUSCRIPT_GROUP_CALL | MCUSCRIPT_GROUP_BITS | MCUSCRIPT_GROUP_LOOP | \
 	 MCUSCRIPT_GROUP_I64DIV)
 #endif
 
@@ -115,12 +115,6 @@ extern "C" {
 
 #if !(MCUSCRIPT_GROUPS & MCUSCRIPT_GROUP_CORE)
 #error "core is mandatory: a build without it implements no instruction"
-#endif
-
-/* `loop` is reserved and has no opcodes yet (spec §3.8). Claiming it
- * would accept a container this build cannot possibly run. */
-#if MCUSCRIPT_GROUPS & MCUSCRIPT_GROUP_LOOP
-#error "loop is reserved and empty: no build implements it"
 #endif
 
 /* `i64div` divides values only `i64` can put on the stack, so claiming
@@ -243,6 +237,7 @@ typedef enum {
 	MCUSCRIPT_NO_FAULT = 0,
 	MCUSCRIPT_ABSENT_CONDITION,
 	MCUSCRIPT_RECURSION_LIMIT,
+	MCUSCRIPT_ITERATION_LIMIT,
 	MCUSCRIPT_HOST_FAULT
 } mcuscript_fault;
 

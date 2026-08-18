@@ -122,9 +122,80 @@ def test_truncated_instruction():
 # -- control flow ---------------------------------------------------------
 
 
-def test_backward_branch():
-    # jmp -3, back onto itself
-    expect(Refusal.BACKWARD_BRANCH, build(b"\x20\xfd\xff" + RET))
+LOOP_GROUPS = Group.CORE.mask | Group.LOOP.mask
+
+
+def test_a_backward_branch_must_land_on_a_guard():
+    # jmp -3, back onto itself. No RET: a loop with no way out is the
+    # shape, and a trailing return would be unreachable code instead.
+    expect(Refusal.UNGUARDED_LOOP, build(b"\x20\xfd\xff"))
+
+
+def test_a_guarded_loop_verifies():
+    # loop.guard v0 / jmp -5, back to the guard
+    verify(
+        build(
+            b"\xa0\x00\x20\xfb\xff",
+            locals_=(ValType.I32,),
+            groups=LOOP_GROUPS,
+        )
+    )
+
+
+def test_a_guard_reached_only_on_some_paths_does_not_bound_the_loop():
+    """The guard must be *at* the header, not merely inside the body.
+
+    This container has one — after a branch that can skip it — so a
+    reading that only asked "is there a guard in here" would accept a
+    loop that turns forever.
+    """
+    #  0: const.false     1: jmp_if_true +2 → 6
+    #  4: loop.guard v0    6: jmp -9 → 0
+    expect(
+        Refusal.UNGUARDED_LOOP,
+        build(
+            b"\x05\x22\x02\x00\xa0\x00\x20\xf7\xff",
+            locals_=(ValType.I32,),
+            max_stack=1,
+            groups=LOOP_GROUPS,
+        ),
+    )
+
+
+def test_a_loop_may_not_assign_its_own_counter():
+    # loop.guard v0 / const.i32.s8 0 / store.l v0 / jmp -9, back to the guard
+    expect(
+        Refusal.LOOP_COUNTER_WRITTEN,
+        build(
+            b"\xa0\x00\x01\x00\x07\x00\x20\xf7\xff",
+            locals_=(ValType.I32,),
+            max_stack=1,
+            groups=LOOP_GROUPS,
+        ),
+    )
+
+
+def test_a_loop_may_assign_a_local_that_is_not_its_counter():
+    # the same shape, storing to v1 instead — an ordinary loop variable
+    verify(
+        build(
+            b"\xa0\x00\x01\x00\x07\x01\x20\xf7\xff",
+            locals_=(ValType.I32, ValType.I32),
+            max_stack=1,
+            groups=LOOP_GROUPS,
+        )
+    )
+
+
+def test_a_loop_counter_is_an_i32():
+    expect(
+        Refusal.TYPE_MISMATCH,
+        build(
+            b"\xa0\x00\x20\xfb\xff",
+            locals_=(ValType.F32,),
+            groups=LOOP_GROUPS | Group.FLOAT.mask,
+        ),
+    )
 
 
 def test_a_branch_past_the_end_of_the_function():

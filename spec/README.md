@@ -10,8 +10,9 @@ SPDX-License-Identifier: Apache-2.0
   have an implementation: a verifier, an interpreter and a C backend,
   and a differential test that runs the same container through both
   backends and compares the bytes. **Every instruction the document
-  defines works end to end in both backends** — `core`, `i64`, `float`,
-  `call` and `bits`. `loop` is reserved and has no instructions (§3.8).
+  defines works end to end in both backends** — `core`, `i64`,
+  `i64div`, `float`, `call`, `bits` and `loop`. No group is reserved
+  any more.
 
 This is the contract. Everything else in this repository is an
 implementation of it, including the reference compiler, the VM and the

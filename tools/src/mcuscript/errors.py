@@ -10,7 +10,7 @@ against the specification's own tables, and nothing raises a refusal
 that the specification has not named.
 
 A refusal happens before execution; a fault happens during it, and
-there are exactly three (§5.5).
+there are exactly four (§5.5).
 """
 
 from __future__ import annotations
@@ -41,7 +41,8 @@ class Refusal(enum.Enum):
     UNDEFINED_OPCODE = "undefined_opcode"
     TRUNCATED_INSTRUCTION = "truncated_instruction"
     BAD_BRANCH_TARGET = "bad_branch_target"
-    BACKWARD_BRANCH = "backward_branch"
+    UNGUARDED_LOOP = "unguarded_loop"
+    LOOP_COUNTER_WRITTEN = "loop_counter_written"
     UNREACHABLE_CODE = "unreachable_code"
     TYPE_MISMATCH = "type_mismatch"
     STACK_UNDERFLOW = "stack_underflow"
@@ -67,10 +68,11 @@ class Refusal(enum.Enum):
 
 
 class Fault(enum.Enum):
-    """A run-time fault (§5.5). There are three, and no others."""
+    """A run-time fault (§5.5). There are four, and no others."""
 
     ABSENT_CONDITION = "absent_condition"
     RECURSION_LIMIT = "recursion_limit"
+    ITERATION_LIMIT = "iteration_limit"
     HOST_FAULT = "host_fault"
 
     def __str__(self) -> str:

@@ -34,7 +34,7 @@ file = "ok-every-group.mcs"
 stage = "ok"
 refusal = ""
 runtime = true
-description = "One container that requires every instruction group with instructions in it: i64, i64div, float, call and bits alongside core."
+description = "One container that requires every instruction group: i64, i64div, float, call, bits and loop alongside core."
 
 [[case]]
 name = "ok-capped-recursion"
@@ -138,7 +138,7 @@ file = "unsupported-group.mcs"
 stage = "compatibility"
 refusal = "unsupported_group"
 runtime = true
-description = "The header requires the reserved `loop` group, which no implementation has. The check reads the header, not the code — which is what lets a build without float say no at load rather than meet a float opcode at run time."
+description = "The header requires group 7, which this version of the specification does not define — the shape a container from a later version has. The check reads the header, not the code, which is what lets a build without float say no at load rather than meet a float opcode at run time."
 
 [[case]]
 name = "undefined-opcode"
@@ -181,12 +181,20 @@ runtime = false
 description = "A branch to an offset outside the function's own code region."
 
 [[case]]
-name = "backward-branch"
-file = "backward-branch.mcs"
+name = "unguarded-loop"
+file = "unguarded-loop.mcs"
 stage = "verification"
-refusal = "backward_branch"
+refusal = "unguarded_loop"
 runtime = false
-description = "A jump to itself. Backward jumps are rejected in specification version 0.1, which is what makes termination provable at load and removes the need for an execution budget (§3.8, §5.6)."
+description = "A jump to itself. A backward branch is a cycle, and a cycle is bounded only if it lands on a `loop.guard` — which is what keeps termination provable from the container and lets the runtime carry no execution budget (§3.8, §5.6)."
+
+[[case]]
+name = "loop-counter-written"
+file = "loop-counter-written.mcs"
+stage = "verification"
+refusal = "loop_counter_written"
+runtime = false
+description = "A guarded loop that assigns its own counter, so the countdown restarts every turn and the bound never arrives. The guard is in the right place; what fails is the one other thing the bound rests on (§3.8)."
 
 [[case]]
 name = "unreachable-code"

@@ -61,6 +61,7 @@ I64 = "MCUSCRIPT_GROUP_I64"
 FLOAT = "MCUSCRIPT_GROUP_FLOAT"
 CALL = "MCUSCRIPT_GROUP_CALL"
 BITS = "MCUSCRIPT_GROUP_BITS"
+LOOP = "MCUSCRIPT_GROUP_LOOP"
 I64DIV = "MCUSCRIPT_GROUP_I64DIV"
 
 #: Group sets worth a column. `expressions` is the configuration ADR
@@ -68,12 +69,13 @@ I64DIV = "MCUSCRIPT_GROUP_I64DIV"
 #: should link only an expression evaluator" — and `expressions+float`
 #: is that device once its sensors report temperatures.
 CONFIGS: dict[str, tuple[str, ...]] = {
-    "full": (CORE, I64, FLOAT, CALL, BITS, I64DIV),
-    "no i64": (CORE, FLOAT, CALL, BITS),
-    "no i64 division": (CORE, I64, FLOAT, CALL, BITS),
-    "no float": (CORE, I64, CALL, BITS, I64DIV),
-    "no call": (CORE, I64, FLOAT, BITS, I64DIV),
-    "no bits": (CORE, I64, FLOAT, CALL, I64DIV),
+    "full": (CORE, I64, FLOAT, CALL, BITS, LOOP, I64DIV),
+    "no i64": (CORE, FLOAT, CALL, BITS, LOOP),
+    "no i64 division": (CORE, I64, FLOAT, CALL, BITS, LOOP),
+    "no float": (CORE, I64, CALL, BITS, LOOP, I64DIV),
+    "no call": (CORE, I64, FLOAT, BITS, LOOP, I64DIV),
+    "no bits": (CORE, I64, FLOAT, CALL, LOOP, I64DIV),
+    "no loop": (CORE, I64, FLOAT, CALL, BITS, I64DIV),
     "expressions+float": (CORE, FLOAT),
     "expressions": (CORE,),
 }

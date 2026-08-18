@@ -310,7 +310,8 @@ the loader can only say "invalid".
 | `undefined_opcode` | an opcode not assigned, or assigned to a group not required |
 | `truncated_instruction` | an instruction's operands extend past `CODE` |
 | `bad_branch_target` | a target outside the function's code region, or not on an instruction boundary (§2.6.1) |
-| `backward_branch` | a backward jump (§3.8) |
+| `unguarded_loop` | a backward jump whose target is not a `LOOP.GUARD` (§3.8.1) |
+| `loop_counter_written` | a `STORE.L` inside a loop to that loop's own guard counter (§3.8.1) |
 | `unreachable_code` | a byte of a function's region that no path reaches (§2.6.1), or a function no entry point can reach |
 | `type_mismatch` | an instruction receives an operand type it does not take |
 | `stack_underflow` | an instruction pops from an empty stack on some path |

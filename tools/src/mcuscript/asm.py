@@ -386,7 +386,7 @@ class _Parser:
         function_index: dict[str, int],
         local_index: dict[str, int],
     ) -> tuple[str, int]:
-        if op.name in ("load.l", "store.l"):
+        if op.name in ("load.l", "store.l", "loop.guard"):
             table, lookup = "local", local_index
         elif op.name in ("load.h", "store.h", "call.h"):
             table, lookup = "import", import_index
@@ -536,7 +536,7 @@ def _render_operand(
     if op.operand is Operand.IMM16:
         return str(int.from_bytes(code[pc + 1 : pc + 3], "little", signed=True))
     index = code[pc + 1]
-    if op.name in ("load.l", "store.l"):
+    if op.name in ("load.l", "store.l", "loop.guard"):
         return local_names[index]
     if op.name in ("load.h", "store.h", "call.h"):
         return container.imports[index].name

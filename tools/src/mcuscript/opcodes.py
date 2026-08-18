@@ -7,11 +7,12 @@ specification chapter 3. The assembler, the disassembler, the verifier
 and the C backend all read it, and a test compares the C runtime's
 opcode header against it so the two cannot drift.
 
-Every group that has instructions is now implemented by both backends,
-which moves the refusal of §2.5 out of reach of a real program: the
-only way a container can require something this build lacks is to say
-so in its header, and that is what the check reads anyway. The
-reserved `loop` group is what a test uses to say it.
+Every group is now implemented by both backends, which moves the
+refusal of §2.5 out of reach of a real program: the only way a
+container can require something this build lacks is to say so in its
+header, and that is what the check reads anyway. A test that needs an
+unimplemented group therefore narrows ``implemented`` itself rather
+than reaching for a group nobody wrote.
 """
 
 from __future__ import annotations
@@ -36,13 +37,17 @@ class Group(enum.IntEnum):
         return 1 << self.value
 
 
-#: The groups this version's runtime implements: every one that has
-#: instructions. `loop` is reserved with none at all (spec §3.8), so the
-#: refusal of §2.5 is exercised through a container whose *header*
-#: claims a group — which is what the specification actually says the
-#: check is about.
+#: The groups this version's runtime implements: all of them.
 IMPLEMENTED_GROUPS = frozenset(
-    {Group.CORE, Group.I64, Group.FLOAT, Group.CALL, Group.BITS, Group.I64DIV}
+    {
+        Group.CORE,
+        Group.I64,
+        Group.FLOAT,
+        Group.CALL,
+        Group.BITS,
+        Group.LOOP,
+        Group.I64DIV,
+    }
 )
 
 #: Opcode range per group (inclusive), spec §3.2. Ranges are disjoint so
@@ -123,6 +128,7 @@ class Poly(enum.Enum):
     PREDICATE = "predicate"  # any -> bool
     RET = "ret"  # against the function's return type
     RET_V = "ret_v"
+    LOOP_GUARD = "loop_guard"  # an i32 local, touched but not stacked
 
 
 @dataclass(frozen=True, slots=True)
@@ -248,6 +254,11 @@ _OPS: list[Op] = [
     Op(0x93, "bitnot.i32", Group.BITS, **_unary(_I32)),
     Op(0x94, "shl.i32", Group.BITS, **_binary(_I32)),
     Op(0x95, "shr.i32", Group.BITS, **_binary(_I32)),
+    # -- loop ------------------------------------------------------------
+    # The whole group. Repetition itself needs no instruction — `jmp`
+    # already carries a signed offset — so what is missing without this
+    # group is not the backward branch but the *bound* on it (§3.8).
+    Op(0xA0, "loop.guard", Group.LOOP, Operand.IDX8, poly=Poly.LOOP_GUARD),
     # -- i64div ----------------------------------------------------------
     # Split out of `i64` because 64-bit division is the only arithmetic in
     # the instruction set that a 32-bit target cannot do in registers: the

@@ -10,7 +10,14 @@ from pathlib import Path
 import pytest
 
 from mcuscript import opcodes
-from mcuscript.opcodes import BY_CODE, GROUP_RANGES, Group, Operand, groups_used
+from mcuscript.opcodes import (
+    BY_CODE,
+    BY_NAME,
+    GROUP_RANGES,
+    Group,
+    Operand,
+    groups_used,
+)
 
 SPEC = Path(__file__).resolve().parents[2] / "spec"
 
@@ -54,10 +61,19 @@ def test_groups_used_refuses_an_undefined_opcode():
         groups_used(bytes([0xFF]))
 
 
-def test_the_loop_group_is_reserved_and_empty():
-    assert Group.LOOP in GROUP_RANGES
+def test_the_loop_group_holds_the_bound_and_not_the_branch():
+    """The group's whole content is `loop.guard`.
+
+    Worth pinning because the obvious expectation is the opposite one:
+    a group called `loop` ought to contain the jump. It does not — the
+    backward branch is `jmp`, which `core` already has — and an
+    instruction added here later should have to argue with that.
+    """
     lo, hi = GROUP_RANGES[Group.LOOP]
-    assert not any(lo <= code <= hi for code in BY_CODE)
+    assert [op.name for code, op in sorted(BY_CODE.items()) if lo <= code <= hi] == [
+        "loop.guard"
+    ]
+    assert BY_NAME["jmp"].group is Group.CORE
 
 
 @pytest.mark.parametrize("chapter", ["03-instructions.md"])

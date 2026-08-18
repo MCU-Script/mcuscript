@@ -64,6 +64,8 @@ const char *mcuscript_fault_name(mcuscript_fault fault)
 		return "absent_condition";
 	case MCUSCRIPT_RECURSION_LIMIT:
 		return "recursion_limit";
+	case MCUSCRIPT_ITERATION_LIMIT:
+		return "iteration_limit";
 	case MCUSCRIPT_HOST_FAULT:
 		return "host_fault";
 	}

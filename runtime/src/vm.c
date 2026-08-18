@@ -334,6 +334,24 @@ bool mcuscript_invoke(const mcuscript_program *program, int entry, mcuscript_slo
 		}
 #endif
 
+#if MCUSCRIPT_GROUPS & MCUSCRIPT_GROUP_LOOP
+		/* -- loop ------------------------------------------------ */
+		/* The whole group. The backward branch itself is OP_JMP with
+		 * a negative offset, which core already executes; what this
+		 * adds is the bound (§3.8). A counter that was never given a
+		 * value is zero, so it faults on the first turn rather than
+		 * running free — the safe way for the default to fail. */
+		case OP_LOOP_GUARD: {
+			uint32_t counter = base + OPERAND;
+			int32_t left = mcuscript_op_as_i32(values[counter]) - 1;
+			values[counter] = mcuscript_op_from_i32(left);
+			if (left < 0)
+				FAULT(MCUSCRIPT_ITERATION_LIMIT);
+			pc += 2;
+			break;
+		}
+#endif
+
 #if MCUSCRIPT_GROUPS & MCUSCRIPT_GROUP_I64DIV
 		/* -- i64div --------------------------------------------- */
 		case OP_DIV_I64:

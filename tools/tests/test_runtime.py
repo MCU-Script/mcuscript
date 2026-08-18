@@ -404,6 +404,56 @@ def test_a_host_function_that_signals_failure_faults(runner, tmp_path):
     assert result.fault == "host_fault"
 
 
+# -- loops -----------------------------------------------------------------
+
+
+def _loop(limit: int, stop: int) -> str:
+    """`sum(range(stop))`, under a guard that allows `limit` turns."""
+    return (
+        PROFILE
+        + ".entry go -> i32\n"
+        + "  .local acc i32\n  .local i i32\n  .local n i32\n"
+        + "  const.i32.s8 0\n  store.l acc\n"
+        + "  const.i32.s8 0\n  store.l i\n"
+        + f"  const.i32.s8 {limit}\n  store.l n\n"
+        + "top:\n  loop.guard n\n"
+        + f"  load.l i\n  const.i32.s8 {stop}\n  ge.i32\n  jmp_if_true out\n"
+        + "  load.l acc\n  load.l i\n  add.i32\n  store.l acc\n"
+        + "  load.l i\n  const.i32.s8 1\n  add.i32\n  store.l i\n"
+        + "  jmp top\n"
+        + "out:\n  load.l acc\n  ret_v\n"
+    )
+
+
+def test_a_bounded_loop_runs_to_its_natural_end(runner, tmp_path):
+    """The guard is a ceiling, not the exit condition.
+
+    Twenty turns are allowed and five are needed, so the counter never
+    runs out and the loop leaves through its own test — which is the
+    normal case and the one a bound must not interfere with.
+    """
+    assert run(runner, tmp_path, _loop(20, 5), "").result == ("i32", "10", "valid")
+
+
+def test_a_loop_that_exhausts_its_counter_faults(runner, tmp_path):
+    result = run(runner, tmp_path, _loop(4, 5), "")
+    assert result.fault == "iteration_limit"
+    assert result.result is None
+
+
+def test_a_core_only_build_refuses_a_loop(core_only_runner, tmp_path):
+    """The backward jump is `jmp`, which `core` has — so a build without
+    the `loop` group would happily execute the cycle and never leave it.
+
+    That is the reason a container with a cycle requires the group even
+    though the branch does not: the header is where such a build gets
+    its one chance to say no (§3.8).
+    """
+    result = run(core_only_runner, tmp_path, _loop(20, 5), "")
+    assert result.refusal == "unsupported_group"
+    assert result.out.split()[3] == "32"  # the loop bit, and only it
+
+
 # -- refusals -------------------------------------------------------------
 
 
@@ -438,16 +488,17 @@ def test_a_group_this_build_does_not_implement_is_refused(runner, tmp_path):
     That is not a weaker test, it is the real one. The check exists so a
     build without float says no at load rather than meeting a float
     opcode at run time — and the thing it reads is `required_groups`,
-    not the code. `loop` is reserved with no instructions at all, which
-    makes it the only group a container can claim to need here."""
+    not the code. Every group this version defines is implemented, so
+    the container claims one this version does not define: the shape a
+    container from a later specification has."""
     from mcuscript.opcodes import Group
 
     container = assemble(PROFILE + ".entry go\n  ret\n")
-    blob = container.encode(required_groups=Group.CORE.mask | Group.LOOP.mask)
+    blob = container.encode(required_groups=Group.CORE.mask | (1 << 7))
     result = run(runner, tmp_path, "", "", blob=blob)
     assert result.refusal == "unsupported_group"
-    # `where` carries the mask of the groups this build lacks — bit 5.
-    assert result.out.split()[3] == "32"
+    # `where` carries the mask of the groups this build lacks — bit 7.
+    assert result.out.split()[3] == "128"
 
 
 # -- a build that drops a group --------------------------------------------

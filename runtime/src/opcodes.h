@@ -130,6 +130,9 @@ enum {
 	OP_SHL_I32 = 0x94,    /* shl.i32 */
 	OP_SHR_I32 = 0x95,    /* shr.i32 */
 
+	/* -- the loop group -- */
+	OP_LOOP_GUARD = 0xA0, /* loop.guard */
+
 	/* -- the i64div group -- */
 	OP_DIV_I64 = 0xB0, /* div.i64 */
 	OP_REM_I64 = 0xB1  /* rem.i64 */

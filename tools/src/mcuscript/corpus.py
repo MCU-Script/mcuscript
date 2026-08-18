@@ -229,14 +229,24 @@ def _cases() -> list[Case]:
         "ok-every-group",
         "ok",
         "",
-        "One container that requires every instruction group with "
-        "instructions in it: i64, i64div, float, call and bits alongside "
-        "core.",
+        "One container that requires every instruction group: i64, "
+        "i64div, float, call, bits and loop alongside core.",
         _asm(
             ".const big i64 4294967296\n"
             ".const two i64 2\n"
             ".const half f32 0.5\n"
             ".entry go -> i32\n"
+            "  .local turns i32\n"
+            "  const.i32.s8 2\n"
+            "  store.l turns\n"
+            # Turns twice and leaves by its own test, so the guard is
+            # what an `ok` case should show it as: a ceiling nobody hits.
+            "top:\n"
+            "  loop.guard turns\n"
+            "  load.l turns\n"
+            "  const.i32.s8 0\n"
+            "  gt.i32\n"
+            "  jmp_if_true top\n"
             "  const.i64 big\n"
             "  const.i64 two\n"
             "  div.i64\n"
@@ -385,11 +395,12 @@ def _cases() -> list[Case]:
         "unsupported-group",
         "compatibility",
         "unsupported_group",
-        "The header requires the reserved `loop` group, which no "
-        "implementation has. The check reads the header, not the code — "
+        "The header requires group 7, which this version of the "
+        "specification does not define — the shape a container from a "
+        "later version has. The check reads the header, not the code, "
         "which is what lets a build without float say no at load rather "
         "than meet a float opcode at run time.",
-        _patch(MINIMAL, 20, struct.pack("<I", Group.CORE.mask | Group.LOOP.mask)),
+        _patch(MINIMAL, 20, struct.pack("<I", Group.CORE.mask | (1 << 7))),
     )
 
     # -- verification -----------------------------------------------
@@ -444,13 +455,30 @@ def _cases() -> list[Case]:
         _raw(b"\x20\x64\x00\x23"),
     )
     case(
-        "backward-branch",
+        "unguarded-loop",
         "verification",
-        "backward_branch",
-        "A jump to itself. Backward jumps are rejected in specification "
-        "version 0.1, which is what makes termination provable at load "
-        "and removes the need for an execution budget (§3.8, §5.6).",
+        "unguarded_loop",
+        "A jump to itself. A backward branch is a cycle, and a cycle is "
+        "bounded only if it lands on a `loop.guard` — which is what "
+        "keeps termination provable from the container and lets the "
+        "runtime carry no execution budget (§3.8, §5.6).",
         _raw(b"\x20\xfd\xff"),
+    )
+    case(
+        "loop-counter-written",
+        "verification",
+        "loop_counter_written",
+        "A guarded loop that assigns its own counter, so the countdown "
+        "restarts every turn and the bound never arrives. The guard is "
+        "in the right place; what fails is the one other thing the "
+        "bound rests on (§3.8).",
+        _raw(
+            # loop.guard v0 / const 0 / store.l v0 / jmp back
+            b"\xa0\x00\x01\x00\x07\x00\x20\xf7\xff",
+            functions=[Function("go", 0, local_types=(ValType.I32,), max_stack=1)],
+            groups=Group.CORE.mask | Group.LOOP.mask,
+            max_stack=1,
+        ),
     )
     case(
         "unreachable-code",

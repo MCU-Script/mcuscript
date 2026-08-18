@@ -65,20 +65,24 @@ in about 300 lines, and it is short enough to read as documentation.
   walks past; `mcuscript strip` removes it, and that is the form a
   device should be given.
 - **It does not have to implement every instruction group.** By default
-  it does — `core`, `i64`, `float`, `call`, `bits` — and
-  `-DMCUSCRIPT_GROUPS_IMPLEMENTED=MCUSCRIPT_GROUP_CORE|...` drops the
-  rest: their dispatch cases are not compiled, and a container whose
+  it does — `core`, `i64`, `i64div`, `float`, `call`, `bits`, `loop` —
+  and `-DMCUSCRIPT_GROUPS_IMPLEMENTED=MCUSCRIPT_GROUP_CORE|...` drops
+  the rest: their dispatch cases are not compiled, and a container whose
   header needs one is refused at load, by name, before anything runs. The groups occupy
   disjoint opcode ranges precisely so a build can drop a contiguous span
-  of the dispatch table. Only `core` is mandatory, and `loop` is a
-  compile error because it is reserved and has no instructions yet.
+  of the dispatch table. Only `core` is mandatory. Dropping `loop`
+  drops the ability to *bound* a cycle rather than to jump backwards,
+  which is why a container containing one is refused rather than run.
 - **It does not survive `-ffast-math`.** The header refuses to compile
   under it, and a build must pass `-ffp-contract=off`. Both are measured
   requirements, not superstition — see spec §1.5.
 - **It does not count instructions.** A conforming container terminates
-  by construction — no backward jumps, capped call-graph cycles — so the
-  dispatch loop carries no budget, and the C backend has nothing
-  artificial to reproduce.
+  because both of its ways to repeat work carry a bound — a guarded
+  counter per loop, a cap per call-graph cycle — so the dispatch loop
+  carries no budget, and the C backend has nothing artificial to
+  reproduce. Those two counters are the opposite kind of thing: each is
+  one named instruction's own arithmetic, paid for only by the
+  construct that asked for it.
 
 ## There used to be two verifiers
 
