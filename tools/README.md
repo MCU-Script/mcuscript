@@ -27,6 +27,7 @@ should not have to reproduce a dependency tree first.
 mcuscript asm program.mcs-asm -o program.mcs   # text  → container
 mcuscript dis program.mcs                      # container → text
 mcuscript verify program.mcs                   # is it a conforming container?
+mcuscript strip program.mcs -o device.mcs      # drop what a device does not read
 mcuscript cc program.mcs -o program.c          # container → C, the second backend
 mcuscript info program.mcs                     # what is inside
 ```

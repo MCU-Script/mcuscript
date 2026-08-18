@@ -218,8 +218,37 @@ too, and the sentence would be false about it.
   failed. The manifest now records per case whether a runtime owes the
   verdict, and every invocation of the runner has a timeout — so that if
   that filter is ever wrong, it fails instead of stalling.
-- **An interface hash in the header**, replacing per-import name
-  matching. It belongs to this decision because it is the same kind of
-  question — identity, not well-formedness — and it catches strictly
-  more: renaming an entity is caught today, *swapping two* is not, and
-  swapping two is the failure that silently produces wrong numbers.
+- ~~**An interface hash in the header**, replacing per-import name
+  matching.~~ **Done on 2026-08-18, but not as proposed, and the
+  proposal's argument was wrong.**
+
+  It was argued here that an interface hash "catches strictly more,
+  since renaming an entity is caught today but swapping two is not".
+  That does not survive contact. Under name matching the *order* of the
+  host table is irrelevant, so swapping two entries is harmless and
+  needs catching by nothing; and swapping two **sensors** — the case
+  actually worth worrying about — leaves the host table byte-identical,
+  so no hash sees it either. An interface hash would also refuse every
+  existing container the moment a firmware gained an unrelated entity,
+  which is a false refusal and a real cost.
+
+  What was built instead is the product owner's variant: **a hash of
+  each import's own name in its record** (FNV-1a, §4.4.1), with the
+  names moved to an ancillary `hnam` section (§4.4.2). Resolution
+  semantics are unchanged — it is the same exact name match, expressed
+  as an integer comparison — so nothing that used to link stops linking.
+
+  The gains are smaller than advertised and worth stating at their real
+  size: **52 bytes of loader**, a container that a device gets which is
+  8–45 % smaller once `mcuscript strip` has run, and a format that no
+  longer carries a string area, a 255-byte name limit and an offset
+  table on the path a device reads. The cost is one diagnostic: an
+  import the host does not offer is reported by index, because neither
+  side has a name for it. Every other import refusal still names the
+  entity, since the host has the entry.
+
+  One consequence deserves its own line, because it is the opposite of
+  what a size change is supposed to do: **the toolchain's container is
+  now larger**, since it carries the hashes *and* the names. The saving
+  is entirely on the stripped artifact, which is why `strip` became a
+  command rather than an implied step.

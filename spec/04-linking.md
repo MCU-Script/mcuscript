@@ -156,21 +156,23 @@ call-graph analysis of §5.4 sees one uniform set of nodes.
 ## 4.4 `HOST` — the import table
 
 Everything the script reaches outside itself: entities it reads and
-writes, and functions it calls. Each import is a **name**, which is
-what makes a container portable across firmware versions — the script
-says `"fan.speed"`, not an address, and the address is found when the
-container is loaded.
+writes, and functions it calls. Each import is identified by its
+**name**, which is what makes a container portable across firmware
+versions — the script means `"fan.speed"`, not an address, and the
+address is found when the container is loaded.
+
+What the record carries is a **hash** of that name, not the name.
 
 | Offset | Size | Field |
 |---|---|---|
 | 0 | 1 | `count`, u8 |
-| 1 | … | `count` records, then the string area (§4.3) |
+| 1 | … | `count` records |
 
 Each record:
 
 | Size | Field | |
 |---|---|---|
-| 2 | `name_offset` | u16 into the string area |
+| 4 | `name_hash` | FNV-1a over the name's UTF-8 bytes |
 | 1 | `kind` | `0x01` entity, `0x02` function |
 | 1 | `access` | entities: `0x01` read, `0x02` write, `0x03` both. Functions: `0x00` |
 | 1 | `type` | entities: the value's type code. Functions: the return type code |
@@ -179,6 +181,58 @@ Each record:
 | `param_count` | `param_types` | type codes, leftmost first |
 
 `LOAD.H`, `STORE.H` and `CALL.H` address records by index.
+
+### 4.4.1 The name hash
+
+**FNV-1a, 32-bit**, over the name's UTF-8 bytes:
+
+```
+h = 0x811C9DC5
+for each byte b:  h = (h XOR b) * 0x01000193   (mod 2^32)
+```
+
+Named here rather than left to the implementation, because the
+container carries the result and every reader has to arrive at the same
+number. FNV-1a earns the place by being four lines with no table on a
+device that has neither to spare.
+
+**No two imports in a container may have the same hash**
+(`duplicate_import`), and no two entries in a host's registry may
+either. The second is the embedder's obligation and cannot be checked
+from inside a container; with a 32-bit hash and the tens of imports a
+registry holds, a collision is something a build finds once and renames
+around, not something a device copes with.
+
+**What this costs is diagnostics, and only in one place.** An import the
+host does not offer can be reported by index but not by name: the
+container has no name and the host has no matching entry to take one
+from. Every *other* import refusal — kind, type, dimension, access,
+signature — is about an entry the host does have, so the host's own name
+for it is available and is used. Those are also the refusals that carry
+information, because "this entity exists but is not what you compiled
+against" is the interesting failure and "this entity does not exist" is
+the obvious one.
+
+Whoever pushed the container can still turn the index into a word,
+because they have the source — and because the container may carry the
+names in an ancillary section:
+
+### 4.4.2 `hnam` — the import names
+
+Optional, ancillary (§2.3), so a loader that does not know it walks past
+it and a container that omits it is still complete.
+
+| Offset | Size | Field |
+|---|---|---|
+| 0 | 1 | `count`, u8; equal to `HOST`'s |
+| 1 | … | `count` names, in import-index order |
+
+Each name is one length byte followed by that many UTF-8 bytes.
+
+A device has no use for this and should not be built to read it. A
+disassembler, a diagnostic on the pushing side and a human reading a
+container have nothing without it, which is why the reference toolchain
+always writes it and reads it back.
 
 The `dimension` field is what turns units from a compile-time
 convenience into a checked contract. The compiler recorded which
@@ -191,14 +245,20 @@ change, the dimension field catches a single entity that moved.
 
 ## 4.5 Linking
 
-After verification (§2.6) and before execution, every `HOST` record is
-resolved once against the embedder's registry. Resolution is by name,
-exact match, case-sensitive. After it, access is array indexing and no
-name is looked at again — the cost is paid once at load.
+Before execution, every `HOST` record is resolved once against the
+embedder's registry. Resolution is by **name hash** (§4.4.1) — which is
+an exact, case-sensitive name match expressed as an integer comparison,
+since the hash is over the name's bytes. After it, access is array
+indexing and nothing is looked up again; the cost is paid once at load.
+
+A registry declares its names as text, so a loader hashes them. Doing so
+per load is a handful of instructions per entry and keeps an embedder's
+table something a person can write by hand, which is worth more than the
+cycles.
 
 For each record the loader checks, in this order:
 
-1. the name exists in the registry;
+1. the hash matches an entry in the registry;
 2. the kind matches — an entity is not a function;
 3. the type matches exactly;
 4. the dimension matches, or both are dimensionless;

@@ -357,10 +357,6 @@ typedef struct {
 	const uint8_t *imports;
 	uint16_t import_offsets[MCUSCRIPT_MAX_IMPORTS];
 	uint8_t import_count;
-	/* The string area after the records. Kept because finding it means
-	 * walking every record, and linking needs it once per import. */
-	const uint8_t *import_names;
-	uint32_t import_names_length;
 	/* container import index -> host import index, resolved at load */
 	uint8_t import_map[MCUSCRIPT_MAX_IMPORTS];
 

@@ -59,6 +59,11 @@ in about 300 lines, and it is short enough to read as documentation.
   the call graph's condensation from the `component` field rather than
   computing it. The one declared field it still bounds-checks is that
   one, because it indexes the runtime's own arrays.
+- **It does not read import names.** A `HOST` record carries an FNV-1a
+  hash (§4.4.1) and the loader hashes the host's own names to match it.
+  The names live in the ancillary `hnam` section, which this runtime
+  walks past; `mcuscript strip` removes it, and that is the form a
+  device should be given.
 - **It does not have to implement every instruction group.** By default
   it does — `core`, `i64`, `float`, `call`, `bits` — and
   `-DMCUSCRIPT_GROUPS_IMPLEMENTED=MCUSCRIPT_GROUP_CORE|...` drops the
@@ -97,15 +102,15 @@ with `python ../tools/measure_footprint.py`:
 
 | | flash | of which the loader |
 |---|---:|---:|
-| every group | 5,652 B | 1,669 B |
-| `core` + `float` | 3,724 B | 1,669 B |
-| `core` only | 3,132 B | 1,669 B |
+| every group | 5,596 B | 1,617 B |
+| `core` + `float` | 3,676 B | 1,617 B |
+| `core` only | 3,084 B | 1,621 B |
 
 Linked rather than compiled, because the compiler's own support library
 is part of what a device pays: 64-bit division alone pulls in 698 bytes
 of it, which is why `i64div` is a group of its own. On a Cortex-M0+,
-with neither a divide instruction nor an FPU, the full build is 8,834 B
-rather than 5,652.
+with neither a divide instruction nor an FPU, the full build is 8,786 B
+rather than 5,596.
 
 No static RAM at all. An embedder declares an `mcuscript_program` (380
 bytes with the default limits) and an `mcuscript_slots` (576), and the
@@ -118,7 +123,7 @@ knows what an instruction is. Everything that did — the type rules, the
 instruction-length table, the call-graph condensation — was verification,
 and it is gone. What is left is a parser and a dispatch loop, so
 **dropping groups is now most of what there is to drop**: 2.5 KB of the
-5.7.
+5.6.
 
 Also verified on hardware rather than argued: an nRF5340 running a
 container that uses all five groups returns the same value, bit for bit,

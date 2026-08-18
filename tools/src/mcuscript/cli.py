@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import argparse
 import sys
+from dataclasses import replace
 from pathlib import Path
 
 from . import SPEC_VERSION, __version__
@@ -66,6 +67,13 @@ def main(argv: list[str] | None = None) -> int:
     p = sub.add_parser("info", help="describe a container")
     p.add_argument("container", type=Path)
     p.set_defaults(run=_info)
+
+    p = sub.add_parser(
+        "strip", help="drop the ancillary sections a device does not read"
+    )
+    p.add_argument("container", type=Path)
+    p.add_argument("-o", "--output", type=Path, required=True)
+    p.set_defaults(run=_strip)
 
     args = parser.parse_args(argv)
     try:
@@ -125,6 +133,31 @@ def _cc(args: argparse.Namespace) -> int:
         header(container, source=args.container.name), encoding="utf-8"
     )
     print(f"{args.output}\n{declarations}")
+    return EXIT_OK
+
+
+def _strip(args: argparse.Namespace) -> int:
+    """Write the container a device should get.
+
+    Everything critical stays; the ancillary sections go, and with them
+    the import names (§4.4.2) and any debug information. That is where
+    the hash form of the import table actually pays: the toolchain's
+    container carries the names *and* their hashes and is therefore
+    larger than the old one, and this is what turns that back into a
+    saving.
+
+    Do this before signing, not after — §2.3. A signature over the
+    unstripped bytes does not cover what was stored.
+    """
+    container = _load(args.container)
+    before = args.container.stat().st_size
+    container.ancillary = []
+    container.imports = [
+        replace(i, name="", name_hash=i.hash) for i in container.imports
+    ]
+    blob = container.encode(required_groups=container.required_groups)
+    args.output.write_bytes(blob)
+    print(f"{before} -> {len(blob)} bytes ({before - len(blob)} dropped)")
     return EXIT_OK
 
 

@@ -33,6 +33,25 @@ assert _HEADER.size == HEADER_SIZE
 #: is a count of zero, not an absent section.
 CRITICAL_SECTIONS = ("CODE", "CNST", "ENTR", "HOST")
 
+#: Ancillary, so a loader that does not know it skips it (§2.3). It
+#: carries the import names a `HOST` record no longer does: one
+#: length-prefixed UTF-8 string per import, in index order.
+IMPORT_NAMES_SECTION = "hnam"
+
+
+def fnv1a32(name: str) -> int:
+    """FNV-1a over the name's UTF-8 bytes (§4.4).
+
+    Named in the specification rather than left to the implementation,
+    because the container carries the result and every reader has to
+    arrive at the same number. FNV-1a is four lines on a device and has
+    no table.
+    """
+    h = 0x811C9DC5
+    for byte in name.encode("utf-8"):
+        h = ((h ^ byte) * 0x01000193) & 0xFFFFFFFF
+    return h
+
 
 class ImportKind:
     ENTITY = 0x01
@@ -94,7 +113,14 @@ class Function:
 @dataclass(frozen=True, slots=True)
 class Import:
     """A ``HOST`` record: an entity the script reads or writes, or a
-    function it calls."""
+    function it calls.
+
+    The record carries a **hash** of the name and not the name (§4.4).
+    ``name`` is here because every tool that builds a container has it;
+    a container read back without an ``hnam`` section has the hash and
+    no name, and then ``name`` is empty and ``name_hash`` is what was
+    read.
+    """
 
     name: str
     kind: int
@@ -102,6 +128,12 @@ class Import:
     type: ValType
     dimension: int = 0
     param_types: tuple[ValType, ...] = ()
+    #: Set only when decoding a container that carried no names.
+    name_hash: int | None = None
+
+    @property
+    def hash(self) -> int:
+        return fnv1a32(self.name) if self.name_hash is None else self.name_hash
 
 
 @dataclass(frozen=True, slots=True)
@@ -149,6 +181,13 @@ class Container:
                 ("HOST", _encode_imports(self.imports)),
             )
         )
+        # Only when there is something to say: a stripped container has
+        # hashes and no names, and re-encoding it must not put an empty
+        # section back where the names were.
+        if any(i.name for i in self.imports):
+            body += _pack_section(
+                IMPORT_NAMES_SECTION, _encode_import_names(self.imports)
+            )
         body += b"".join(_pack_section(s.type, s.data) for s in self.ancillary)
 
         total = HEADER_SIZE + len(body)
@@ -218,11 +257,26 @@ class Container:
 
         sections, ancillary = _walk_sections(blob)
 
+        imports = _decode_imports(sections["HOST"])
+        # `hnam` is ancillary, so a container may arrive without it and
+        # the imports then have hashes and no names. It is consumed here
+        # rather than carried through, so that re-encoding produces it
+        # from the names again instead of from stale bytes.
+        names = next((s for s in ancillary if s.type == IMPORT_NAMES_SECTION), None)
+        if names is not None:
+            ancillary = [s for s in ancillary if s is not names]
+            imports = [
+                replace(imp, name=name, name_hash=None)
+                for imp, name in zip(
+                    imports, _decode_import_names(names.data, len(imports)), strict=True
+                )
+            ]
+
         self = cls(
             code=sections["CODE"],
             constants=_decode_constants(sections["CNST"]),
             functions=_decode_functions(sections["ENTR"]),
-            imports=_decode_imports(sections["HOST"]),
+            imports=imports,
             ancillary=ancillary,
             profile_id=profile_id,
             profile_major=profile_major,
@@ -592,12 +646,11 @@ def _decode_functions(data: bytes) -> list[Function]:
 def _encode_imports(imports: list[Import]) -> bytes:
     if len(imports) > 255:
         raise ValueError("a container holds at most 255 imports")
-    area, offsets = _encode_strings([i.name for i in imports])
     out = bytearray([len(imports)])
-    for imp, name_offset in zip(imports, offsets, strict=True):
+    for imp in imports:
         out += struct.pack(
-            "<HBBBHB",
-            name_offset,
+            "<IBBBHB",
+            imp.hash,
             imp.kind,
             imp.access,
             int(imp.type),
@@ -605,7 +658,35 @@ def _encode_imports(imports: list[Import]) -> bytes:
             len(imp.param_types),
         )
         out += bytes(int(t) for t in imp.param_types)
-    return bytes(out) + area
+    return bytes(out)
+
+
+def _encode_import_names(imports: list[Import]) -> bytes:
+    """The `hnam` section: what the `HOST` records no longer carry.
+
+    Ancillary on purpose. A device links by hash and has no use for
+    these; a disassembler, a diagnostic and a human reading a container
+    have nothing without them.
+    """
+    out = bytearray([len(imports)])
+    for imp in imports:
+        encoded = imp.name.encode("utf-8")
+        if len(encoded) > 255:
+            raise ValueError(f"import name longer than 255 bytes: {imp.name!r}")
+        out.append(len(encoded))
+        out += encoded
+    return bytes(out)
+
+
+def _decode_import_names(data: bytes, count: int) -> list[str]:
+    cur = _Cursor(data, IMPORT_NAMES_SECTION)
+    if cur.u8() != count:
+        raise refuse(
+            Refusal.MALFORMED_SECTION,
+            where=IMPORT_NAMES_SECTION,
+            detail="names for a different number of imports than HOST declares",
+        )
+    return [cur.bytes(cur.u8()).decode("utf-8", "replace") for _ in range(count)]
 
 
 def _decode_imports(data: bytes) -> list[Import]:
@@ -613,7 +694,7 @@ def _decode_imports(data: bytes) -> list[Import]:
     count = cur.u8()
     raw = []
     for i in range(count):
-        name_offset = cur.u16()
+        name_hash = cur.u32()
         kind = cur.u8()
         access = cur.u8()
         type_ = cur.type_code(allow_void=True)
@@ -651,23 +732,25 @@ def _decode_imports(data: bytes) -> list[Import]:
                 where=f"HOST record {i}",
                 detail=f"a function's access field must be zero, not 0x{access:02X}",
             )
-        raw.append((name_offset, kind, access, type_, dimension, params))
-    area = data[cur.pos :]
+        raw.append((name_hash, kind, access, type_, dimension, params))
     imports = [
         Import(
-            name=_read_string(area, name_offset, f"HOST record {i}"),
+            name="",
             kind=kind,
             access=access,
             type=type_,
             dimension=dimension,
             param_types=params,
+            name_hash=name_hash,
         )
-        for i, (name_offset, kind, access, type_, dimension, params) in enumerate(raw)
+        for name_hash, kind, access, type_, dimension, params in raw
     ]
 
-    seen: set[str] = set()
+    # Two records with one hash are two contradictory contracts for one
+    # host entry, exactly as two records with one name were.
+    seen: set[int] = set()
     for imp in imports:
-        if imp.name in seen:
-            raise refuse(Refusal.DUPLICATE_IMPORT, where=imp.name)
-        seen.add(imp.name)
+        if imp.hash in seen:
+            raise refuse(Refusal.DUPLICATE_IMPORT, where=f"0x{imp.hash:08X}")
+        seen.add(imp.hash)
     return imports

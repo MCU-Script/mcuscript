@@ -675,11 +675,68 @@ def test_every_group_set_compiles_clean_when_optimised(
         )
 
 
-def test_an_import_the_host_does_not_offer_is_refused_by_name(runner, tmp_path):
+def test_an_import_the_host_does_not_offer_is_refused_by_index(runner, tmp_path):
+    """By index, and it cannot be by name — that is the trade §4.4 makes.
+
+    The container carries a hash of the import's name and not the name,
+    and if the host does not offer it, the host has no entry to take a
+    name from either. So nobody at this end knows the word. The index is
+    what travels back, and whoever pushed the container has the source
+    and the `hnam` section to turn it into `nowhere`.
+    """
     source = PROFILE + ".entity read i32 nowhere dim 1\n.entry go\n  ret\n"
     result = run(runner, tmp_path, source, "entity read i32 elsewhere dim 1\n")
     assert result.refusal == "unknown_import"
-    assert result.refusal_subject == "nowhere"
+    assert result.refusal_subject is None
+    assert result.out.split()[3] == "0"  # import index
+
+
+def test_an_import_the_host_does_offer_is_still_refused_by_name(runner, tmp_path):
+    """The other half: once the entry is found, there is a name again.
+
+    Which is why the name went out of the container rather than out of
+    the diagnostics. Every refusal about an import the host *has* — the
+    signature ones, and they are the ones that carry information — still
+    says which one.
+    """
+    source = PROFILE + ".entity read i32 temp dim 1\n.entry go\n  ret\n"
+    result = run(runner, tmp_path, source, "entity read i32 temp dim 9\n")
+    assert result.refusal == "dimension_mismatch"
+    assert result.refusal_subject == "temp"
+
+
+def test_a_stripped_container_still_runs(runner, tmp_path):
+    """The end of the chain §4.4 exists for.
+
+    The toolchain's container carries names and hashes and is therefore
+    *larger* than the old one; `mcuscript strip` drops the names, and
+    what a device gets is smaller. This asserts the part that matters:
+    after the names are gone the imports still resolve, because the C
+    loader hashes the host's names and compares numbers.
+    """
+    from dataclasses import replace
+
+    from mcuscript.container import Container
+
+    source = (
+        PROFILE
+        + ".entity read i32 temp dim 1\n.entry go -> i32\n  load.h temp\n  ret_v\n"
+    )
+    full = assemble(source).encode()
+
+    container = Container.decode(full)
+    container.ancillary = []
+    container.imports = [
+        replace(i, name="", name_hash=i.hash) for i in container.imports
+    ]
+    stripped = container.encode(required_groups=container.required_groups)
+    assert len(stripped) < len(full)
+    assert b"temp" not in stripped
+
+    result = run(
+        runner, tmp_path, "", "entity read i32 temp dim 1 = 291\n", blob=stripped
+    )
+    assert result.result == ("i32", "291", "valid")
 
 
 def test_a_dimension_the_host_disagrees_with_is_refused(runner, tmp_path):

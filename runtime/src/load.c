@@ -123,11 +123,40 @@ static bool name_equals(mcuscript_str name, const char *zero_terminated)
 }
 
 /* ------------------------------------------------------------------
- * Import records, read in place
+ * Import records, read in place (§4.4)
+ *
+ * A record names its import by a **hash** and not by a string, so this
+ * file reads no import names and the container carries none. The names
+ * live in the ancillary `hnam` section for the tools that want them,
+ * and an ancillary section is one a loader walks past (§2.3).
  */
 
+#define IMPORT_HASH 0
+#define IMPORT_KIND 4
+#define IMPORT_ACCESS 5
+#define IMPORT_TYPE 6
+#define IMPORT_DIMENSION 7
+#define IMPORT_PARAM_COUNT 9
+#define IMPORT_PARAM_TYPES 10
+#define IMPORT_RECORD_SIZE 10u
+
+/*
+ * FNV-1a over the name's UTF-8 bytes (§4.4). The specification names
+ * the function rather than leaving it to the implementation, because
+ * the container carries the result and every reader has to arrive at
+ * the same number.
+ */
+static uint32_t name_hash(const char *name)
+{
+	uint32_t h = 0x811C9DC5u;
+	for (const unsigned char *p = (const unsigned char *)name; *p != '\0'; p++) {
+		h ^= (uint32_t)*p;
+		h *= 0x01000193u;
+	}
+	return h;
+}
+
 typedef struct {
-	mcuscript_str name;
 	uint8_t kind;
 	uint8_t access;
 	uint8_t type;
@@ -139,14 +168,12 @@ typedef struct {
 static void import_at(const mcuscript_program *program, uint8_t index, import_view *out)
 {
 	const uint8_t *record = program->imports + program->import_offsets[index];
-	out->kind = record[2];
-	out->access = record[3];
-	out->type = record[4];
-	out->dimension = read_u16(record + 5);
-	out->parameter_count = record[7];
-	out->parameter_types = record + 8;
-	out->name.bytes = NULL;
-	out->name.length = 0;
+	out->kind = record[IMPORT_KIND];
+	out->access = record[IMPORT_ACCESS];
+	out->type = record[IMPORT_TYPE];
+	out->dimension = read_u16(record + IMPORT_DIMENSION);
+	out->parameter_count = record[IMPORT_PARAM_COUNT];
+	out->parameter_types = record + IMPORT_PARAM_TYPES;
 }
 
 /* ------------------------------------------------------------------
@@ -262,18 +289,16 @@ static bool load_imports(mcuscript_program *program, section table,
 
 	uint32_t offset = 1;
 	for (uint8_t i = 0; i < count; i++) {
-		if (offset + 8u > table.length)
+		if (offset + IMPORT_RECORD_SIZE > table.length)
 			return fail(diagnostic, MCUSCRIPT_MALFORMED_SECTION, offset);
-		uint8_t parameters = table.data[offset + 7];
-		if (offset + 8u + parameters > table.length)
+		uint8_t parameters = table.data[offset + IMPORT_PARAM_COUNT];
+		if (offset + IMPORT_RECORD_SIZE + parameters > table.length)
 			return fail(diagnostic, MCUSCRIPT_MALFORMED_SECTION, offset);
 		if (parameters > MCUSCRIPT_MAX_PARAMETERS)
 			return fail(diagnostic, MCUSCRIPT_BUILD_LIMIT, parameters);
 		program->import_offsets[i] = (uint16_t)offset;
-		offset += 8u + parameters;
+		offset += IMPORT_RECORD_SIZE + parameters;
 	}
-	program->import_names = table.data + offset;
-	program->import_names_length = table.length - offset;
 	return true;
 }
 
@@ -345,6 +370,11 @@ static bool load_functions(mcuscript_program *program, section table,
  * and it stays for the same reason the header checks do: an import the
  * host does not offer, or offers with another signature, means this
  * container was built against a different firmware. That is identity.
+ *
+ * Matching is by hash. The host still declares its names as strings —
+ * an embedder writes that table by hand — so they are hashed here, once
+ * per candidate. What the container no longer carries is the string it
+ * would be compared against.
  */
 
 static bool link_imports(mcuscript_program *program, const mcuscript_host *host,
@@ -353,23 +383,28 @@ static bool link_imports(mcuscript_program *program, const mcuscript_host *host,
 	for (uint8_t i = 0; i < program->import_count; i++) {
 		import_view imp;
 		import_at(program, i, &imp);
-		mcuscript_str name;
-		if (!read_name(program->import_names, program->import_names_length,
-			       read_u16(program->imports + program->import_offsets[i]),
-			       &name))
-			return fail(diagnostic, MCUSCRIPT_MALFORMED_SECTION, i);
+		uint32_t wanted =
+			read_u32(program->imports + program->import_offsets[i] + IMPORT_HASH);
 
 		uint8_t found = 0xFF;
 		for (uint8_t h = 0; h < host->import_count; h++) {
-			if (name_equals(name, host->imports[h].name)) {
+			if (name_hash(host->imports[h].name) == wanted) {
 				found = h;
 				break;
 			}
 		}
+		/* There is no name to report: the container does not carry one
+		 * and the host has no entry to take one from. The index is
+		 * what the pusher needs, and it has the source. */
 		if (found == 0xFF)
-			return fail_named(diagnostic, MCUSCRIPT_UNKNOWN_IMPORT, i, name);
+			return fail(diagnostic, MCUSCRIPT_UNKNOWN_IMPORT, i);
 
 		const mcuscript_import *decl = &host->imports[found];
+		/* From here on there *is* a name to report: the host has the
+		 * entry, and a signature mismatch is worth naming. */
+		size_t name_length = strlen(decl->name);
+		mcuscript_str name = { decl->name,
+				       (uint8_t)(name_length > 255u ? 255u : name_length) };
 		if (decl->kind != imp.kind)
 			return fail_named(diagnostic, MCUSCRIPT_KIND_MISMATCH, i, name);
 		if (decl->type != imp.type)
@@ -482,16 +517,17 @@ uint32_t mcuscript_constant_f32_bits(const mcuscript_program *program, uint8_t i
 
 uint8_t mcuscript_import_type(const mcuscript_program *program, uint8_t index)
 {
-	return program->imports[program->import_offsets[index] + 4];
+	return program->imports[program->import_offsets[index] + IMPORT_TYPE];
 }
 
 uint8_t mcuscript_import_parameter_count(const mcuscript_program *program, uint8_t index)
 {
-	return program->imports[program->import_offsets[index] + 7];
+	return program->imports[program->import_offsets[index] + IMPORT_PARAM_COUNT];
 }
 
 uint8_t mcuscript_import_parameter_type(const mcuscript_program *program, uint8_t index,
 					uint8_t parameter)
 {
-	return program->imports[program->import_offsets[index] + 8 + parameter];
+	return program->imports[program->import_offsets[index] + IMPORT_PARAM_TYPES +
+				parameter];
 }

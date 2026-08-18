@@ -99,7 +99,7 @@ differential tests.
 ## What it costs
 
 Measured on linked images, not estimated: the engine is **3.1 KB of
-flash** on a Cortex-M33 for an expression-only build and **5.7 KB** with
+flash** on a Cortex-M33 for an expression-only build and **5.6 KB** with
 every instruction group, no static RAM, and about 1 KB the embedder
 declares for a loaded program and its slots. On a Cortex-M0+, which has
 neither a divide instruction nor an FPU, the full build is 8.8 KB — the

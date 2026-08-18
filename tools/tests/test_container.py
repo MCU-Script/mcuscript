@@ -6,12 +6,14 @@ from __future__ import annotations
 
 import struct
 import zlib
+from dataclasses import replace
 
 import pytest
 
 from mcuscript.asm import assemble
 from mcuscript.container import (
     HEADER_SIZE,
+    IMPORT_NAMES_SECTION,
     Access,
     Constant,
     Container,
@@ -19,6 +21,7 @@ from mcuscript.container import (
     Import,
     ImportKind,
     Section,
+    fnv1a32,
 )
 from mcuscript.errors import Refusal, Refused
 from mcuscript.opcodes import Group, ValType
@@ -250,3 +253,55 @@ def test_a_function_record_carries_its_invocability():
     )
     back = Container.decode(container.encode())
     assert [f.invocable for f in back.functions] == [True, False]
+
+
+# -- import names, and their absence --------------------------------------
+
+
+def test_the_name_hash_is_the_one_the_specification_names():
+    """FNV-1a 32-bit, pinned by known answers rather than by our own code.
+
+    The container carries this number and a C loader recomputes it, so
+    an implementation that got the algorithm subtly wrong — the offset
+    basis, the order of the xor and the multiply — would link nothing
+    and say `unknown_import` about everything. These vectors are the
+    published ones for FNV-1a.
+    """
+    assert fnv1a32("") == 0x811C9DC5
+    assert fnv1a32("a") == 0xE40C292C
+    assert fnv1a32("foobar") == 0xBF9CF968
+
+
+def test_an_import_record_carries_no_name():
+    container = Container(
+        code=b"\x23",
+        functions=[Function("go", 0)],
+        imports=[Import("fan.speed", ImportKind.ENTITY, Access.WRITE, ValType.I32, 2)],
+    )
+    blob = container.encode(required_groups=Group.CORE.mask)
+    host = blob[blob.index(b"HOST") : blob.index(IMPORT_NAMES_SECTION.encode())]
+    assert b"fan.speed" not in host
+    assert b"fan.speed" in blob  # in `hnam`, which is ancillary
+
+
+def test_a_container_without_names_still_links_by_hash():
+    """What a device gets after `mcuscript strip`.
+
+    The names are gone, the hashes are not, and the import resolves to
+    the same host entry — which is the whole claim of §4.4.
+    """
+    container = Container(
+        code=b"\x23",
+        functions=[Function("go", 0)],
+        imports=[Import("fan.speed", ImportKind.ENTITY, Access.WRITE, ValType.I32, 2)],
+    )
+    stripped = Container.decode(container.encode(required_groups=Group.CORE.mask))
+    stripped.ancillary = []
+    stripped.imports = [replace(i, name="", name_hash=i.hash) for i in stripped.imports]
+    blob = stripped.encode(required_groups=Group.CORE.mask)
+
+    assert b"fan.speed" not in blob
+    assert len(blob) < len(container.encode(required_groups=Group.CORE.mask))
+    back = Container.decode(blob)
+    assert back.imports[0].name == ""
+    assert back.imports[0].hash == fnv1a32("fan.speed")

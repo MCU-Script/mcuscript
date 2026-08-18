@@ -208,14 +208,14 @@ verifier; the figures the verifier was still in are two paragraphs down.
 
 | group set | cortex-m0+ | cortex-m4f | cortex-m33 |
 |---|---:|---:|---:|
-| full | 8,834 | 5,652 | 5,652 |
-| no i64 | 7,618 | 4,220 | 4,220 |
-| no i64 division | 8,130 | 4,572 | 4,572 |
-| no float | 5,282 | 5,172 | 5,180 |
-| no call | 8,474 | 5,324 | 5,324 |
-| no bits | 8,594 | 5,420 | 5,420 |
-| expressions + float | 7,090 | 3,724 | 3,724 |
-| expressions only | 3,546 | 3,132 | 3,132 |
+| full | 8,786 | 5,596 | 5,596 |
+| no i64 | 7,578 | 4,164 | 4,172 |
+| no i64 division | 8,090 | 4,524 | 4,524 |
+| no float | 5,242 | 5,124 | 5,124 |
+| no call | 8,434 | 5,276 | 5,276 |
+| no bits | 8,546 | 5,372 | 5,372 |
+| expressions + float | 7,042 | 3,668 | 3,676 |
+| expressions only | 3,482 | 3,084 | 3,084 |
 
 **What each group costs on cortex-m33**, as full minus that group:
 `i64` 1,432 (25 %), of which **`i64div` alone is 1,080 (19 %)**;
@@ -236,7 +236,7 @@ clearest statement of what verification was costing:
 |---|---:|---:|
 | full | 10,525 | **5,652** |
 | expressions only | 7,375 | **3,132** |
-| `load.c` | 5,912–6,542 | **1,669, flat** |
+| `load.c` | 5,912–6,542 | **1,617, flat** |
 | `mcuscript_program` | 436 B | 380 B |
 | stack while loading | 732 B | 192 B |
 
@@ -255,12 +255,12 @@ cheaper than it was:
 
 | | load.c | vm.c | names.c | own total | linked |
 |---|---:|---:|---:|---:|---:|
-| full | 1,669 | 3,112 | 867 | 5,648 | 5,652 |
-| expressions + float | 1,669 | 2,080 | 867 | 4,616 | 3,724 |
-| expressions only | 1,669 | 1,504 | 867 | 4,040 | 3,132 |
+| full | 1,617 | 3,112 | 867 | 5,596 | 5,596 |
+| expressions + float | 1,617 | 2,080 | 867 | 4,564 | 3,676 |
+| expressions only | 1,621 | 1,504 | 867 | 3,992 | 3,084 |
 
 ADR 0006 estimated ~2.1 KB expression-only and ~4 KB complete. The real
-figures are 3.1 KB and 5.7 KB, so that estimate was **a kilobyte too
+figures are 3.1 KB and 5.6 KB, so that estimate was **a kilobyte too
 optimistic** — worth recording, because it was an estimate made from the
 attribution table rather than from a build, which is exactly the kind of
 number this document exists to stop trusting.

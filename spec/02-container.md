@@ -108,6 +108,7 @@ Defined in version 1:
 | `CNST` | critical | the constant pool |
 | `ENTR` | critical | entry points, with their static resource requirements |
 | `HOST` | critical | the import table: the entities and host functions this program refers to |
+| `hnam` | ancillary | the import names a `HOST` record replaces with a hash (§4.4.2) |
 | `dbug` | ancillary | source line mapping and names, for diagnostics |
 | `note` | ancillary | free-form text; ignored |
 
