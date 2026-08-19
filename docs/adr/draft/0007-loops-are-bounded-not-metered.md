@@ -146,7 +146,7 @@ gets them, and it is not worth designing the bytecode twice.
   the loop bound is an ordinary local the producer initialises. Both are
   right for their case, but a later version might notice they are one
   concept and say so once. The surface language does say so, with one
-  word for both: `limit` (ADR 0009, decisions 12 and 13).
+  word for both: `limit` (ADR 0009, the two decisions about bounds).
 - ~~**Whether a producer must write the bound**~~ — **answered by
   ADR 0009, and the shape proposed here was wrong.** This entry read:
   *"the compiler emits no guard at all when it can see the count

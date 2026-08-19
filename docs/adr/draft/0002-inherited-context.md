@@ -778,6 +778,14 @@ come from how non-developers actually think:
   integer division (`3 / 2 = 1` is simply wrong to a layman — make `/`
   always float and `//` or `div` integer); no silent coercions. The
   error must **explain**, not just report.
+
+  *Answered 2026-08-18 (ADR 0009), and the second half differently than
+  proposed here.* There is one `/` and no second spelling: `3 / 2` is
+  `1.5`, but a **dimensioned** division stays in its dimension's
+  declared data type, because a profile's data type and base unit are
+  one statement of how fine the quantity is. Truncating to it is not the
+  language losing precision; a profile author who wants the half-step
+  declares a finer base unit.
 - **Error messages budgeted as a core feature**: *"Did you mean
   `fan.speed`? There is no `fan.sped`"*, with a Levenshtein
   suggestion drawn from the known entity names, is worth more to this

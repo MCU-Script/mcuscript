@@ -69,9 +69,9 @@ embedder's to choose in ASCII.
 The keywords are
 
 ```
-and     break   catch  continue  div     else   false  fn
-for     if      in     invalid   is      let    limit  match
-mod     not     on     or        return  true   try    unavailable
+and     break   catch  continue  else    false  fn     for
+if      in      invalid  is      let     limit  match  mod
+not     on      or       return  true    try    unavailable
 while
 ```
 
@@ -119,9 +119,14 @@ colliding with an operator — there is no `%` operator, modulo is `mod`
 `5min`: the first is two tokens and an error, and the error says so.
 
 A suffix is an identifier-shaped word, or one of the non-letter forms a
-profile may declare (`%`, `°C`, `°F`). Which suffixes exist, what
+profile may declare — `%`, `‰`, `°C`, `°F`. Which suffixes exist, what
 dimension each belongs to and what it normalizes to is **the profile's**
 (§6.5.4). The language defines that suffixes exist and how they lex.
+
+The profile's suffix table therefore extends the set of characters
+§6.1.1 permits in source, and only there: `‰` is a suffix where a
+profile declares it and an error everywhere else. That is the one place
+a profile reaches into the lexer, and it reaches no further.
 
 ### 6.1.6 Duration literals — built
 
@@ -205,7 +210,7 @@ stages are in §6.10.
 (   )   {   }   [   ]   ,   .   ->   ..   :   @   #
 ```
 
-Word-spelled operators — `and`, `or`, `not`, `div`, `mod`, `is`, `else`,
+Word-spelled operators — `and`, `or`, `not`, `mod`, `is`, `else`,
 `limit`, `in` — are keywords, not punctuation, and §6.3 says why each is a
 word.
 
@@ -313,7 +318,7 @@ Tightest first. Every level is left-associative except where noted.
 |---|---|---|
 | 1 | `f(…)`  `a.b`  `a[i]` | postfix |
 | 2 | `-`  `~` | unary |
-| 3 | `*`  `/`  `div`  `mod` | |
+| 3 | `*`  `/`  `mod` | |
 | 4 | `+`  `-` | |
 | 5 | `<<`  `>>` | |
 | 6 | `&` | |
@@ -341,22 +346,51 @@ class of quiet wrongness this language refuses.
 
 ### 6.3.2 Arithmetic — built
 
-`+  -  *  /  div  mod`, with the semantics of §1.5 — wrapping integers,
+`+  -  *  /  mod`, with the semantics of §1.5 — wrapping integers,
 IEEE-754 single precision, division by zero yielding `invalid`.
 
-**`/` is division as a layman means it, and `div` is integer division.**
-`3 / 2` is `1.5`. Getting `1` from an expression that reads as a half is
-the single most common surprise in every language that overloads the
-slash, and this audience has no reason to expect it. The integer pair is
-spelled in words — `div` and `mod` — matching `and`/`or`/`not`, and
-because `%` is spent on the percent suffix (§6.1.5).
+**There is one division, and it is spelled `/`.** An earlier draft of
+this chapter had a second one, `div`, for the integer case. That was a
+mistake, and the argument against it is the one this language makes
+everywhere else: `+` has a single spelling and lowers to `ADD.i32` or
+`ADD.f32` according to its operands, and `/` lowers to `DIV.i32` or
+`DIV.f32` in exactly the same way. The instruction set always had that
+symmetry; only the surface language had broken it.
 
-Two consequences are stated rather than left to be discovered. A script
-that divides needs the `float` instruction group, and a build without it
-refuses such a container at load (§2.5). And an `f32` never lands in an
-integer place implicitly: assigning `5 / 2` to an integer entity is an
-error naming `round(…)` and `trunc(…)`, because 2 is not what the writer
-of `5 / 2` meant and neither is 3 without them saying so.
+What `a / b` produces follows from one rule, stated in full in §6.5.5:
+
+> **The data type follows the dimension.** A dimensioned result carries
+> the data type its profile declared. A result with no dimension has no
+> declared resolution either, so a division that produces one produces a
+> decimal.
+
+The two halves are the same idea from two sides. A profile declaring a
+dimension states its data type and its base unit together (§6.5.4), and
+that declaration **is** the statement of how fine the quantity is. A
+profile holding temperature as whole tenths of a degree has said that
+0.05 °C is not a temperature it represents — so `27.9°C / 2` is
+`13.9°C`, truncated to the resolution the profile declared, and there is
+nothing here for the language to paper over. A profile author who wants
+the half-step declares hundredths as the base unit instead. That is a
+decision taken once, by the one person in the chain who can judge it,
+and it is visible where it is taken.
+
+A bare number carries no such declaration, so `7 / 2` is `3.5` — the
+answer everyone outside a programming language expects, and the one this
+language gives. Where a whole number is wanted from it, `trunc(…)` and
+`round(…)` say which.
+
+Two consequences worth stating rather than leaving to be discovered.
+**Dimensioned arithmetic never needs the `float` instruction group**; a
+dimensionless division does, because its result is a decimal, and a
+build without the group refuses such a container at load (§2.5). And an
+`f32` still never lands in an integer place implicitly — but after this
+rule that case is rare, because a dimensioned expression stays in its
+dimension's type all the way to the entity it is written to.
+
+`mod` is spelled as a word because `%` is spent on the percent suffix
+(§6.1.5), and for no other reason. It is not the partner of a `div` that
+does not exist.
 
 ### 6.3.3 Comparison and boolean — built
 
@@ -572,8 +606,8 @@ total += reading
 
 The place on the left is a local, a parameter or a writable import.
 Compound assignment exists for the infix arithmetic operators — `+=`,
-`-=`, `*=`, `/=` — and not for the word-spelled ones, because `x div= 2`
-is not something anyone should have to read.
+`-=`, `*=`, `/=` — and not for `mod`, because `x mod= 2` is not
+something anyone should have to read.
 
 **Assignment is a statement and never an expression.** `if x = 5 { … }`
 is a syntax error whose message says that `=` assigns, `==` compares,
@@ -640,9 +674,10 @@ expression yields nothing.
 
 ## 6.5 Types, dimensions and inference
 
-### 6.5.1 Nothing is annotated — built
+### 6.5.1 Almost nothing is annotated — built
 
-A script contains no type declarations. Every type is inferred, and the
+A script declares no types, except at the one place where inference has
+nothing to work from (§6.5.3). Everything else is inferred, and the
 program is closed — every function and every import is visible at
 compile time — so inference is a whole-program computation with no
 guessing in it.
@@ -667,25 +702,75 @@ function no entry point reaches is already not expressible as a
 conforming container (§2.6.1), and the error for it says so before
 inference ever runs out of information.
 
-### 6.5.3 Annotations — planned
+### 6.5.3 Annotations — built
 
-The spelling is reserved: `let x: i32 = 0`, `fn f(c: f32) { … }`. They
-exist for diagnostics rather than for inference — a written type turns a
-puzzling error somewhere downstream into a plain disagreement at the
-line the author wrote — and they will never be required.
+```
+let total: i64 = 0
+let target: temperature = 20°C
+fn scaled(factor: f32) { … }
+```
+
+An annotation **pins** a type. It does not steer a computation, and that
+difference is load-bearing: `let x: i32 = 27.9°C / 2` is an error rather
+than a quiet truncation, and `let x: f32 = count / 2` is an error naming
+the conversion rather than a silent widening of `count`. An annotation
+can only agree or disagree with what the expression already means.
+
+They are almost never needed, because inference sees the whole program.
+The case that makes them necessary is the one nothing else can express:
+**a local whose type nothing determines.**
+
+```
+let total: i64 = 0
+```
+
+Without the annotation `0` is an `i32`, and the only way to say
+otherwise would be to assign a fictitious enormous number and overwrite
+it on the next line. That is absurd, so the annotation exists. The same
+argument covers a `f32` accumulator starting at zero.
+
+**A dimension is a type.** What may stand after the colon is one of the
+four dimensionless types — `i32`, `i64`, `f32`, `bool` — or the name of
+a dimension the profile declares. The two are not interchangeable, and
+this holds *even when the dimension's declared data type is the same
+one*:
+
+```
+let x: i32 = 20°C          # error
+```
+
+A temperature is not an `i32`, for the same reason it is not a
+kilometre. The storage a profile chose for it is the profile's business
+and not a second name for the quantity — which is the same rule
+`if temp > 5min` already enforces on comparison, applied to storage.
+Without it a dimension would be a decoration that any assignment could
+rub off.
 
 Reserving `:` for this is why §6.1.7 puts date and time literals inside
 quotes. Before that decision the colon was spent on `13:25` and
 annotations had nowhere to go.
 
+`i32`, `i64`, `f32` and `bool` are **not keywords** (§6.1.3). They are
+recognised in a type position and are ordinary identifiers everywhere
+else — the same arrangement `valid` has after `is`, and for the same
+reason: a word that only means something in one position should not be
+taken out of circulation everywhere.
+
 ### 6.5.4 Dimensions come from the profile — built
 
 A dimension is a data type, a named base unit, a set of units with a
-factor and an optional offset, and optionally a mark that the dimension
-is **cyclic**. **The language defines none of them** (ADR 0008): not
-temperature, not percent, and not time. It defines the notations —
-suffixes (§6.1.5), duration literals (§6.1.6) and date-and-time literals
-(§6.1.7) — and a profile gives them meaning.
+factor and an optional offset, and optionally a mark that it is
+**cyclic** (§6.5.6) or a **scale factor** (§6.5.5.1). **The language
+defines none of them** (ADR 0008): not temperature, not percent, and not
+time. It defines the notations — suffixes (§6.1.5), duration literals
+(§6.1.6) and date-and-time literals (§6.1.7) — and a profile gives them
+meaning.
+
+The data type and the base unit are one statement, not two. Together
+they say how fine the quantity is, and every arithmetic result in that
+dimension carries them (§6.5.5) — so a profile that declares tenths of a
+degree in an `i32` has said, once and where it can be judged, that
+0.05 °C does not exist in its world.
 
 Consequences worth stating outright:
 
@@ -709,17 +794,32 @@ for it would cost every diagnostic its readability.
 
 | | Rule |
 |---|---|
-| `a + b`, `a - b` | same dimension; result that dimension |
-| `a * b` | at most one side dimensioned; result that dimension |
-| `a / b`, `a div b` | dimensioned by dimensionless → that dimension; two of the same dimension → dimensionless |
+| `a + b`, `a - b` | same dimension → that dimension; a **scale factor** on the right → relative change (§6.5.5.1) |
+| `a * b` | at most one side dimensioned → that dimension; a scale factor on either side → the other side's dimension |
+| `a / b` | dimensioned by dimensionless or by a scale factor → that dimension; two of the same dimension → **dimensionless** |
 | `a mod b` | same dimension → that dimension; dimensioned by dimensionless → that dimension |
 | comparison | same dimension |
-| bitwise, shifts | dimensionless only |
+| bitwise, shifts | dimensionless integers only |
+
+And over the whole table, one rule about the result's **data type**:
+
+> A result that has a dimension carries that dimension's declared data
+> type. A result that has none carries the type of its operands, except
+> that a division produces `f32`.
+
+That is what makes `(a + b) / 2` on two temperatures a temperature —
+computed in base units, truncated to the profile's declared resolution,
+and written straight to an entity with nothing in between. And it is
+what makes `current / baseline` on two temperatures a decimal: the
+dimensions cancel, so nothing is left to declare a resolution, and a
+ratio compared against `0.8` is exactly the case that wants a fraction.
 
 Multiplying two dimensioned values is an error rather than a new
-dimension. So is comparing across dimensions, which is where the feature
-earns its place: `if temp > 5min` is caught at compile time and the
-message names both sides.
+dimension, with the single exception of a scale factor, which has no
+dimension in the physical sense and leaves the other operand's alone. So
+is comparing across dimensions, which is where the feature earns its
+place: `if temp > 5min` is caught at compile time and the message names
+both sides.
 
 The known imprecision is stated rather than hidden. A point on a scale
 and a difference on that scale are different things — 25°C plus 25°C is
@@ -727,6 +827,47 @@ nonsense, 25°C plus a 2°C rise is not — and this table does not model the
 distinction. Modelling it properly is a research language's job; what
 this one does is allow addition and subtraction, forbid multiplying two
 dimensioned values, and leave the remaining nonsense to the reader.
+
+#### 6.5.5.1 Scale factors — built; the table is the profile's
+
+A profile may declare a dimension to be a **scale factor**: a quantity
+that is a pure ratio, whose units are spellings for a multiplier — `%`
+for a hundredth, `‰` for a thousandth, `ppm` for a millionth, and
+whatever else that profile needs. The language declares none of them
+(ADR 0008); what it defines is what a scale factor *does*.
+
+| Written | Means |
+|---|---|
+| `x * 5%` | five percent of `x` |
+| `x / 5%` | `x` divided by 0.05 |
+| `x + 5%` | `x` increased by five percent — the same as `x * 105%` |
+| `x - 5%` | `x` decreased by five percent |
+| `5% + 3%` | `8%` — two values of one dimension, added |
+| `50% * 50%` | `25%` |
+
+Three rules keep that unambiguous, and each of them is a place where
+guessing would have been the alternative.
+
+**Same dimension wins.** Where both sides are scale factors, `+` and `-`
+are ordinary addition within one dimension: `50% + 5%` is `55%`, never
+`52.5%`. The relative reading applies only where the left side is
+something else.
+
+**A bare number is not a scale factor.** `x * 1.05` stays legal, as a
+dimensionless multiplier always was, and `x + 0.05` stays an error. The
+suffix is what says *relative*; with no suffix there is no such
+statement, and inventing one would be exactly the silent behaviour this
+language refuses.
+
+**`+` and `-` are not commutative here.** `x + 5%` is a relative
+increase; `5% + x` is refused. The two are not one expression written in
+two orders — the second asks what a temperature added to a ratio is, and
+there is no answer to give.
+
+The result keeps the left operand's dimension and therefore its data
+type, so `light.brightness * 50%` is a brightness, truncated to whatever
+resolution the profile declared for it, and goes to the entity with
+nothing in between.
 
 ### 6.5.6 Cyclic dimensions — built
 
@@ -827,9 +968,9 @@ before.
 Most of this chapter's rules exist to make a compile error possible
 where another language would have produced a plausible wrong answer:
 `=` where `==` was meant, a chained comparison, a bare number beside a
-dimensioned one, an assignment to an undeclared name, `/` where `div`
-was meant, a missing `else` in a `match`. Each of those is a place where
-this document chose the error.
+dimensioned one, an assignment to an undeclared name, a temperature
+stored in an `i32`, a missing `else` in a `match`. Each of those is a
+place where this document chose the error.
 
 That choice is only worth anything if the message is worth reading, so
 three obligations fall on a conforming compiler:
@@ -1008,7 +1149,9 @@ program        = { SEP } , ( declaration , { SEP , declaration } | expression ) 
 declaration    = entry | function ;
 entry          = "on" , identifier , block ;
 function       = "fn" , identifier , "(" , [ params ] , ")" , [ "limit" , integer ] , block ;
-params         = identifier , { "," , identifier } ;
+params         = param , { "," , param } ;
+param          = identifier , [ ":" , type ] ;
+type           = "i32" | "i64" | "f32" | "bool" | identifier ;
 
 block          = "{" , { SEP } , [ statement , { SEP , statement } , { SEP } ] , "}" ;
 statement      = local | assignment | expression
@@ -1035,7 +1178,7 @@ bit_xor        = bit_and , { "^" , bit_and } ;
 bit_and        = shift ,   { "&" , shift } ;
 shift          = additive , { ( "<<" | ">>" ) , additive } ;
 additive       = multiplicative , { ( "+" | "-" ) , multiplicative } ;
-multiplicative = unary , { ( "*" | "/" | "div" | "mod" ) , unary } ;
+multiplicative = unary , { ( "*" | "/" | "mod" ) , unary } ;
 unary          = ( "-" | "~" ) , unary | postfix ;
 postfix        = primary , { "(" , [ args ] , ")" | "[" , index , "]" } ;
 index          = expression | range ;
@@ -1056,7 +1199,9 @@ datetime       = "@" , string ;
 
 `valid`, `unavailable` and `invalid` after `is` are contextual: only
 `unavailable` and `invalid` are keywords (§6.1.3), and `valid` is an
-ordinary identifier everywhere else.
+ordinary identifier everywhere else. The four type names in `type` are
+contextual for the same reason, and `identifier` there is a dimension
+name the profile declares.
 
 The one ambiguity the grammar does not resolve on its own is
 `match`'s last pattern alternative against a range, and it is resolved
@@ -1068,11 +1213,12 @@ an equality arm against `24`.
 M3 implements the constructs marked **built**: the lexical structure
 including unit suffixes, duration literals and `@"…"`; expressions with
 the precedence of §6.3.1; `if`, `match` and `else`; locals, assignment,
-host reads, writes and calls; `for` over a range with `break` and
-`continue`; functions with the recursion cap; whole-program type and
-dimension inference; and the diagnostics of §6.7.
+type annotations, host reads, writes and calls; `for` over a range with
+`break` and `continue`; functions with the recursion cap; whole-program
+type and dimension inference including scale factors; and the
+diagnostics of §6.7.
 
-It does not implement strings, arrays, objects, `while`, `try`/`catch`,
-type annotations or the two-operand built-ins. Those are **planned**,
-their spellings are reserved by §6.1.3 and §6.1.9, and the container
-additions two of them need are named in §6.13.
+It does not implement strings, arrays, objects, `while`, `try`/`catch`
+or the two-operand built-ins. Those are **planned**, their spellings are
+reserved by §6.1.3 and §6.1.9, and the container additions two of them
+need are named in §6.13.
