@@ -534,8 +534,9 @@ A range is not a value. It appears in `match` patterns (§6.3.5), in `for`
 The language has a small set of functions that are not imports:
 
 ```
-round(x)   trunc(x)   abs(x)          # built
-min(a, b)  max(a, b)                   # planned
+round(x)   trunc(x)   abs(x)                     # built
+to_i32(x)  to_i64(x)  to_f32(x)  to_unit(x, u)   # built — §6.3.10
+min(a, b)  max(a, b)                             # planned
 ```
 
 They are **compile-time expansions**: each lowers to instructions, and
@@ -571,6 +572,47 @@ functions most scripts never call.
 The bound in §6.2.4 and §6.4.4 is spelled `limit` and not `max` for
 exactly this reason. One word may not be two things, and of the two,
 `max` is the one that is already in everybody's fingers.
+
+### 6.3.10 Crossing between a dimension and a number — built
+
+A script sometimes has to leave the dimension system: to index an array
+with a reading, to hand a raw number to a host function that takes one,
+or to build a quantity out of a number that arrived without one. Four
+built-ins do it, and they are the **only** way — no operator converts,
+and nothing is implicit.
+
+```
+to_i32(x, °C)      to_i64(x, °C)      to_f32(x, °C)
+to_unit(n, °C)
+```
+
+`to_i32(x, °C)` is *"give me this quantity as a number of °C"*, and
+`to_unit(n, °C)` is its inverse, *"this number is that many °C"*. For a
+value that has no dimension the unit is omitted and the built-in is a
+plain conversion between `i32`, `i64` and `f32`.
+
+**The unit is named, and a base unit is never assumed.** That is the
+whole design of these four, and the reason is §1.4: base units are the
+profile's, they may change between profile versions, and a script that
+said `to_i32(temp)` would be silently reinterpreting its own numbers the
+day a profile moved from tenths to hundredths of a degree. Naming the
+unit makes the script say what it means, and makes it survive that
+change. A profile whose scaling matches none of its declared units has
+a profile-format problem, not a script one.
+
+Two rules keep them honest:
+
+- **A conversion that would need rounding is refused**, naming
+  `round(…)` and `trunc(…)`. `to_i32(x, °C)` where the quantity is
+  32.5 °C is an error, because which of 32 and 33 was wanted is not the
+  compiler's to guess.
+- **The unit argument is required exactly when the operand has a
+  dimension.** `to_f32(count, °C)` and `to_i32(temp)` are both errors,
+  and each says which half is wrong.
+
+They need nothing new from the container: a unit factor is a compile-time
+multiply or divide, and `CONVERT.i32_f32`, `TRUNC.f32_i32`,
+`EXTEND.i32_i64` and `WRAP.i64_i32` already exist (§3.4, §3.5).
 
 ## 6.4 Statements
 
@@ -1182,7 +1224,8 @@ multiplicative = unary , { ( "*" | "/" | "mod" ) , unary } ;
 unary          = ( "-" | "~" ) , unary | postfix ;
 postfix        = primary , { "(" , [ args ] , ")" | "[" , index , "]" } ;
 index          = expression | range ;
-args           = expression , { "," , expression } ;
+args           = arg , { "," , arg } ;
+arg            = expression | unit ;
 primary        = number | duration | datetime | string | "true" | "false"
                | name | "(" , expression , ")" | if_expr | match_expr ;
 
@@ -1196,6 +1239,11 @@ name           = identifier , { "." , identifier } ;
 duration       = number_with_unit , { number_with_unit } ;
 datetime       = "@" , string ;
 ```
+
+`unit` appears in an argument position only for the four conversions of
+§6.3.10, where it is a unit spelling from the profile rather than an
+expression. Everywhere else a unit exists only glued to a number
+(§6.1.5).
 
 `valid`, `unavailable` and `invalid` after `is` are contextual: only
 `unavailable` and `invalid` are keywords (§6.1.3), and `valid` is an
@@ -1215,8 +1263,8 @@ including unit suffixes, duration literals and `@"…"`; expressions with
 the precedence of §6.3.1; `if`, `match` and `else`; locals, assignment,
 type annotations, host reads, writes and calls; `for` over a range with
 `break` and `continue`; functions with the recursion cap; whole-program
-type and dimension inference including scale factors; and the
-diagnostics of §6.7.
+type and dimension inference including scale factors; the conversions
+of §6.3.10; and the diagnostics of §6.7.
 
 It does not implement strings, arrays, objects, `while`, `try`/`catch`
 or the two-operand built-ins. Those are **planned**, their spellings are

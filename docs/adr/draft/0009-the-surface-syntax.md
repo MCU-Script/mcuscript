@@ -154,7 +154,25 @@ and it turned out to need four instructions, all small, all in `core`.
     dimensioned values, and it is not really one: a ratio has no
     dimension in the physical sense, so `50% * 50%` is `25%` and
     `27°C * 105%` leaves the temperature a temperature.
-13. **`and` and `or` do not short-circuit.** Short-circuiting means
+13. **Four built-ins cross between a dimension and a number, and they
+    name the unit.** `to_i32(x, °C)`, `to_i64`, `to_f32` and the inverse
+    `to_unit(n, °C)`; the unit is omitted for a value that has none, and
+    then they are plain conversions between the numeric types. Nothing
+    else converts, in either direction.
+
+    The unit argument is the decision, not the functions. `to_i32(temp)`
+    would have to mean *the base-unit number*, and §1.4 says base units
+    belong to the profile and may change between its versions — so such
+    a script would silently reinterpret its own numbers the day a
+    profile moved from tenths to hundredths of a degree. That is exactly
+    the failure §1.4 exists to prevent, and it would have been
+    reintroduced by a convenience. A conversion that would need rounding
+    is refused and names `round(…)` and `trunc(…)`.
+
+    They need nothing new from the container: a unit factor is a
+    compile-time multiply, and the four numeric conversion instructions
+    already exist.
+14. **`and` and `or` do not short-circuit.** Short-circuiting means
     branching on the left operand, and §1.3.1 makes a branch on a
     non-valid value a fault — so the short-circuiting version *dies*
     where the propagating one produces `unavailable` and lets the script
@@ -162,29 +180,29 @@ and it turned out to need four instructions, all small, all in `core`.
     boolean `AND` and `OR`: the set has `NOT` and the `bits` group's
     `AND.i32`, and nothing that takes two `bool`s, so the only lowering
     available today is exactly the branch being refused.
-14. **Bitwise operators bind tighter than comparison** — Python's order,
+15. **Bitwise operators bind tighter than comparison** — Python's order,
     not C's — and **comparison is non-associative**, so `a < b < c` is a
     syntax error offering `a < b and b < c` rather than a silent
     `(a < b) < c`.
-15. **`else` keeps the precedence §1.3.1's example already implied**,
+16. **`else` keeps the precedence §1.3.1's example already implied**,
     between the arithmetic levels and comparison, so `if temp else 20 >
     25` applies the fallback to the reading and compares a number.
 
 ### Bounds
 
-16. **`limit`, not `max`, is the word for a bound.** `while c limit 600`,
+17. **`limit`, not `max`, is the word for a bound.** `while c limit 600`,
     `fn f(…) limit 5`. One word may not be two things, and of the two
     candidates `max` is the one already in everybody's fingers as a
     function — so `min(a, b)` and `max(a, b)` stay ordinary built-ins
     and the bound gets the noun that means exactly what it does.
-17. **`limit` appears exactly where the compiler cannot see how often
+18. **`limit` appears exactly where the compiler cannot see how often
     something repeats.** It is required on a recursive function's cycle
     and on `while`, and refused elsewhere. The recursion cap and the
     loop bound are different mechanisms underneath — a declared cap the
     runtime counts, versus an ordinary local the producer decrements —
     and one idea to a reader, which answers ADR 0007's observation that
     they are the same concept with two spellings.
-18. **Every loop carries a guard, including `for` over a literal
+19. **Every loop carries a guard, including `for` over a literal
     range.** This **corrects ADR 0007's Open item**, which proposed
     emitting no guard where the compiler can see the count. That
     proposal contradicts §3.8.1, which requires every backward branch to
@@ -193,7 +211,7 @@ and it turned out to need four instructions, all small, all in `core`.
     dominator computation §3.8.1 was designed to avoid. For a range the
     bound is the range, the compiler initialises the counter to
     `b - a + 1`, and the cost is one decrement per turn.
-19. **`a..b` is inclusive at both ends, everywhere** — `match` arms,
+20. **`a..b` is inclusive at both ends, everywhere** — `match` arms,
     `for`, and slices. `0..23` is the hours of a day. The half-open
     reading is a programmer's convention and this audience does not hold
     it; collections are iterated directly (`for x in window`) rather
@@ -202,24 +220,24 @@ and it turned out to need four instructions, all small, all in `core`.
 
 ### Validity in the surface
 
-20. **`match` carries validity**, with `unavailable` and `invalid` arms
+21. **`match` carries validity**, with `unavailable` and `invalid` arms
     beside the value arms, and it may **produce** a non-valid value —
     `invalid -> invalid` — which is how a script refuses to turn a
     faulted reading into a number somebody will later mistake for a
     measurement. Without a validity arm, a non-valid subject yields that
     same state without any arm being evaluated.
-17. Both halves of 20 need **two more `core` instructions**,
+22. Both halves of 21 need **two more `core` instructions**,
     `CONST.unavailable <type>` and `CONST.invalid <type>`. No
     instruction today produces a *chosen* state: states arise as a side
     effect of an operand, of a host read, or of an undefined arithmetic
     case such as division by zero — none of which is a way to say *this
     one is invalid, deliberately*.
-22. **`a is valid` / `is unavailable` / `is invalid`, with `is not`.**
+23. **`a is valid` / `is unavailable` / `is invalid`, with `is not`.**
     The result is a `bool` that is itself always valid whatever the
     operand is, which is what makes it safe to branch on — and it is
     the frame a compiler wraps around any lowering that would otherwise
     branch on a value.
-23. **`try` / `catch` is planned, and its gate placement is already
+24. **`try` / `catch` is planned, and its gate placement is already
     fixed**: control leaves for the `catch` at the **first** operation
     whose result is not valid. That has to be pinned rather than
     optimised, because where an `unavailable` and an `invalid` arise in
@@ -231,30 +249,31 @@ and it turned out to need four instructions, all small, all in `core`.
 
 ### Names, state and the closed world
 
-24. **`let` introduces a local, and assigning to an undeclared name is
+25. **`let` introduces a local, and assigning to an undeclared name is
     an error** carrying the nearest declared name. Without a
     declaration form a mistyped name silently becomes a second variable
     and the script reads correctly while doing nothing.
-25. **Assignment is a statement and never an expression**, so `if x = 5`
+26. **Assignment is a statement and never an expression**, so `if x = 5`
     is a syntax error that explains `=` and `==`.
-26. **A dotted name is one import name**, looked up whole; the dot is a
+27. **A dotted name is one import name**, looked up whole; the dot is a
     character and not an operation. `sensor` alone is not a value, and
     saying so is a diagnostic, because the reader who tried it was
     thinking of objects.
-27. **A script keeps nothing between invocations.** No globals, no
+28. **A script keeps nothing between invocations.** No globals, no
     persistent variables. State that survives must be sized,
     initialised, migrated when a script is replaced and preserved across
     a reboot, and the component that already does all four is the host,
     through an entity.
-28. **Dynamic dispatch, function pointers and closures are excluded
+29. **Dynamic dispatch, function pointers and closures are excluded
     permanently**, not deferred. The recursion cap and the loop bound
     are computed from a call graph the compiler sees whole; an indirect
     call destroys that graph and with it the property this language
     sells. Inheritance is planned only as a closed world.
-29. **Built-ins are closed by a rule**, not by a list: a built-in is
+30. **Built-ins are closed by a rule**, not by a list: a built-in is
     admissible only if it lowers to instructions and reads nothing
-    outside its own operands. `round`, `trunc`, `abs`, `min`, `max`
-    qualify; anything touching the world is a host import (ADR 0008).
+    outside its own operands. `round`, `trunc`, `abs`, `min`, `max` and
+    the four conversions of decision 13 qualify; anything touching the
+    world is a host import (ADR 0008).
     A built-in propagates validity like an operator, which puts the
     obligation on the compiler to find a lowering that does not branch
     on a non-valid value — and is why `round`, `trunc` and `abs` are
@@ -264,7 +283,7 @@ and it turned out to need four instructions, all small, all in `core`.
 
 ### Diagnostics
 
-30. **Three obligations on a conforming compiler** (§6.7): name the
+31. **Three obligations on a conforming compiler** (§6.7): name the
     thing and say what to do, with the nearest known names; never cite
     the specification in a message; say what was expected in the words
     of the language. Nothing in `spec/corpus/` can check these, and they
@@ -289,7 +308,7 @@ and it turned out to need four instructions, all small, all in `core`.
   conflict of §3.2, in favour of §2.5: there is no `? :`, and the
   if-expression is the conditional.
 - **ADR 0007's Open item on who writes the loop bound is answered** and
-  its proposal corrected — see decision 18.
+  its proposal corrected — see decision 19.
 - **`while` costs a reserved word and no code.** So do `try`, `catch`
   and `[`. That is the whole price of planning the surface whole,
   and it is paid up front on purpose: a word that is free today and
@@ -312,6 +331,16 @@ and it turned out to need four instructions, all small, all in `core`.
   format's, and the first profile must answer them (ADR 0002 §8
   question 6). What decision 12 fixes is only what the language does
   with a dimension so marked.
+- **A binding declares a dimension, and need not deliver a declared
+  unit.** §1.4 says a host delivers an entity's value in the profile's
+  base unit for its dimension, and a real sensor does not: it delivers
+  whatever scaling its wire format has, which may match no unit the
+  profile declares. So the binding format must be able to state its own
+  scaling and have the glue convert at the boundary — never the script,
+  which would put the profile's internals back into user code. This is
+  M4's, and it is the counterpart of decision 13: the script names a
+  unit because it must not know the base unit, and the binding states a
+  factor because it does not have a unit at all.
 - **Multi-file compilation** is the producer's command line and not a
   module system (§6.12). Nothing here says how names from two files
   meet, because nothing yet needs two files.
