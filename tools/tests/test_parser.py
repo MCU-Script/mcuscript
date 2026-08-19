@@ -328,3 +328,10 @@ def test_a_state_is_a_value_as_well_as_a_pattern():
 def test_a_block_that_is_never_closed_points_at_its_opening():
     error = refusal("on e {\n  let a = 1\n")
     assert "never closed" in error.first.message
+
+
+def test_a_conversion_may_carry_a_resolution():
+    # §6.3.10's third argument divides the unit, so a script can ask for
+    # a resolution finer than any unit the profile spells.
+    call = expression("to_i32(temp, °C, 100)")
+    assert [type(a).__name__ for a in call.args] == ["Name", "Unit", "Number"]

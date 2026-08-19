@@ -161,28 +161,36 @@ and it turned out to need four instructions, all small, all in `core`.
     is already in the name: `to_i64(count)`, and `to_i64(count, i32)`
     says the same thing twice and is refused for it.
 
-    The unit argument is the decision, not the functions. `to_i32(temp)`
-    would have to mean *the base-unit number*, and §1.4 says base units
-    belong to the profile and may change between its versions — so such
-    a script would silently reinterpret its own numbers the day a
-    profile moved from tenths to hundredths of a degree. Naming the unit
-    turns that into a refusal: a script that says `c°C` and meets a
-    profile without it is told so.
+    **A third argument divides the unit**, and it is how a script asks
+    for a resolution finer than any unit a profile spells:
+    `to_i32(temp, °C, 100)` counts in hundredths of a degree. A
+    whole-number literal, because the compiler has to know it.
 
-    **`to_i32` and `to_i64` are for the exact conversions only.**
-    Counting a quantity in a unit coarser than its base is a division
-    and yields a decimal (decision 9), so `to_i32(temp, °C)` on a
-    hundredths profile is refused and offers `round(to_f32(temp, °C))`.
-    Counting it in the base unit is exact, and that is how a script
-    reaches the number the profile holds. `round` and `trunc` are
-    therefore defined as *decimal to whole number*, which is what closes
-    the loop.
+    Those two arguments together are the decision. A script names a unit
+    and a resolution **of its own choosing**, and therefore depends on
+    nothing about the profile's internals: a profile that moves from
+    tenths to hundredths answers the same expression with the same
+    numbers, and one that stores whole degrees answers with `3200` —
+    two digits that are there and are zero, which is honest rather than
+    rounded. The alternative, an unnamed conversion meaning *the
+    base-unit number*, is what §1.4 exists to prevent: such a script
+    would silently reinterpret its own numbers the day a base unit
+    changed.
 
-    The consequence lands on the profile format and is the price of the
-    design: **a base unit that is not spelled cannot be reached.** A
-    profile working in hundredths while declaring only `°C` has put
-    everything below a whole degree out of a script's reach. That is a
-    legitimate choice and it should be made as one.
+    An earlier draft of this decision instead obliged a profile to spell
+    its base unit, so that `to_i32(temp, c°C)` could reach it. That
+    works and is worse: it makes a script fail loudly on a profile
+    change that need not affect it at all, where the factor makes the
+    script immune. Immune beats loud.
+
+    **`to_i32` and `to_i64` are for the exact conversions only**, and
+    exactness is static because a base unit and a written factor are
+    both constants: counting in `unit ÷ factor` is either a
+    multiplication, which is exact, or a division, which is not. A
+    division is refused and offers `round(to_f32(…))`. `round` and
+    `trunc` are therefore defined as *decimal to whole number*, which is
+    what closes the loop — the earlier text pointed at a function whose
+    result would have been refused again.
 
     They need nothing new from the container: a unit factor is a
     compile-time multiply, and the four numeric conversion instructions
