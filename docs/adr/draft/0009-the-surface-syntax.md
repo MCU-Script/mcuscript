@@ -162,9 +162,10 @@ and it turned out to need four instructions, all small, all in `core`.
     says the same thing twice and is refused for it.
 
     **A third argument divides the unit**, and it is how a script asks
-    for a resolution finer than any unit a profile spells:
-    `to_i32(temp, °C, 100)` counts in hundredths of a degree. A
-    whole-number literal, because the compiler has to know it.
+    for a resolution a profile does not spell: `to_i32(temp, °C, 100)`
+    counts in hundredths of a degree, `to_i32(power, W, 0.001)` in
+    kilowatts. A number literal, whole or decimal, because the compiler
+    has to know it.
 
     Those two arguments together are the decision. A script names a unit
     and a resolution **of its own choosing**, and therefore depends on
@@ -183,14 +184,15 @@ and it turned out to need four instructions, all small, all in `core`.
     change that need not affect it at all, where the factor makes the
     script immune. Immune beats loud.
 
-    **`to_i32` and `to_i64` are for the exact conversions only**, and
-    exactness is static because a base unit and a written factor are
-    both constants: counting in `unit ÷ factor` is either a
-    multiplication, which is exact, or a division, which is not. A
-    division is refused and offers `round(to_f32(…))`. `round` and
-    `trunc` are therefore defined as *decimal to whole number*, which is
-    what closes the loop — the earlier text pointed at a function whose
-    result would have been refused again.
+    **`to_i32` and `to_i64` round by themselves**, to the nearest and
+    away from zero on a tie. An earlier draft refused an inexact
+    conversion and told the script to write `round(to_f32(…))`; that is
+    the language demanding to be told twice, since `to_i32` has already
+    said a whole number is wanted. Where the conversion is exact nothing
+    is rounded, and the compiler knows which case it is because a base
+    unit and a written factor are both constants. `round` and `trunc`
+    remain for decimals that were computed rather than converted, and
+    for truncation where nearest is not what was meant.
 
     They need nothing new from the container: a unit factor is a
     compile-time multiply, and the four numeric conversion instructions

@@ -569,11 +569,11 @@ min(a, b)  max(a, b)                             # planned
 **`round` and `trunc` turn a decimal into a whole number**, and that is
 their whole job: `round` to the nearest and away from zero on a tie,
 `trunc` toward zero. A dimensionless `f32` becomes an `i32`; a
-dimensioned one becomes that dimension in its declared data type. They
-are what §6.3.10's refusals point at, and defining them this way is what
-closes the loop — `round(to_f32(temp, °C))` is an `i32` and needs
-nothing further. `abs` is the odd one out and gives back what it was
-given.
+dimensioned one becomes that dimension in its declared data type.
+§6.3.10's conversions round by themselves, so these two are for the
+cases they do not cover — a decimal that was computed rather than
+converted, and truncation where nearest is not what was meant. `abs` is
+the odd one out and gives back what it was given.
 
 They are **compile-time expansions**: each lowers to instructions, and
 none of them reads anything outside its own operands. That is the rule
@@ -630,10 +630,11 @@ built-in's name, so `to_i64(count, i32)` says the same thing twice and
 is refused for it.
 
 **The third argument divides that unit**, and it is how a script asks
-for a resolution finer than any unit the profile spells.
-`to_i32(temp, °C, 100)` counts in hundredths of a degree; `1` means the
-unit itself and is the same as leaving it out. It is a whole-number
-literal, because the compiler has to know it.
+for a resolution the profile does not spell. `to_i32(temp, °C, 100)`
+counts in hundredths of a degree; `to_i32(power, W, 0.001)` counts in
+kilowatts; `1` means the unit itself and is the same as leaving it out.
+It is a number literal, whole or decimal, because the compiler has to
+know it.
 
 That argument is what keeps these four independent of the profile's
 internals, and the property is worth stating exactly. **A script asks
@@ -649,18 +650,19 @@ is what §1.4 exists to prevent. Base units belong to the profile and may
 change between its versions, and such a script would silently
 reinterpret its own numbers the day one did.
 
-Two rules keep them honest, and both are decided at compile time,
-because a profile's base unit and a written factor are both constants:
+**`to_i32` and `to_i64` round**, to the nearest and away from zero on a
+tie, and they do it without being asked. A script that writes `to_i32`
+has said it wants a whole number; making it write `round` around that
+would be the language demanding to be told twice. Where the conversion
+is exact — and the compiler knows, since a base unit and a written
+factor are both constants — nothing is rounded because there is nothing
+to round. `trunc(to_f32(…))` is how a script asks for the other
+direction, and `to_f32` rounds nothing at all.
 
-- **`to_i32` and `to_i64` are for the conversions that are exact.** The
-  compiler knows whether counting in `unit ÷ factor` is a multiplication
-  or a division. A multiplication is exact and allowed. A division is
-  not — `to_i32(temp, °C)` on a profile that stores hundredths would
-  throw two digits away — and the refusal offers
-  `round(to_f32(temp, °C))`, which says which way the half went.
-- **The unit is required exactly when the operand has a dimension.**
-  `to_f32(count, °C)` and `to_i32(temp)` are both errors, and each says
-  which half is wrong.
+One rule is left, and it is about the shape rather than the arithmetic:
+**the unit is required exactly when the operand has a dimension.**
+`to_f32(count, °C)` and `to_i32(temp)` are both errors, and each says
+which half is wrong.
 
 They need nothing new from the container: a unit factor is a compile-time
 multiply or divide, and `CONVERT.i32_f32`, `TRUNC.f32_i32`,
