@@ -28,6 +28,7 @@ profile format is M4's.
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from fractions import Fraction
 
@@ -74,11 +75,27 @@ PENDING = _Pending()
 Inferred = Quantity | _Pending
 
 
+class _Unresolved(Exception):
+    """A function's own type was needed before it was known.
+
+    Not an error and never seen by anybody: it unwinds to
+    `infer_function`, which now knows the body needs a second pass, and
+    carries what the first pass had already found — the `return` that
+    does not recurse, which is exactly what the second pass needs.
+    """
+
+    def __init__(self) -> None:
+        self.collected: list[tuple[Inferred | None, Span]] = []
+
+
 @dataclass
 class Signature:
     name: str
     params: tuple[Quantity, ...]
-    returns: Quantity | None
+    #: `PENDING` while the function's own type waits on one that is
+    #: still being inferred — mutual recursion, where neither half can
+    #: be answered before the other.
+    returns: Quantity | _Pending | None
     span: Span
     #: The call that fixed the parameter types, for the second opinion.
     fixed_by: Span | None = None
@@ -94,9 +111,42 @@ class Analysis:
     #: Which import a dotted name turned out to be.
     imports: dict[int, Entity | HostFunction] = field(default_factory=dict)
     signatures: dict[str, Signature] = field(default_factory=dict)
+    #: What each entry point yields, or ``None`` when it yields nothing.
+    #: Entry points have no signature because nothing in the language
+    #: calls one, but a compiler still has to declare a return type.
+    entries: dict[str, Quantity | None] = field(default_factory=dict)
 
     def type_of(self, node: ast.Node) -> Quantity:
         return self.types[id(node)]
+
+
+def falls_through(node: ast.Block | ast.Stmt) -> bool:
+    """Whether control can reach past this construct.
+
+    Needed twice over: §6.4.5 asks whether falling off the end is a way
+    out of a function, and a code generator asks whether to emit a
+    trailing `ret`. Both want the same answer, so it is written once.
+
+    Deliberately shallow — a statement that cannot be reached at all is
+    a container defect the verifier names (`unreachable_code`), not
+    something to duplicate that analysis for.
+    """
+    match node:
+        case ast.Block():
+            return not node.statements or falls_through(node.statements[-1])
+        case ast.Return() | ast.Break() | ast.Continue():
+            return False
+        case ast.ExprStmt(value=ast.If() as branch):
+            return _if_falls_through(branch)
+    return True
+
+
+def _if_falls_through(node: ast.If) -> bool:
+    if node.otherwise is None:
+        return True
+    if isinstance(node.otherwise, ast.If):
+        return falls_through(node.then) or _if_falls_through(node.otherwise)
+    return falls_through(node.then) or falls_through(node.otherwise)
 
 
 class _Scope:
@@ -133,6 +183,20 @@ class _Analyser:
         self.functions = {f.name: f for f in program.functions}
         self.in_progress: dict[str, Signature] = {}
         self.loop_depth = 0
+        #: Loop variables in scope: bound afresh each turn, so assigning
+        #: to one would say something the loop does not do (§6.4.4).
+        self.fixed: list[str] = []
+        #: One entry per body being analysed, holding what its `return`
+        #: statements yield. `return` is not the last expression, so
+        #: without this a function whose value comes only from one would
+        #: be inferred to yield nothing (§6.4.5).
+        self.returns: list[list[tuple[Inferred | None, Span]]] = []
+        #: Calls whose type was pending when they were analysed, to be
+        #: filled in once the callee's signature is known.
+        self.deferred: list[tuple[ast.Call, str]] = []
+        #: Functions whose own type waited on a cycle, to be worked out
+        #: again once the cycle has an answer.
+        self.unresolved: dict[str, ast.Function] = {}
 
     # -- entry point ----------------------------------------------------
 
@@ -148,7 +212,12 @@ class _Analyser:
                 )
             seen[entry.name] = entry.span
         for entry in self.program.entries:
-            self.block(entry.body, _Scope())
+            value = self.body(entry.body, _Scope(), entry.span)
+            self.out.entries[entry.name] = (
+                None if isinstance(value, _Pending) else value
+            )
+        self.resolve_cycles()
+        self.settle()
         for function in self.program.functions:
             if function.name not in self.out.signatures:
                 raise error(
@@ -159,7 +228,110 @@ class _Analyser:
                 )
         return self.out
 
+    def resolve_cycles(self) -> None:
+        """Work out the functions whose type waited on each other.
+
+        Mutual recursion needs two passes and no more: the first one
+        finds the way out of the cycle, and this one asks the halves
+        that could not answer the first time. A function still without
+        an answer after it has no way out at all, which is an error
+        naming it rather than a guess.
+        """
+        for _ in range(len(self.unresolved) + 1):
+            waiting = {
+                name: declaration
+                for name, declaration in self.unresolved.items()
+                if isinstance(self.out.signatures[name].returns, _Pending)
+            }
+            if not waiting:
+                return
+            for name, declaration in waiting.items():
+                signature = self.out.signatures.pop(name)
+                self.infer_function(declaration, signature.params, signature.fixed_by)
+        still = sorted(
+            name
+            for name in self.unresolved
+            if isinstance(self.out.signatures[name].returns, _Pending)
+        )
+        if still:
+            raise error(
+                f"`{still[0]}` calls in a circle with no way out",
+                self.out.signatures[still[0]].span,
+                "A function whose value only ever comes from itself has no "
+                "type to give.",
+            )
+
+    def settle(self) -> None:
+        """Give the calls that were pending the type they turned out to have.
+
+        A recursive call is analysed before its callee's signature
+        exists, so nothing could be recorded for it at the time. It is
+        recorded here instead, because a later stage reads types by node
+        and would otherwise find a hole exactly where recursion is.
+        """
+        for node, name in self.deferred:
+            signature = self.out.signatures.get(name)
+            returns = signature.returns if signature is not None else None
+            self.out.types[id(node)] = (
+                returns if isinstance(returns, Quantity) else Quantity(ValType.VOID)
+            )
+        self.deferred.clear()
+
     # -- statements -------------------------------------------------------
+
+    def body(self, node: ast.Block, scope: _Scope, where: Span) -> Inferred | None:
+        """A whole function or entry-point body, and what it yields.
+
+        A block's own value is its last expression (§6.4.5), and a
+        `return` yields one from anywhere. They are the same question and
+        are settled here: every way out has to give the same kind of
+        thing, and falling off the end is a way out exactly when control
+        can reach it.
+        """
+        self.returns.append([])
+        try:
+            value = self.block(node, scope)
+        except _Unresolved as signal:
+            if not signal.collected:
+                signal.collected = self.returns[-1]
+            self.returns.pop()
+            raise
+        collected = self.returns.pop()
+
+        ways: list[tuple[Inferred | None, Span]] = list(collected)
+        if falls_through(node):
+            ways.append((value, node.span))
+
+        valued = [
+            (q, span)
+            for q, span in ways
+            if isinstance(q, Quantity) and q.type is not ValType.VOID
+        ]
+        if not valued:
+            # A way out that is still pending is not a way out that
+            # yields nothing: `fn up(n) { down(n) }` mid-cycle knows
+            # neither, and saying "nothing" here would make the answer
+            # wrong for good.
+            if any(isinstance(q, _Pending) for q, _ in ways):
+                return PENDING
+            return None
+        result = valued[0][0]
+        for quantity, span in valued[1:]:
+            if quantity != result:
+                raise error(
+                    f"this yields {quantity} where the rest yields {result}",
+                    span,
+                    "Every way out of a function gives the same kind of thing.",
+                )
+        for quantity, span in ways:
+            if isinstance(quantity, _Pending) or (quantity, span) in valued:
+                continue
+            raise error(
+                f"this way out yields nothing where the rest yields {result}",
+                span,
+                "A function that gives a value on one path gives one on all of them.",
+            )
+        return result
 
     def block(self, node: ast.Block, outer: _Scope) -> Inferred | None:
         """A block's value is its last expression, or nothing (§6.4.5)."""
@@ -196,8 +368,20 @@ class _Analyser:
                 # still pending here, and the caller resolves it.
                 return self.expr(node.value, scope, None)
             case ast.Return():
-                if node.value is not None:
-                    self.demand(node.value, scope, None)
+                if not self.returns:
+                    raise error(
+                        "`return` is only meaningful inside a function or an "
+                        "entry point",
+                        node.span,
+                    )
+                # Not `demand`: a recursive call in a `return` is still
+                # pending, and the arm that does not recurse resolves it.
+                yielded = (
+                    self.expr(node.value, scope, None)
+                    if node.value is not None
+                    else None
+                )
+                self.returns[-1].append((yielded, node.span))
                 return None
             case ast.Break() | ast.Continue():
                 if self.loop_depth == 0:
@@ -215,6 +399,13 @@ class _Analyser:
         name = node.target.text
         local = None if node.target.is_dotted else scope.lookup(name)
         if local is not None:
+            if name in self.fixed:
+                raise error(
+                    f"`{name}` counts the loop and cannot be assigned to",
+                    node.span,
+                    "It is bound afresh each turn; a `let` inside the body "
+                    "holds a value that changes.",
+                )
             target = local
         else:
             found = self.resolve(node.target, scope)
@@ -244,12 +435,9 @@ class _Analyser:
                 "Write `for i in 0..9 { … }`. Looping over an array is "
                 "planned and not built.",
             )
-        low = self.demand(node.iterable.low, scope, None)
-        high = self.demand(node.iterable.high, scope, low)
-        for quantity, span in (
-            (low, node.iterable.low.span),
-            (high, node.iterable.high.span),
-        ):
+        ends = self.range_ends(node.iterable, scope, None)
+        (low, _), (high, _) = ends
+        for quantity, span in ends:
             if quantity.dimension is not None or quantity.type not in _INTEGERS:
                 raise error(
                     f"a range counts in whole numbers, and this is {quantity}", span
@@ -259,7 +447,9 @@ class _Analyser:
         inner = _Scope(scope)
         inner.declare(node.variable, low)
         self.loop_depth += 1
+        self.fixed.append(node.variable)
         self.block(node.body, inner)
+        self.fixed.pop()
         self.loop_depth -= 1
 
     # -- expressions -------------------------------------------------------
@@ -270,6 +460,10 @@ class _Analyser:
         """Infer, and refuse a type that is still pending."""
         result = self.expr(node, scope, expected)
         if isinstance(result, _Pending):
+            if self.in_progress:
+                # Inside the function this is waiting on. Unwind and let
+                # `infer_function` come back once it has an answer.
+                raise _Unresolved()
             raise error(
                 "this value's type cannot be worked out",
                 node.span,
@@ -433,11 +627,15 @@ class _Analyser:
         if found is None:
             known = self.profile.unit_spellings
             suggestions = nearest(spelling, known)
-            note = (
-                f"Did you mean {' or '.join('`' + s + '`' for s in suggestions)}?"
-                if suggestions
-                else f"The profile `{self.profile.name}` declares no such unit."
-            )
+            if suggestions:
+                names = " or ".join("`" + s + "`" for s in suggestions)
+                note = f"Did you mean {names}?"
+            elif not self.profile.dimensions:
+                # A profile that declares nothing is legal (§6.5.4), and
+                # this is what it feels like from a script.
+                note = "Nothing here declares units, so no suffix names one."
+            else:
+                note = f"The profile `{self.profile.name}` declares no such unit."
             raise error(f"`{spelling}` is not a unit here", span, note)
         return found
 
@@ -658,6 +856,9 @@ class _Analyser:
                 node.span,
             )
         known = self.out.signatures.get(declaration.name)
+        if known is not None and isinstance(known.returns, _Pending):
+            self.deferred.append((node, declaration.name))
+            return PENDING
         if known is not None:
             if tuple(arguments) != known.params:
                 raise error(
@@ -670,6 +871,7 @@ class _Analyser:
                 known.returns if known.returns is not None else Quantity(ValType.VOID)
             )
         if declaration.name in self.in_progress:
+            self.deferred.append((node, declaration.name))
             return PENDING
         return self.infer_function(declaration, tuple(arguments), node.span)
 
@@ -678,6 +880,24 @@ class _Analyser:
     ) -> Quantity:
         signature = Signature(declaration.name, arguments, None, declaration.span, call)
         self.in_progress[declaration.name] = signature
+        try:
+            result = self.body(
+                declaration.body, self.frame(declaration, arguments), declaration.span
+            )
+        except _Unresolved as signal:
+            del self.in_progress[declaration.name]
+            return self.second_pass(declaration, arguments, signature, signal)
+        del self.in_progress[declaration.name]
+        signature.returns = result
+        self.out.signatures[declaration.name] = signature
+        if isinstance(result, _Pending):
+            self.unresolved[declaration.name] = declaration
+            return PENDING
+        return result if result is not None else Quantity(ValType.VOID)
+
+    def frame(
+        self, declaration: ast.Function, arguments: tuple[Quantity, ...]
+    ) -> _Scope:
         scope = _Scope()
         for param, quantity in zip(declaration.params, arguments, strict=True):
             if param.annotation is not None:
@@ -685,11 +905,50 @@ class _Analyser:
                 if declared != quantity:
                     raise self.mismatch(param.span, declared, quantity)
             scope.declare(param.name, quantity)
-        result = self.block(declaration.body, scope)
-        del self.in_progress[declaration.name]
-        signature.returns = result
+        return scope
+
+    def second_pass(
+        self,
+        declaration: ast.Function,
+        arguments: tuple[Quantity, ...],
+        signature: Signature,
+        signal: _Unresolved,
+    ) -> Inferred:
+        """Read the body again, with the answer the first pass found.
+
+        `return down(n - 1) + n` is the ordinary shape of a recursive
+        function and the first pass cannot type it: the call has no type
+        yet, and it stands inside arithmetic that needs one. What the
+        first pass *does* have by then is the arm that does not recurse,
+        and one is enough — the second pass reads the whole body with it
+        in place, so the recursive arm is checked rather than assumed.
+        """
+        found = next(
+            (
+                quantity
+                for quantity, _ in signal.collected
+                if isinstance(quantity, Quantity) and quantity.type is not ValType.VOID
+            ),
+            None,
+        )
+        if found is None:
+            # Nothing to go on here — the way out is in another function
+            # of the same cycle, and `resolve_cycles` comes back later.
+            signature.returns = PENDING
+            self.out.signatures[declaration.name] = signature
+            self.unresolved[declaration.name] = declaration
+            return PENDING
+        signature.returns = found
         self.out.signatures[declaration.name] = signature
-        return result if result is not None else Quantity(ValType.VOID)
+        result = self.body(
+            declaration.body, self.frame(declaration, arguments), declaration.span
+        )
+        if isinstance(result, Quantity) and result != found:  # pragma: no cover
+            raise error(
+                f"`{declaration.name}` gives {result} one way and {found} another",
+                declaration.span,
+            )
+        return found
 
     def one_operand(self, node: ast.Call, scope: _Scope) -> Quantity:
         name = node.callee.text
@@ -801,13 +1060,21 @@ class _Analyser:
                 node.condition.span,
                 "A comparison makes one: `temp > 25°C`.",
             )
-        then = self.block(node.then, scope)
+        try:
+            then = self.block(node.then, scope)
+        except _Unresolved as signal:
+            self.elsewhere(signal, [self.other_arm(node, scope, expected)])
+            raise
         if node.otherwise is None:
             return Quantity(ValType.VOID)
-        if isinstance(node.otherwise, ast.If):
-            other = self.expr(node.otherwise, scope, expected or then)
-        else:
-            other = self.block(node.otherwise, scope)
+        try:
+            if isinstance(node.otherwise, ast.If):
+                other = self.expr(node.otherwise, scope, expected or then)
+            else:
+                other = self.block(node.otherwise, scope)
+        except _Unresolved as signal:
+            self.keep(signal, then, node.then.span)
+            raise
         if then is None or other is None:
             return Quantity(ValType.VOID)
         if isinstance(then, _Pending):
@@ -832,9 +1099,21 @@ class _Analyser:
             self.pattern(arm.pattern, subject, scope)
             if isinstance(arm.pattern, ast.ElsePattern):
                 has_else = True
-            value = self.expr(
-                arm.body, scope, result if isinstance(result, Quantity) else None
-            )
+            try:
+                value = self.expr(
+                    arm.body, scope, result if isinstance(result, Quantity) else None
+                )
+            except _Unresolved as signal:
+                self.keep(signal, result, node.span)
+                self.elsewhere(
+                    signal,
+                    [
+                        (lambda a=later: self.expr(a.body, scope, None), a.body.span)
+                        for later in node.arms[node.arms.index(arm) + 1 :]
+                        for a in (later,)
+                    ],
+                )
+                raise
             if isinstance(value, _Pending):
                 continue
             if result is None or isinstance(result, _Pending):
@@ -853,6 +1132,42 @@ class _Analyser:
             )
         return result if result is not None else Quantity(ValType.VOID)
 
+    def keep(self, signal: _Unresolved, value: Inferred | None, span: Span) -> None:
+        """Hand an arm's answer to the unwinding signal."""
+        if isinstance(value, Quantity) and value.type is not ValType.VOID:
+            signal.collected.append((value, span))
+
+    def elsewhere(
+        self,
+        signal: _Unresolved,
+        arms: list[tuple[Callable[[], Inferred | None], Span]],
+    ) -> None:
+        """Look in the arms that were never reached for the way out.
+
+        A recursive function's base case is as often an arm of an `if`
+        or a `match` as it is a `return`, and the arm that recurses may
+        come first. When it does, the pass unwinds before the base case
+        was ever read — so the arms below it are read here, and whatever
+        they yield goes to the second pass. Anything that unwinds in
+        turn is simply not the way out.
+        """
+        for thunk, span in arms:
+            try:
+                self.keep(signal, thunk(), span)
+            except _Unresolved:
+                continue
+
+    def other_arm(
+        self, node: ast.If, scope: _Scope, expected: Quantity | None
+    ) -> tuple[Callable[[], Inferred | None], Span]:
+        if node.otherwise is None:
+            return (lambda: None, node.span)
+        if isinstance(node.otherwise, ast.If):
+            branch = node.otherwise
+            return (lambda: self.expr(branch, scope, expected), branch.span)
+        block = node.otherwise
+        return (lambda: self.block(block, scope), block.span)
+
     def pattern(self, node: ast.Pattern, subject: Quantity, scope: _Scope) -> None:
         match node:
             case ast.ElsePattern() | ast.StatePattern():
@@ -866,10 +1181,46 @@ class _Analyser:
                 if value != subject:
                     raise self.incomparable(node.value.span, subject, value)
             case ast.RangePattern():
-                for end in (node.range.low, node.range.high):
-                    value = self.demand(end, scope, subject)
+                for value, span in self.range_ends(node.range, scope, subject):
                     if value != subject:
-                        raise self.incomparable(end.span, subject, value)
+                        raise self.incomparable(span, subject, value)
+
+    def range_ends(
+        self, node: ast.Range, scope: _Scope, expected: Quantity | None
+    ) -> list[tuple[Quantity, Span]]:
+        """Both ends of a range, with a unit written once covering both.
+
+        `24..28°C` is the form §6.3.5 prints, and a bare numeral has no
+        way to be a temperature on its own — a dimension is a type, and
+        adopting one silently is what §1.4 exists to prevent. So the
+        suffix at one end is *lent* to the other, which is the only
+        reading of `24..28°C` anybody means, and `24..28` stays a range
+        of plain numbers.
+        """
+        borrowed = ""
+        for end in (node.low, node.high):
+            if isinstance(end, ast.Number) and end.suffix:
+                borrowed = end.suffix
+        out: list[tuple[Quantity, Span]] = []
+        for end in (node.low, node.high):
+            if borrowed and isinstance(end, ast.Number) and not end.suffix:
+                out.append((self.suffixed(end, borrowed), end.span))
+            else:
+                out.append((self.demand(end, scope, expected), end.span))
+        return out
+
+    def suffixed(self, node: ast.Number, spelling: str) -> Quantity:
+        """A numeral read as though it had been written with a suffix."""
+        dimension, unit = self.unit_of(spelling, node.span)
+        written = (
+            Fraction(node.text) if node.is_decimal else Fraction(int(node.text, 0))
+        )
+        self.out.values[id(node)] = self.normalize(
+            written, dimension, unit, node.span, node.text
+        )
+        quantity = Quantity(dimension.type, dimension)
+        self.out.types[id(node)] = quantity
+        return quantity
 
     # -- annotations and diagnostics -------------------------------------------
 

@@ -132,6 +132,15 @@ The profile's suffix table therefore extends the set of characters
 profile declares it and an error everywhere else. That is the one place
 a profile reaches into the lexer, and it reaches no further.
 
+A unit also stands on its own, as the second argument of a conversion
+(§6.3.10), and there it has to be told apart from a name. The rule is
+the same one read forwards: **a word that runs straight into `%`, `‰`
+or `°` is a unit**, so `c°C` and `d%` are single tokens rather than a
+name and a symbol. A name cannot contain those characters at all, so
+nothing is taken away — and the spellings this matters for are exactly
+the ones a profile uses for a fine base unit, which is where a script
+would otherwise be unable to say what it means.
+
 ### 6.1.6 Duration literals — built
 
 Several unit-suffixed numbers written next to each other, with no
@@ -555,6 +564,16 @@ one `0..23` means is a question that answers itself only under this rule.
 
 A range is not a value. It appears in `match` patterns (§6.3.5), in `for`
 (§6.4.4) and in slices (§6.9), and nowhere else.
+
+**A unit written at one end covers both.** `24..28°C` is two
+temperatures, and so is `24°C..28°C`; `0..9` is two plain numbers. The
+rule exists because the alternative is worse in both directions: a bare
+numeral cannot become a temperature on its own — a dimension is a type
+(§6.5.3) and adopting one silently is what §1.4 exists to prevent — so
+without this, the shape everybody writes would be a type error, and the
+error would be about the half nobody thinks about. Where both ends carry
+a unit they must be the same dimension, which is the ordinary rule and
+not a new one.
 
 ### 6.3.9 Built-in functions — built, and closed by a rule
 
@@ -995,13 +1014,23 @@ nothing in between.
 
 A profile may mark a dimension **cyclic**, meaning its values wrap: a
 clock that counts milliseconds in an `i32` returns to its start after
-about 49.7 days, and a compass bearing does so every 360 degrees.
+about 49.7 days.
 
 For a cyclic dimension the compiler lowers `<`, `<=`, `>` and `>=` as
 comparisons of the **difference** against zero, so a comparison remains
 correct across the wrap for values within half a period of each other —
 about 24.8 days in either direction for the clock above. Equality is
 unchanged.
+
+**The period is the data type's range and not a number the profile
+picks.** That is what makes the lowering one subtraction: the wrap the
+comparison survives is the wrap the arithmetic already does. A dimension
+whose cycle is some other number is therefore *not* what this marks — a
+compass counted from 0 to 359 has 350 and 10 sitting 340 apart in the
+arithmetic however close they are on the dial, and marking it cyclic
+would not change that. A profile that wants a compass on this mechanism
+counts a full turn as the whole range of its type; one that wants whole
+degrees writes the comparison it means.
 
 **A cyclic value never widens.** There is no implicit promotion to a
 wider type and no explicit conversion either. A wrap is invisible in the

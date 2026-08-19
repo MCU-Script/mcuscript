@@ -43,7 +43,7 @@ never heard of MCUHome is a design goal, not a side effect.
 
 ## Status
 
-**The back end works; the language is specified and not built.**
+**Both ends work; what is missing above them is a profile.**
 Chapters 1 to 5 of [the specification](spec/) are written and
 implemented — the container format, the verifier, the VM in C, and the C
 backend — and a differential test runs the same container through both
@@ -52,15 +52,15 @@ defines works end to end in both of them.
 
 [Chapter 6](spec/06-syntax.md) is the surface syntax: it plans the whole
 language and marks every construct **built**, **planned** or
-**excluded**. Its lexer, parser and type system exist — `mcuscript parse
-<file>` reads a script and prints its syntax tree, and the semantic pass
-types it, checks its units against a profile and normalizes its
-literals — and the four instructions the built half needed are in the
-container and run in both backends. What does not exist is code
-generation, so **there is no compiler.** Programs are written in an
-assembler, on purpose: it let the format, the verifier, the VM and the C
-backend be built against each other before anybody argued about how an
-`if` should look.
+**excluded**. Everything it marks built now compiles — `mcuscript build
+<file>` turns a script into a container — and the differential tests
+run *scripts* through both backends and compare the bytes.
+
+What a script cannot reach yet is a **profile**: which dimensions exist,
+how units are spelled and what each normalizes to is a profile's to
+declare, and how one is written down is the next milestone. Until then
+the command compiles against a world that declares none, and a unit
+suffix is refused by name rather than guessed at.
 
 Do not depend on this repository. The specification is at
 `0.1.0-draft` and says so; ADR 0002 marks each remaining item as

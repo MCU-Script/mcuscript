@@ -20,7 +20,7 @@ from pathlib import Path
 
 from mcuscript.asm import assemble
 from mcuscript.cbackend import generate, mangle, symbols
-from mcuscript.container import ImportKind
+from mcuscript.container import Container, ImportKind
 from mcuscript.opcodes import ValType
 
 REPO = Path(__file__).resolve().parents[2]
@@ -181,12 +181,18 @@ def compile_once(
     vm: Path,
     cc: str,
     tmp_path: Path,
-    source: str,
+    source: str | Container,
     *,
     flags: list[str] | None = None,
     repeat: int = 1,
 ) -> Compiled:
-    container = assemble(source)
+    """Lower, compile and stage a container for both backends.
+
+    Takes assembler text or a `Container`, because since the compiler
+    exists there are two ways to get one and the differential test is
+    the same test either way.
+    """
+    container = assemble(source) if isinstance(source, str) else source
     entry = next(f.name for f in container.functions if f.invocable)
 
     blob = tmp_path / "program.mcs"
@@ -221,7 +227,9 @@ def compile_once(
     return Compiled(binary, blob, vm, tmp_path)
 
 
-def both(vm: Path, cc: str, tmp_path: Path, source: str, host: str) -> tuple[Run, Run]:
+def both(
+    vm: Path, cc: str, tmp_path: Path, source: str | Container, host: str
+) -> tuple[Run, Run]:
     return compile_once(vm, cc, tmp_path, source)(host)
 
 
@@ -235,5 +243,5 @@ def _same(interpreted: Run, compiled: Run) -> Run:
     return interpreted
 
 
-def agree(vm, cc, tmp_path, source: str, host: str = "") -> Run:
+def agree(vm, cc, tmp_path, source: str | Container, host: str = "") -> Run:
     return _same(*both(vm, cc, tmp_path, source, host))

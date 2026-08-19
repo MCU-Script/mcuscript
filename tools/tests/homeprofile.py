@@ -67,16 +67,31 @@ RATIO = Dimension(
     scale=True,
 )
 
+#: A dimension whose values wrap (§6.5.6): milliseconds since the device
+#: started, held in an `i32`, so it returns to its start after 49.7 days.
+#: The period is the type's — which is the whole rule, and the reason a
+#: comparison of two of these lowers as a difference.
+UPTIME = Dimension(
+    6,
+    "uptime",
+    ValType.I32,
+    "ms_up",
+    (Unit("ms_up", Fraction(1)), Unit("s_up", Fraction(1000))),
+    cyclic=True,
+)
+
 #: A clock, so that `@"…"` has somewhere to belong (§6.1.7). What the
 #: fields normalize to needs an epoch, which is M4's.
 INSTANT = Dimension(
     5, "instant", ValType.I64, "ms_utc", (Unit("ms_utc", Fraction(1)),), calendar=True
 )
 
-HOME = Profile("home", "0.1", (TEMPERATURE, HUMIDITY, DURATION, RATIO, INSTANT))
+HOME = Profile(
+    "home", "0.1", (TEMPERATURE, HUMIDITY, DURATION, RATIO, UPTIME, INSTANT), id=1
+)
 
 #: The same profile without a calendar, for the refusal §6.1.7 promises.
-NO_CALENDAR = Profile("bare", "0.1", (TEMPERATURE, HUMIDITY, DURATION, RATIO))
+NO_CALENDAR = Profile("bare", "0.1", (TEMPERATURE, HUMIDITY, DURATION, RATIO), id=1)
 
 T = Quantity(ValType.I32, TEMPERATURE)
 H = Quantity(ValType.I32, HUMIDITY)
@@ -98,6 +113,8 @@ REGISTRY = Registry(
         Entity("setpoint.target", T, writable=True),
         # An embedder may declare a bare name, and some do.
         Entity("brightness", N, writable=True),
+        Entity("timer.started", Quantity(ValType.I32, UPTIME)),
+        Entity("timer.expires", Quantity(ValType.I32, UPTIME)),
     ),
     functions=(
         HostFunction("fan.on"),

@@ -211,3 +211,25 @@ def test_a_newline_before_else_stays_a_separator():
     # `} else` goes on one line: the forward rule that would allow the
     # break also eats the separator between two `match` arms.
     assert texts("}\nelse") == ["}", "\n", "else"]
+
+
+def test_a_word_running_into_a_unit_symbol_is_a_unit():
+    """`c°C` and `d%` in argument position — §6.1.5.
+
+    The spellings a profile uses for a fine base unit start with a
+    letter, so without this rule the lexer would hand the parser a name
+    and a symbol, and a script could not name the unit it counts in.
+    """
+    # A unit spelled with letters alone — `kWh`, `min` — is a name to
+    # the lexer and becomes a unit when the conversion resolves it;
+    # there is nothing to tell apart in that case.
+    for text in ("c°C", "d%", "°C", "%", "‰"):
+        tokens = tokenize(f"to_i32(x, {text})", "t")
+        kinds = [(t.kind, t.text) for t in tokens]
+        assert (TokenKind.UNIT, text) in kinds, kinds
+
+
+def test_a_plain_word_is_still_a_name():
+    kinds = [(t.kind, t.text) for t in tokenize("count = degrees", "t")]
+    assert kinds[0] == (TokenKind.IDENT, "count")
+    assert kinds[2] == (TokenKind.IDENT, "degrees")

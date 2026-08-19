@@ -2,10 +2,10 @@
 # SPDX-License-Identifier: Apache-2.0
 """The ``mcuscript`` command.
 
-Four subcommands so far, and each one is a thing the specification says
-somebody must be able to do: turn text into a container, turn a
-container back into text, refuse a bad container by name, and say what
-is inside a good one.
+Each subcommand is a thing the specification says somebody must be able
+to do: turn a script into a container, turn text into a container, turn
+a container back into text, refuse a bad container by name, say what is
+inside a good one, and lower one to C.
 """
 
 from __future__ import annotations
@@ -46,6 +46,18 @@ def main(argv: list[str] | None = None) -> int:
     p = sub.add_parser("parse", help="read a script and show its syntax tree")
     p.add_argument("script", type=Path)
     p.set_defaults(run=_parse)
+
+    p = sub.add_parser("build", help="compile a script into a container")
+    p.add_argument("script", type=Path)
+    p.add_argument("-o", "--output", type=Path, required=True)
+    p.add_argument(
+        "--entry",
+        default=None,
+        metavar="NAME",
+        help="what to call the entry point of a file that is one "
+        "expression; the file's name without its suffix by default",
+    )
+    p.set_defaults(run=_build)
 
     p = sub.add_parser("asm", help="assemble text into a container")
     p.add_argument("source", type=Path)
@@ -146,6 +158,35 @@ def _is_nested(value: object) -> bool:
     if is_dataclass(value) and not isinstance(value, type):
         return True
     return isinstance(value, tuple | list) and bool(value)
+
+
+def _build(args: argparse.Namespace) -> int:
+    """Compile a script (§6) into a container.
+
+    **No profile and no registry yet.** Which dimensions exist is a
+    profile's to say and how one is written down is not built; which
+    entities a script may reach is the embedder's, and the same. So this
+    compiles against a world that declares neither — legal, per §6.5.4,
+    and the reason a unit suffix or a host name is refused here by name
+    rather than compiled wrongly.
+    """
+    from .codegen import compile_script
+    from .profile import EMPTY as NO_PROFILE
+    from .registry import EMPTY as NO_REGISTRY
+
+    source = args.script.read_text(encoding="utf-8")
+    _last_source[0] = source
+    container = compile_script(
+        source,
+        str(args.script),
+        NO_PROFILE,
+        NO_REGISTRY,
+        entry_name=args.entry or args.script.stem,
+    )
+    blob = container.encode()
+    args.output.write_bytes(blob)
+    print(f"{args.output}: {len(blob)} bytes, {len(container.functions)} function(s)")
+    return EXIT_OK
 
 
 def _asm(args: argparse.Namespace) -> int:

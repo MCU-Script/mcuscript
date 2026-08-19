@@ -26,13 +26,19 @@ including the four the surface syntax needed, added on 2026-08-19
 `const.unavailable`/`const.invalid`, the only way a program states a
 validity state rather than causing one.
 
-The surface syntax is `spec/06-syntax.md` (ADR 0009), and its **lexer,
-AST, parser and semantic pass exist** — `mcuscript parse <file>` reads a
-script and prints its tree, and `sema.py` types it, checks its
-dimensions and normalizes its literals to base units. What does **not**
-exist is code generation, so **there is still no compiler** and
-containers are written in the assembler in
-`tools/src/mcuscript/asm.py`.
+**There is a compiler.** The surface syntax is `spec/06-syntax.md`
+(ADR 0009) and the whole front end exists: `lexer.py`, `parser.py`,
+`sema.py` and `codegen.py`, so `mcuscript build <file>` turns a script
+into a container and the differential tests run *scripts* through both
+backends and compare the bytes. The assembler stays — it is how a test
+writes a container the compiler would never emit.
+
+What the compiler has no way to reach yet is a **profile** and a
+**registry**: which dimensions exist is a profile's to declare and how
+one is written down is M4's, and which entities a script may touch is
+the embedder's. So the command compiles against a world that declares
+neither (legal per §6.5.4), and a unit suffix or a host name is refused
+by name. Everything above the container is still a proposal.
 
 Chapter 6 marks every construct **built**, **planned** or **excluded**.
 "Built" there means *this is what M3 implements*; today that means the
@@ -60,7 +66,7 @@ to prevent.
 | Path | Role |
 |---|---|
 | `spec/` | **The specification** — the contract every implementation answers to. Its own version number, and deliberately its own top-level directory so it can be split into `mcu-script/spec` in one cut if a second implementation ever justifies it. `spec/corpus/` is part of it: containers with the verdict each must get, committed as bytes and regenerated with `python tools/build_corpus.py` (ADR 0005) |
-| `tools/` | The **host toolchain**, Python: container reader/writer, assembler, verifier, C backend, and the compiler's front end (`diagnostics.py`, `lexer.py`, `ast.py`, `parser.py`, `profile.py`, `registry.py`, `sema.py`) |
+| `tools/` | The **host toolchain**, Python: container reader/writer, assembler, verifier, C backend, and the compiler (`diagnostics.py`, `lexer.py`, `ast.py`, `parser.py`, `profile.py`, `registry.py`, `sema.py`, `codegen.py`) |
 | `runtime/` | The **device runtime**, C99: loader, verifier, VM. No dependencies, never allocates |
 | `docs/adr/` | Architecture decision records — living drafts in `draft/`, immutable finals at the top level once something real exists |
 | `.github/` | CI, issue templates, CODEOWNERS |

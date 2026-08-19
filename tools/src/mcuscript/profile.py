@@ -104,6 +104,11 @@ class Profile:
     name: str
     version: str
     dimensions: tuple[Dimension, ...] = ()
+    #: What a container pins itself to (§2.4). The number is the
+    #: profile's identity and the version is its own; both are here
+    #: rather than in the file format M4 decides, because a container
+    #: cannot be built without them and chapter 2 is what asks.
+    id: int = 0
     _by_unit: dict[str, tuple[Dimension, Unit]] = field(
         default_factory=dict, init=False, repr=False, compare=False
     )
@@ -124,6 +129,15 @@ class Profile:
                         f"{other.name} and {dimension.name}"
                     )
                 self._by_unit[unit.spelling] = (dimension, unit)
+
+    @property
+    def major(self) -> int:
+        return int(self.version.split(".")[0])
+
+    @property
+    def minor(self) -> int:
+        parts = self.version.split(".")
+        return int(parts[1]) if len(parts) > 1 else 0
 
     def find_unit(self, spelling: str) -> tuple[Dimension, Unit] | None:
         """The dimension a suffix belongs to, and what it scales by."""

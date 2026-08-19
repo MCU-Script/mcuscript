@@ -198,11 +198,30 @@ class _Lexer:
         match = _IDENT.match(self.src, self.pos)
         if match:
             self.pos = match.end()
+            if self.pos < len(self.src) and self.src[self.pos] in SUFFIX_SYMBOLS:
+                # A word running straight into `°`, `%` or `‰` is a unit
+                # and not a name: `c°C` and `d%` are the spellings a
+                # profile uses for hundredths and tenths, and a name
+                # cannot contain those characters at all (§6.1.5). This
+                # is the argument position of §6.3.10 — glued to a
+                # number, a suffix never reaches here.
+                return self._unit(start, line, bol)
             text = match.group()
             kind = TokenKind.KEYWORD if text in KEYWORDS else TokenKind.IDENT
             return Token(kind, text, self._span(start, line, bol))
 
         return self._operator(start, line, bol)
+
+    def _unit(self, start: int, line: int, bol: int) -> Token:
+        """One unit spelling, from wherever in it the scan stands."""
+        while self.pos < len(self.src):
+            char = self.src[self.pos]
+            if char.isalpha() or char in SUFFIX_SYMBOLS:
+                self.pos += 1
+            else:
+                break
+        span = self._span(start, line, bol)
+        return Token(TokenKind.UNIT, self.src[start : self.pos], span)
 
     def _skip_blanks(self) -> None:
         while self.pos < len(self.src):
@@ -332,11 +351,7 @@ class _Lexer:
         # A unit standing on its own: an argument to one of §6.3.10's
         # conversions. Glued to a number it never reaches here.
         if rest[0] in SUFFIX_SYMBOLS:
-            self.pos += 1
-            while self.pos < len(self.src) and self.src[self.pos].isalpha():
-                self.pos += 1
-            span = self._span(start, line, bol)
-            return Token(TokenKind.UNIT, self.src[start : self.pos], span)
+            return self._unit(start, line, bol)
 
         for op in OPERATORS:
             if rest.startswith(op):
