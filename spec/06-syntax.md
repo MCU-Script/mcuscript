@@ -873,7 +873,8 @@ taken out of circulation everywhere.
 
 A dimension is a data type, a named base unit, a set of units with a
 factor and an optional offset, and optionally a mark that it is
-**cyclic** (§6.5.6) or a **scale factor** (§6.5.5.1). **The language
+**cyclic** (§6.5.6), a **scale factor** (§6.5.5.1), or the **calendar**
+— the one dimension a date-and-time literal belongs to (§6.1.7). **The language
 defines none of them** (ADR 0008): not temperature, not percent, and not
 time. It defines the notations — suffixes (§6.1.5), duration literals
 (§6.1.6) and date-and-time literals (§6.1.7) — and a profile gives them

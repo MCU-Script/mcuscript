@@ -366,6 +366,15 @@ and it turned out to need four instructions, all small, all in `core`.
   M4's, and it is the counterpart of decision 13: the script names a
   unit because it must not know the base unit, and the binding states a
   factor because it does not have a unit at all.
+- **A host function's parameters have types in the container and no
+  dimensions.** §4.4 records one dimension per import, which is what a
+  loader needs to check that the host agrees about an *entity*; a
+  function's `param_types` carry no dimension, so `timer.after(5s)`
+  compiled against a registry that said seconds and run against a host
+  that meant milliseconds is caught by nothing at load. The compiler
+  checks it, so a conforming toolchain is safe; a container that reached
+  a different host is not. Found while writing the inference pass, and
+  it is a container question rather than a syntax one.
 - **How a script names an entry point for the host to run later.**
   "Turn the light off in five minutes" needs the script to say *which*
   entry point, and there is no way to write one down. A name as text is

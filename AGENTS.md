@@ -22,11 +22,12 @@ governance.
 format, the verifier, the VM and the C backend are written and tested,
 and every instruction the specification defines works in both backends.
 The surface syntax is `spec/06-syntax.md` (ADR 0009), and its **lexer,
-AST and parser exist** — `mcuscript parse <file>` reads a script and
-prints its tree. What does **not** exist is everything between that tree
-and a container: no type or unit inference, no code generation, so
-**there is still no compiler** and containers are written in the
-assembler in `tools/src/mcuscript/asm.py`.
+AST, parser and semantic pass exist** — `mcuscript parse <file>` reads a
+script and prints its tree, and `sema.py` types it, checks its
+dimensions and normalizes its literals to base units. What does **not**
+exist is code generation, so **there is still no compiler** and
+containers are written in the assembler in
+`tools/src/mcuscript/asm.py`.
 
 Chapter 6 marks every construct **built**, **planned** or **excluded**.
 "Built" there means *this is what M3 implements*; today that means the
@@ -54,7 +55,7 @@ to prevent.
 | Path | Role |
 |---|---|
 | `spec/` | **The specification** — the contract every implementation answers to. Its own version number, and deliberately its own top-level directory so it can be split into `mcu-script/spec` in one cut if a second implementation ever justifies it. `spec/corpus/` is part of it: containers with the verdict each must get, committed as bytes and regenerated with `python tools/build_corpus.py` (ADR 0005) |
-| `tools/` | The **host toolchain**, Python: container reader/writer, assembler, verifier, C backend, and the compiler's front end (`diagnostics.py`, `lexer.py`, `ast.py`, `parser.py`) |
+| `tools/` | The **host toolchain**, Python: container reader/writer, assembler, verifier, C backend, and the compiler's front end (`diagnostics.py`, `lexer.py`, `ast.py`, `parser.py`, `profile.py`, `registry.py`, `sema.py`) |
 | `runtime/` | The **device runtime**, C99: loader, verifier, VM. No dependencies, never allocates |
 | `docs/adr/` | Architecture decision records — living drafts in `draft/`, immutable finals at the top level once something real exists |
 | `.github/` | CI, issue templates, CODEOWNERS |

@@ -52,10 +52,11 @@ defines works end to end in both of them.
 
 [Chapter 6](spec/06-syntax.md) is the surface syntax: it plans the whole
 language, marks every construct **built**, **planned** or **excluded**,
-and names the four instructions the built half still needs. Its lexer
-and parser exist — `mcuscript parse <file>` reads a script and prints
-its syntax tree — and nothing yet turns that tree into a container, so
-**there is no compiler.** Programs are written in an assembler, on
+and names the four instructions the built half still needs. Its lexer,
+parser and type system exist — `mcuscript parse <file>` reads a script
+and prints its syntax tree, and the semantic pass types it, checks its
+units against a profile and normalizes its literals — and nothing yet
+turns that into a container, so **there is no compiler.** Programs are written in an assembler, on
 purpose: it let the format, the verifier, the VM and the C backend be
 built against each other before anybody argued about how an `if` should
 look.
