@@ -118,8 +118,12 @@ colliding with an operator — there is no `%` operator, modulo is `mod`
 (§6.3.2) — and it is what makes `5 min` a different thing to say than
 `5min`: the first is two tokens and an error, and the error says so.
 
-A suffix is an identifier-shaped word, or one of the non-letter forms a
-profile may declare — `%`, `‰`, `°C`, `°F`. Which suffixes exist, what
+A suffix is one or more characters, each of them a letter or one of
+`%`, `‰` and `°`. Letters here are Unicode rather than the ASCII an
+identifier is limited to (§6.1.3), because `µs` and `Ω` are units people
+write and neither is a name. Those three symbols are the whole of the
+non-letter set, and fixing it is what keeps a profile from reaching
+further into the lexer than it should. Which suffixes exist, what
 dimension each belongs to and what it normalizes to is **the profile's**
 (§6.5.4). The language defines that suffixes exist and how they lex.
 
@@ -226,7 +230,16 @@ line — which is what an inline one-liner in a YAML file needs.
 
 A statement may be continued across a newline when the line cannot yet
 be a complete statement: after an operator, after `(` `[` `{` `,` or
-`->`. Nothing else continues a line, and a line that could end does.
+`->`, and before a closing `)` `]` `}` or a `,`. Nothing else continues
+a line, and a line that could end does.
+
+**The rule looks backwards, and that is deliberate rather than
+incidental.** The tempting forward rule — continue whenever the next
+token cannot begin a statement — swallows the separator between two
+`match` arms, because an arm may begin with a comparison (`> 28°C ->`),
+with `else`, or with a negative number. So `} else` and `} catch` go on
+one line, which is the shape almost everybody writes anyway and the one
+a formatter can produce.
 
 ## 6.2 The shape of a program
 
@@ -478,6 +491,13 @@ An arm may also *produce* a non-valid value: `invalid -> invalid` is the
 way a script says that a faulted reading stays faulted rather than
 becoming a number somebody will later mistake for a measurement.
 
+`unavailable` and `invalid` are therefore **values** and not only
+patterns, and they are the only two states that can be written as one —
+there is no way to write `valid`, because a valid value is a value and
+has to say which. Their type comes from where they stand: the arm's
+result type, an entity's declared type, an annotation. Where nothing
+determines it, that is an error naming the annotation (§6.5.3).
+
 `invalid -> invalid` and the propagation rule above both need something
 the container does not have: **two `core` instructions that push a
 non-valid value of a given type.** No instruction today produces a
@@ -513,6 +533,13 @@ one import name, looked up whole in the import table (§4.4). The dot is a
 character in the name and not an operation: `sensor` alone is not a
 value, and saying so is a diagnostic worth writing, because the reader
 who tried it was thinking of objects, which §6.11 is about.
+
+**A part after the dot may be a keyword.** `fan.on()` is the most
+ordinary line anyone will write in this language's first embedding, and
+`on` is the word that declares an entry point. Nothing but a name can
+stand after a `.`, so there is no ambiguity to protect against — and
+entity names belong to the embedder, which should not have to consult a
+keyword list before naming a relay.
 
 Reading an import compiles to a host read; assigning to one, to a host
 write; calling one, to a host call. A name that is not in the registry is
@@ -1227,6 +1254,7 @@ index          = expression | range ;
 args           = arg , { "," , arg } ;
 arg            = expression | unit ;
 primary        = number | duration | datetime | string | "true" | "false"
+               | "unavailable" | "invalid"
                | name | "(" , expression , ")" | if_expr | match_expr ;
 
 if_expr        = "if" , expression , block , [ "else" , ( if_expr | block ) ] ;
@@ -1235,7 +1263,7 @@ arm            = pattern , "->" , expression ;
 pattern        = "else" | "unavailable" | "invalid"
                | compare_op , expression | range | expression ;
 
-name           = identifier , { "." , identifier } ;
+name           = identifier , { "." , ( identifier | keyword ) } ;
 duration       = number_with_unit , { number_with_unit } ;
 datetime       = "@" , string ;
 ```

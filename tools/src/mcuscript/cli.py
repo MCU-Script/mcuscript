@@ -12,15 +12,18 @@ from __future__ import annotations
 
 import argparse
 import sys
-from dataclasses import replace
+from dataclasses import fields as dc_fields
+from dataclasses import is_dataclass, replace
 from pathlib import Path
 
 from . import SPEC_VERSION, __version__
 from .asm import AsmError, assemble, disassemble
 from .cbackend import UnsupportedProgram
 from .container import Container, ImportKind
+from .diagnostics import CompileError
 from .errors import Refused
 from .opcodes import IMPLEMENTED_GROUPS, Group, ValType, group_names
+from .parser import parse
 from .verify import verify
 
 EXIT_OK = 0
@@ -39,6 +42,10 @@ def main(argv: list[str] | None = None) -> int:
         version=f"mcuscript {__version__} (specification {SPEC_VERSION})",
     )
     sub = parser.add_subparsers(dest="command", required=True)
+
+    p = sub.add_parser("parse", help="read a script and show its syntax tree")
+    p.add_argument("script", type=Path)
+    p.set_defaults(run=_parse)
 
     p = sub.add_parser("asm", help="assemble text into a container")
     p.add_argument("source", type=Path)
@@ -78,6 +85,9 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     try:
         return args.run(args)
+    except CompileError as error:
+        print(error.render(_last_source[0]), file=sys.stderr)
+        return EXIT_USAGE
     except AsmError as error:
         print(f"{args.source}:{error.line}: {error}", file=sys.stderr)
         return EXIT_USAGE
@@ -90,6 +100,52 @@ def main(argv: list[str] | None = None) -> int:
     except OSError as error:
         print(f"{error}", file=sys.stderr)
         return EXIT_USAGE
+
+
+#: The source of the script being read, so that a diagnostic can show
+#: the line it points at without every layer having to carry the text.
+_last_source: list[str] = [""]
+
+
+def _parse(args: argparse.Namespace) -> int:
+    """Read a script and print its tree.
+
+    There is no compiler yet — this is the front end alone (§6), and it
+    exists so that the grammar can be exercised against real scripts
+    before anything downstream of it is written.
+    """
+    source = args.script.read_text(encoding="utf-8")
+    _last_source[0] = source
+    program = parse(source, str(args.script))
+    _render_tree(program, 0)
+    return 0
+
+
+def _render_tree(node: object, depth: int) -> None:
+    pad = "  " * depth
+    if is_dataclass(node) and not isinstance(node, type):
+        fields = {
+            f.name: getattr(node, f.name) for f in dc_fields(node) if f.name != "span"
+        }
+        simple = {k: v for k, v in fields.items() if not _is_nested(v)}
+        head = ", ".join(f"{k}={v!r}" for k, v in simple.items())
+        print(f"{pad}{type(node).__name__}" + (f"  {head}" if head else ""))
+        for name, value in fields.items():
+            if _is_nested(value):
+                print(f"{pad}  .{name}")
+                _render_tree(value, depth + 2)
+        return
+    if isinstance(node, tuple | list):
+        for item in node:
+            _render_tree(item, depth)
+        return
+    print(f"{pad}{node!r}")
+
+
+def _is_nested(value: object) -> bool:
+    if is_dataclass(value) and not isinstance(value, type):
+        return True
+    return isinstance(value, tuple | list) and bool(value)
 
 
 def _asm(args: argparse.Namespace) -> int:

@@ -50,15 +50,15 @@ backend — and a differential test runs the same container through both
 backends and compares the bytes. Every instruction the specification
 defines works end to end in both of them.
 
-[Chapter 6](spec/06-syntax.md) is the surface syntax, and it is a
-document rather than a program: it plans the whole language, marks every
-construct **built**, **planned** or **excluded**, and names the four
-instructions the built half still needs. **There is no compiler.**
-Programs are written in an assembler, on purpose — it let the format,
-the verifier, the VM and the C backend be built against each other
-before anybody argued about how an `if` should look. The sketches below
-follow chapter 6, and until a compiler exists they are still
-sketches.
+[Chapter 6](spec/06-syntax.md) is the surface syntax: it plans the whole
+language, marks every construct **built**, **planned** or **excluded**,
+and names the four instructions the built half still needs. Its lexer
+and parser exist — `mcuscript parse <file>` reads a script and prints
+its syntax tree — and nothing yet turns that tree into a container, so
+**there is no compiler.** Programs are written in an assembler, on
+purpose: it let the format, the verifier, the VM and the C backend be
+built against each other before anybody argued about how an `if` should
+look.
 
 Do not depend on this repository. The specification is at
 `0.1.0-draft` and says so; ADR 0002 marks each remaining item as
