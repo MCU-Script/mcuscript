@@ -35,9 +35,9 @@ from __future__ import annotations
 
 import struct
 from collections.abc import Callable
-from math import gcd
 from dataclasses import dataclass, replace
 from fractions import Fraction
+from math import gcd
 
 from . import ast
 from .container import Access, Constant, Container, Function, Import, ImportKind
@@ -70,7 +70,13 @@ _COMPARE = {
 
 _SUFFIX = {ValType.I32: "i32", ValType.I64: "i64", ValType.F32: "f32"}
 
-_BITWISE = {"&": "and.i32", "|": "or.i32", "^": "xor.i32", "<<": "shl.i32", ">>": "shr.i32"}
+_BITWISE = {
+    "&": "and.i32",
+    "|": "or.i32",
+    "^": "xor.i32",
+    "<<": "shl.i32",
+    ">>": "shr.i32",
+}
 
 _CONVERSIONS = {"to_i32": ValType.I32, "to_i64": ValType.I64, "to_f32": ValType.F32}
 
@@ -254,8 +260,7 @@ class _Emit:
             last = index == len(node.statements) - 1
             self.statement(statement, keep=value and last)
         if value and (
-            not node.statements
-            or not isinstance(node.statements[-1], ast.ExprStmt)
+            not node.statements or not isinstance(node.statements[-1], ast.ExprStmt)
         ):
             # A block that has to give a value and does not end in an
             # expression has none to give. `sema` refuses that shape, so
@@ -729,8 +734,6 @@ class _Emit:
             self.round_f32(node.span)
         self.convert(ValType.I32, self.analysis.type_of(node).type, node.span)
 
-
-
     def round_f32(self, span: Span) -> None:
         """Nearest, away from zero on a tie — §6.3.10's rule.
 
@@ -841,9 +844,7 @@ class _Emit:
         """
         multiplier, addend, divisor = terms
         working = (
-            ValType.F32
-            if target is ValType.F32 or source is ValType.F32
-            else source
+            ValType.F32 if target is ValType.F32 or source is ValType.F32 else source
         )
         self.convert(source, working, span)
         if multiplier != 1:

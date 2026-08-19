@@ -134,7 +134,9 @@ def test_a_host_function_import_carries_its_signature():
 
 def test_a_literal_is_normalized_to_base_units_at_compile_time():
     """`24.5°C` is 2450 hundredths, and no unit survives (§1.4)."""
-    assert "const.i32.s16 2450" in disassemble(build("on go { setpoint.target = 24.5°C }\n"))
+    assert "const.i32.s16 2450" in disassemble(
+        build("on go { setpoint.target = 24.5°C }\n")
+    )
 
 
 def test_small_numbers_use_the_short_form_and_large_ones_the_pool():
@@ -228,7 +230,10 @@ def test_two_limits_in_one_cycle_are_refused_naming_both():
 
 def test_a_limit_on_either_function_of_a_cycle_covers_both():
     """§6.2.4: the declaration may stand on any one of them."""
-    for shape in ({"first": " limit 4", "second": ""}, {"first": "", "second": " limit 4"}):
+    for shape in (
+        {"first": " limit 4", "second": ""},
+        {"first": "", "second": " limit 4"},
+    ):
         container = build(MUTUAL.format(**shape))
         assert {f.recursion_cap for f in container.functions if f.name != "go"} == {4}
 
@@ -248,12 +253,16 @@ def test_a_date_has_no_number_to_compile_to():
 
 def test_a_64_bit_number_cannot_become_a_decimal():
     """`i64` and `f32` have no conversion between them (§3.4, §3.5)."""
-    message = refusal("on go {\n  let big: i64 = 5\n  fan.speed = to_i32(to_f32(big))\n}\n")
+    message = refusal(
+        "on go {\n  let big: i64 = 5\n  fan.speed = to_i32(to_f32(big))\n}\n"
+    )
     assert "i64" in message and "f32" in message
 
 
 def test_bitwise_operations_stay_32_bit():
-    message = refusal("on go {\n  let big: i64 = 5\n  fan.speed = to_i32(big & big)\n}\n")
+    message = refusal(
+        "on go {\n  let big: i64 = 5\n  fan.speed = to_i32(big & big)\n}\n"
+    )
     assert "32-bit" in message
 
 
@@ -353,7 +362,9 @@ SCRIPTS = {
         "  fan.speed = n\n"
         "}\n"
     ),
-    "a function": "fn double(x) { x * 2 }\non go { fan.speed = double(sensor.count) }\n",
+    "a function": (
+        "fn double(x) { x * 2 }\non go { fan.speed = double(sensor.count) }\n"
+    ),
     "capped recursion": (
         "fn down(n) limit 5 {\n"
         "  if n <= 0 { return 0 }\n"
@@ -519,15 +530,11 @@ ANSWERS = {
 #: branches on the operand is wrong even where it is obvious."
 ABSENT = {
     "abs carries an absent reading": "on go { return abs(sensor.temp) }\n",
-    "a rounding conversion carries one": (
-        "on go { return to_i32(sensor.temp, °C) }\n"
-    ),
+    "a rounding conversion carries one": ("on go { return to_i32(sensor.temp, °C) }\n"),
     "a conversion with an offset carries one": (
         "on go { return to_i32(sensor.temp, °F) }\n"
     ),
-    "round carries one": (
-        "on go { return round(to_f32(sensor.temp, °C)) }\n"
-    ),
+    "round carries one": ("on go { return round(to_f32(sensor.temp, °C)) }\n"),
 }
 
 
@@ -541,9 +548,7 @@ def test_a_builtin_propagates_a_state_rather_than_faulting(
     assert run.output.split()[3] == state
 
 
-@pytest.mark.parametrize(
-    ("script", "expected"), ANSWERS.values(), ids=list(ANSWERS)
-)
+@pytest.mark.parametrize(("script", "expected"), ANSWERS.values(), ids=list(ANSWERS))
 def test_a_compiled_script_computes_what_it_owes(vm, cc, tmp_path, script, expected):
     run = agree(vm, cc, tmp_path, build(script), HOST.format(temp="2650"))
     assert tuple(run.output.split()[1:4]) == expected
