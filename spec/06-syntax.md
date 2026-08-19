@@ -582,6 +582,23 @@ matters — a built-in that touched the world would be a host call wearing
 a keyword, and what a script may reach belongs to the embedder. It is
 why this language has no `now()` (ADR 0008).
 
+**Mathematics beyond the four operations is a host import.** There is no
+`log`, no `sqrt`, no `sin`, and the reason is the rule above rather than
+a judgement about who needs them — a thermistor's Steinhart-Hart
+conversion needs two, and none of them lowers to instructions, because
+the instruction set has none. So they arrive the way everything else the
+language does not do arrives: as functions the embedder declares.
+
+That is also the only arrangement that keeps §1.5's bit-identity. A
+library function is *not* bit-identical between implementations — two
+`log`s disagree in the last place — so a language-level `log` would have
+to be written twice, once in the VM and once in the generated C, and the
+two backends would come apart exactly where §1.5.1 says a comparison
+turns one ULP into a different branch. A host import is implemented
+**once** by the embedder and called by both backends, so the question
+never arises. §1.5.1 already says this language has no library
+functions; this is what follows from it.
+
 Two obligations follow, and both fall on the compiler.
 
 **A built-in propagates validity like an operator.** `abs(temp)` with an

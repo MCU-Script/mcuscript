@@ -366,6 +366,16 @@ and it turned out to need four instructions, all small, all in `core`.
   M4's, and it is the counterpart of decision 13: the script names a
   unit because it must not know the base unit, and the binding states a
   factor because it does not have a unit at all.
+- **How a script names an entry point for the host to run later.**
+  "Turn the light off in five minutes" needs the script to say *which*
+  entry point, and there is no way to write one down. A name as text is
+  planned and not built; a function pointer is excluded permanently. A
+  **static reference to an entry point** would be safe — the host
+  re-enters later, so the call graph the recursion cap rests on is
+  untouched — and it does not exist. Probably the embedder's to solve
+  with one import per timer, but it came up independently in three of
+  five ecosystems when the design was checked against real automation
+  code, which is enough to write down.
 - **Multi-file compilation** is the producer's command line and not a
   module system (§6.12). Nothing here says how names from two files
   meet, because nothing yet needs two files.
