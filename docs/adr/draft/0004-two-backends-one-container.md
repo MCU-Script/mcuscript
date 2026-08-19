@@ -212,39 +212,65 @@ verifier; the figures the verifier was still in are two paragraphs down.
 
 | group set | cortex-m0+ | cortex-m4f | cortex-m33 |
 |---|---:|---:|---:|
-| full | 8,842 | 5,980 | 5,980 |
-| no i64 | 7,634 | 4,268 | 4,276 |
-| no i64 division | 8,162 | 4,900 | 4,900 |
-| no float | 5,322 | 5,412 | 5,412 |
-| no call | 8,506 | 5,612 | 5,612 |
-| no bits | 8,602 | 5,444 | 5,444 |
-| no loop | 8,786 | 5,596 | 5,596 |
-| expressions + float | 7,042 | 3,668 | 3,676 |
-| expressions only | 3,482 | 3,084 | 3,084 |
+| full | 8,986 | 5,812 | 5,812 |
+| no i64 | 7,858 | 4,604 | 4,612 |
+| no i64 division | 8,290 | 4,716 | 4,724 |
+| no float | 5,450 | 5,556 | 5,556 |
+| no call | 8,666 | 5,508 | 5,508 |
+| no bits | 8,722 | 5,564 | 5,564 |
+| no loop | 8,906 | 5,740 | 5,740 |
+| expressions + float | 7,258 | 3,756 | 3,748 |
+| expressions only | 3,618 | 3,228 | 3,220 |
 
 **What each group costs on cortex-m33**, as full minus that group:
-`i64` 1,704 (28 %), of which **`i64div` alone is 1,080 (18 %)**;
-`float` 568 (9 %); `call` 368 (6 %); `bits` 536 (9 %); `loop` 384
-(6 %).
+`i64` 1,200 (21 %), of which **`i64div` alone is 1,088 (19 %)**;
+`float` 256 (4 %); `call` 304 (5 %); `bits` 248 (4 %); `loop` 72 (1 %).
 
 The `expressions only` row is the one to read against `full`: a device
-that evaluates formulas links 3,084 bytes, and everything above that is
+that evaluates formulas links 3,220 bytes, and everything above that is
 something it asked for.
 
-**`loop` is the one figure that is not what it looks like**, and ADR
-0007 measures it apart: 48 of those 384 bytes are the instruction, and
-310 are the dispatch table re-lowering itself because `0xA0` is the
-only opcode in the gap between `bits` and `i64div`. It is a cost of the
-group layout, which is also what makes every other row in this table
-possible.
+**A group's cost is not a property of the group**, and this table is
+where that stops being a footnote. Every figure above is a difference
+between two linked images, and the interpreter is one `switch`: change
+which opcodes exist and GCC changes how it dispatches, so a row moves
+without a line of its group being touched. ADR 0010's four `core`
+instructions did exactly that — see the paragraph after next — and they
+moved `i64` from 1,704 to 1,200 and `bits` from 536 to 248 while
+neither group changed at all. Read a row as *what this build costs
+today*, never as a price list.
+
+**`loop` is the clearest case of it**, and ADR 0007 measured it apart
+when it was 384 bytes: 48 were the instruction and 310 were the
+dispatch table re-lowering itself, because `0xA0` was the only opcode
+in the gap between `bits` and `i64div`. It is 72 today. Nothing about
+loops changed; the opcode space around them got denser, and the
+re-lowering that ADR 0007 identified as the real cost stopped
+happening.
+
+**What ADR 0010's four instructions cost**, since it is the one
+measurement where an addition made the image smaller. `core` grew by
+136 bytes on cortex-m33, which is the honest price of `AND`, `OR` and
+the two chosen-state constants. The **full** build shrank by 168 — from
+5,980 to 5,812 — and `vm.o` with it, from 3,492 to 3,324, with four
+more cases in the switch than before. The cause is visible in the
+disassembly: filling `0x2C`–`0x2F` made the opcode range dense enough
+for GCC to cover part of the dispatch with a table branch (`tbh`) that
+had been a chain of comparisons, and the table is smaller than the
+chain was. The lesson is the one above rather than "adding
+instructions is free": four in a hole paid for themselves, four in a
+fresh range would not.
 
 That `i64div` line is why it is a group at all (§3.4). Two instructions
-cost three times the other thirteen in their range, because 64-bit
+cost nine times the other thirteen in their range — 1,088 against the
+112 that separate `no i64` from `no i64 division` — because 64-bit
 division is the one operation here that a 32-bit processor cannot do in
 registers. Splitting it out is what makes 64-bit *comparison* — a
 timestamp, an energy counter — affordable on a device that will never
-divide one. The percentages are larger than they were only because the
-whole is smaller; the byte figures barely moved.
+divide one. This is the one row that has stayed put through every
+re-measurement, and the reason it does is that a support routine is a
+function the linker either pulls in or does not, not a shape the
+dispatch loop can absorb.
 
 **What ADR 0006 did to the numbers**, since the before-and-after is the
 clearest statement of what verification was costing:
@@ -266,18 +292,18 @@ disabled.
 
 **The old estimate was low, and it was low about the right thing.** ADR
 0002 §8 carried 1–2 KB for an expression-only engine. An expression-only
-*interpreter* is 1,504 bytes on cortex-m33 — the estimate was close, and
+*interpreter* is 1,646 bytes on cortex-m33 — the estimate was close, and
 it was silent about everything around it. That silence is now much
 cheaper than it was:
 
 | | load.c | vm.c | names.c | own total | linked |
 |---|---:|---:|---:|---:|---:|
-| full | 1,621 | 3,492 | 887 | 6,000 | 5,980 |
-| expressions + float | 1,617 | 2,080 | 887 | 4,584 | 3,676 |
-| expressions only | 1,621 | 1,504 | 887 | 4,012 | 3,084 |
+| full | 1,621 | 3,324 | 887 | 5,832 | 5,812 |
+| expressions + float | 1,617 | 2,160 | 887 | 4,664 | 3,748 |
+| expressions only | 1,621 | 1,646 | 887 | 4,154 | 3,220 |
 
 ADR 0006 estimated ~2.1 KB expression-only and ~4 KB complete. The real
-figures are 3.1 KB and 5.6 KB, so that estimate was **a kilobyte too
+figures are 3.2 KB and 5.7 KB, so that estimate was **a kilobyte too
 optimistic** — worth recording, because it was an estimate made from the
 attribution table rather than from a build, which is exactly the kind of
 number this document exists to stop trusting.
@@ -286,7 +312,7 @@ The reading of the modularity requirement has moved twice, and where it
 has landed is worth stating plainly. When the verifier was in, feature
 modules were trim — a fifth of the whole at best — and the size lever
 was choosing the other backend. Without it, **the group mask is the
-larger share of what is left**: 2.9 KB of 6.0 on a Cortex-M33, since
+larger share of what is left**: 2.5 KB of 5.7 on a Cortex-M33, since
 what remains is a dispatch loop and a parser, and the dispatch loop is
 the part that has groups. ADR 0002 §1.3's *"an expression-only device
 links an expression-only VM"* is now a fair description of what happens.

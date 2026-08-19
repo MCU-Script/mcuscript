@@ -59,6 +59,7 @@ result yet.
 | [0007](draft/0007-loops-are-bounded-not-metered.md) | Loops are bounded, not metered |
 | [0008](draft/0008-the-language-owns-no-dimensions.md) | The language owns no dimensions, and therefore no clock |
 | [0009](draft/0009-the-surface-syntax.md) | The surface syntax, planned whole |
+| [0010](draft/0010-four-instructions-the-syntax-needed.md) | Four instructions the syntax needed |
 
 Start with [0002](draft/0002-inherited-context.md). It marks every item
 as **decided**, **recorded direction** or **on the table**, and its §8

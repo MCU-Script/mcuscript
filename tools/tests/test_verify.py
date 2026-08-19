@@ -283,6 +283,41 @@ def test_a_predicate_accepts_any_type_and_yields_bool():
     assert facts["go"].max_stack == 1
 
 
+def test_the_boolean_operators_do_not_take_integers():
+    # const.i32.s8 1; const.i32.s8 1; and
+    expect(Refusal.TYPE_MISMATCH, build(b"\x01\x01\x01\x01\x2e\x0b" + RET, max_stack=2))
+
+
+def test_a_chosen_state_pushes_the_type_its_operand_names():
+    # const.invalid i64; ret_v — from a function that returns i64.
+    facts = verify(
+        build(b"\x2d\x02\x24", returns=ValType.I64, max_stack=1),
+        implemented=ALL_GROUPS,
+    )
+    assert facts["go"].max_stack == 1
+
+
+def test_a_chosen_state_of_a_type_the_function_does_not_return():
+    # const.invalid bool; ret_v — from a function that returns i32.
+    expect(
+        Refusal.TYPE_MISMATCH,
+        build(b"\x2d\x04\x24", returns=ValType.I32, max_stack=1),
+    )
+
+
+def test_a_chosen_state_may_not_be_void():
+    """A value has to have a type, and `void` is the absence of one.
+
+    Nothing downstream would notice: the instruction pushes a zero
+    whatever its operand says, so the operand is only ever read here.
+    """
+    expect(Refusal.TYPE_MISMATCH, build(b"\x2c\x00\x0b" + RET, max_stack=1))
+
+
+def test_a_chosen_state_of_a_type_that_does_not_exist():
+    expect(Refusal.TYPE_MISMATCH, build(b"\x2c\x7f\x0b" + RET, max_stack=1))
+
+
 # -- indices --------------------------------------------------------------
 
 

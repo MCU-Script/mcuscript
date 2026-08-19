@@ -368,6 +368,80 @@ def test_a_script_reads_back_what_it_wrote(runner, tmp_path):
     assert result.result == ("i32", "42", "valid")
 
 
+@pytest.mark.parametrize(
+    ("body", "expected"),
+    [
+        ("  const.true\n  const.true\n  and\n  ret_v\n", "true"),
+        ("  const.true\n  const.false\n  and\n  ret_v\n", "false"),
+        ("  const.false\n  const.false\n  and\n  ret_v\n", "false"),
+        ("  const.true\n  const.false\n  or\n  ret_v\n", "true"),
+        ("  const.false\n  const.false\n  or\n  ret_v\n", "false"),
+    ],
+)
+def test_the_boolean_operators(runner, tmp_path, body, expected):
+    assert value(runner, tmp_path, body, returns="bool").result == (
+        "bool",
+        expected,
+        "valid",
+    )
+
+
+@pytest.mark.parametrize("operator", ["and", "or"])
+def test_a_boolean_operator_carries_an_absent_operand_rather_than_answering(
+    runner, tmp_path, operator
+):
+    """`false and unavailable` is `unavailable`, not `false` (§3.3).
+
+    The short answer would be defensible — `false` whatever the other
+    operand turns out to be — and it is refused: three-valued logic here
+    would be a rule that holds for two opcodes and nowhere else, and the
+    script that wants it writes `… else false` and says so.
+    """
+    result = value(
+        runner,
+        tmp_path,
+        "  const.false\n"
+        "  load.h a\n  const.i32.s8 0\n  gt.i32\n"
+        f"  {operator}\n  ret_v\n",
+        "entity read i32 a dim 1\n",
+        returns="bool",
+    )
+    assert result.result[2] == "unavailable"
+
+
+@pytest.mark.parametrize(
+    ("instruction", "state"),
+    [("const.unavailable", "unavailable"), ("const.invalid", "invalid")],
+)
+def test_a_chosen_state_reaches_the_host_as_a_zero(
+    runner, tmp_path, instruction, state
+):
+    """The value of a chosen state is observable, so it is specified.
+
+    A host write carries value and state both, so what the embedder sees
+    is not an implementation detail — and two backends that filled the
+    slot differently would diverge on it.
+    """
+    source = (
+        PROFILE
+        + ".entity write i32 out dim 1\n"
+        + f".entry go\n  {instruction} i32\n  store.h out\n  ret\n"
+    )
+    result = run(runner, tmp_path, source, "entity write i32 out dim 1\n")
+    assert result.writes["out"] == ("0", state)
+
+
+def test_a_chosen_state_survives_arithmetic_it_takes_part_in(runner, tmp_path):
+    # The point of writing one at all: `invalid -> invalid` in a match
+    # means a faulted reading stays faulted (§6.3.5).
+    result = value(
+        runner,
+        tmp_path,
+        "  const.i32.s8 5\n  const.invalid i32\n  add.i32\n  ret_v\n",
+    )
+    assert result.result == ("i32", "5", "invalid")
+
+
 def test_a_write_carries_the_validity_state_to_the_host(runner, tmp_path):
     source = (
         PROFILE
@@ -576,6 +650,24 @@ def test_a_core_only_build_refuses_a_container_needing_a_dropped_group(
     result = run(core_only_runner, tmp_path, source, "")
     assert result.refusal == "unsupported_group"
     assert result.out.split()[3] == "2"  # the i64 bit, and only it
+
+
+def test_a_core_only_build_runs_a_chosen_state_of_a_type_it_cannot_compute(
+    core_only_runner, tmp_path
+):
+    """A value's *type* has never required its arithmetic group (§3.3).
+
+    `const.invalid i64` runs no i64 handler — it pushes a zero and a
+    state, and the type operand is the verifier's business — so a build
+    without the group runs it, exactly as it already runs a `load.h` of
+    an i64 entity. Worth pinning because the opposite is the natural
+    assumption and would make the instruction useless in a `match` arm
+    on a small device.
+    """
+    source = PROFILE + ".entry go -> i64\n  const.invalid i64\n  ret_v\n"
+    result = run(core_only_runner, tmp_path, source, "")
+    assert result.refusal is None
+    assert result.result == ("i64", "0", "invalid")
 
 
 def test_dropping_the_groups_drops_their_code(core_only_runner, optimised_runner):

@@ -422,11 +422,11 @@ propagating one produces the honest answer and lets the script write
 right operand runs either way, which is a shape worth discouraging on
 its own.
 
-This is the one place the surface language needs something the container
-does not have: **two `core` instructions, boolean `and` and `or`.** The
-group has `not` and it has the `bits` group's `and.i32`, but nothing
-that takes two `bool`s — so today the only lowering available is a
-branch, which is precisely the semantics being refused. See §6.13.
+This construct is why the container has two `core` instructions it did
+not start with, `AND` and `OR` (§3.3). The group had `not`, and the
+`bits` group had `and.i32`, and nothing took two `bool`s — so the only
+lowering available was a branch, which is precisely the semantics being
+refused. See §6.13.
 
 ### 6.3.4 `if` as an expression — built
 
@@ -498,10 +498,10 @@ has to say which. Their type comes from where they stand: the arm's
 result type, an entity's declared type, an annotation. Where nothing
 determines it, that is an error naming the annotation (§6.5.3).
 
-`invalid -> invalid` and the propagation rule above both need something
-the container does not have: **two `core` instructions that push a
-non-valid value of a given type.** No instruction today produces a
-*chosen* state. States arise as a side effect — from an operand, from a
+`invalid -> invalid` and the propagation rule above are why the
+container has `CONST.unavailable` and `CONST.invalid` (§3.3): two `core`
+instructions that push a non-valid value of a named type. Every other
+state in the machine arises as a side effect — from an operand, from a
 host read of an entity with no reading, or from an undefined arithmetic
 case such as division by zero (§1.5) — and none of those is a way to say
 *this one is invalid, deliberately*. See §6.13.
@@ -1244,16 +1244,17 @@ closures are excluded for exactly the same reason.
 | an `import` statement | multi-file compilation is the producer's command line, not a module system in a language whose programs are a page long |
 | unsigned integers, `f64`, narrow value types | §1.1, unchanged |
 
-## 6.13 What the container must gain
+## 6.13 What the container had to gain
 
-Four instructions, all in `core`, all needed by constructs marked
-**built** above. Their encodings belong to §3 and are assigned when they
-are implemented.
+Four instructions, all in `core`, each required by a construct marked
+**built** above. They are in §3 now, and they are the only additions the
+built language needed — everything else it says lowers to instructions
+the container already had.
 
-| Needed | For |
+| Instruction | For |
 |---|---|
-| boolean `AND`, boolean `OR` | non-short-circuiting `and`/`or` (§6.3.3). The set has `NOT` and the `bits` group's `AND.i32`, and nothing that takes two `bool`s — so the only lowering available today is a branch, which is the semantics being refused |
-| `CONST.unavailable <type>`, `CONST.invalid <type>` | `match` (§6.3.5), twice over: a match whose subject is not valid must yield that state without evaluating an arm, and `invalid -> invalid` must be writable. No instruction today produces a *chosen* state — every state arises as a side effect of an operand, a host read, or an undefined arithmetic case |
+| `AND` `0x2E`, `OR` `0x2F` | non-short-circuiting `and`/`or` (§6.3.3). The set had `NOT` and the `bits` group's `AND.i32`, and nothing that took two `bool`s — so the only lowering available was a branch, which is the semantics being refused |
+| `CONST.unavailable type8` `0x2C`, `CONST.invalid type8` `0x2D` | `match` (§6.3.5), twice over: a match whose subject is not valid yields that state without evaluating an arm, and `invalid -> invalid` has to be writable. Nothing else in the set produces a *chosen* state — every other state arises as a side effect of an operand, a host read, or an undefined arithmetic case |
 
 Two further additions are named here so that the planned sections above
 are not a wish: **an arena section with sized load and store

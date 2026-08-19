@@ -663,6 +663,28 @@ def _instruction(
         ]
     if name == "not":
         return [f"{top} = {top} ? 0u : 1u;"]
+    if name in ("and", "or"):
+        # `&&` and `||` short-circuit in C and the instruction does not,
+        # which costs nothing here: both operands were evaluated into
+        # slots long before this line, so what is left is a value to
+        # compute. The state is the ordinary maximum — an absent operand
+        # is carried, never decided away (§1.3).
+        a, a_state = _slot(depth - 2)
+        b, b_state = _slot(depth - 1)
+        operator = "&&" if name == "and" else "||"
+        return [
+            f"{a} = (({a} != 0) {operator} ({b} != 0)) ? 1u : 0u;",
+            f"{a_state} = mcuscript_op_worse({a_state}, {b_state});",
+        ]
+    if name in ("const.unavailable", "const.invalid"):
+        # The type operand is not read: the value is zero whichever type
+        # it names, and the type is there for the verifier's stack.
+        state = (
+            "MCUSCRIPT_UNAVAILABLE"
+            if name == "const.unavailable"
+            else "MCUSCRIPT_INVALID"
+        )
+        return [f"{push} = 0u;", f"{push_state} = {state};"]
 
     if name == "else":
         value, state = _slot(depth - 2)

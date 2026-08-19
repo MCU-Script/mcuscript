@@ -403,7 +403,7 @@ def _operand(code: bytes, pc: int, op) -> int:
         return int.from_bytes(raw, "little", signed=True)
     if op.operand is Operand.IMM16:
         return int.from_bytes(raw, "little", signed=True)
-    if op.operand is Operand.IDX8:
+    if op.operand in (Operand.IDX8, Operand.TYPE8):
         return raw[0]
     return int.from_bytes(raw, "little", signed=True)  # OFF16
 
@@ -442,6 +442,8 @@ def _apply(
             _pool(container, operand, ValType.I32, where)
         return rest + op.pushes
 
+    if op.poly is Poly.CONST_STATE:
+        return (*stack, _state_type(op, operand, where))
     if op.poly is Poly.LOOP_GUARD:
         want = _local(fn, operand, where)
         if want is not ValType.I32:
@@ -546,6 +548,32 @@ def _apply(
             )
         return ()
     raise AssertionError(f"unhandled {op.poly}")  # pragma: no cover
+
+
+def _state_type(op, operand: int, where: str) -> ValType:
+    """The type a chosen-state constant claims to push.
+
+    The byte is a type code and not an index, and it is the one operand
+    in the instruction set that no handler reads: the value pushed is
+    zero whatever it says, and what the type is *for* is the stack the
+    verifier is computing. So this is where a wrong one has to be
+    caught — nothing downstream would notice.
+    """
+    try:
+        type_ = ValType(operand)
+    except ValueError:
+        raise refuse(
+            Refusal.TYPE_MISMATCH,
+            where=where,
+            detail=f"{op.name} names type 0x{operand:02X}, which is not a type",
+        ) from None
+    if type_ is ValType.VOID:
+        raise refuse(
+            Refusal.TYPE_MISMATCH,
+            where=where,
+            detail=f"{op.name} pushes a value, and void is not one",
+        )
+    return type_
 
 
 def _local(fn: Function, index: int, where: str) -> ValType:

@@ -266,6 +266,33 @@ def _cases() -> list[Case]:
         ),
     )
     case(
+        "ok-chosen-state",
+        "ok",
+        "",
+        "The four instructions the surface syntax needed (§6.13): two "
+        "booleans that do not short-circuit, and the two states a program "
+        "can choose. A verifier that types the operand of a chosen state "
+        "as a table index rather than as a type will refuse this.",
+        _asm(
+            ".entry go -> i32\n"
+            "  const.true\n"
+            "  const.true\n"
+            "  and\n"
+            "  const.false\n"
+            "  or\n"
+            "  jmp_if_false faulted\n"
+            # A chosen `unavailable`, then replaced: the pair of
+            # instructions a `match` arm produces.
+            "  const.unavailable i32\n"
+            "  const.i32.s8 7\n"
+            "  else\n"
+            "  ret_v\n"
+            "faulted:\n"
+            "  const.invalid i32\n"
+            "  ret_v\n"
+        ),
+    )
+    case(
         "ok-capped-recursion",
         "ok",
         "",
@@ -523,6 +550,16 @@ def _cases() -> list[Case]:
         "type_mismatch",
         "add.i32 applied to two bools.",
         _raw(b"\x04\x04\x10\x23", max_stack=2),
+    )
+    case(
+        "chosen-state-of-no-type",
+        "verification",
+        "type_mismatch",
+        "A chosen state whose operand names `void`. The instruction "
+        "pushes a value and `void` is not one — and because no handler "
+        "reads the operand, a verifier is the only thing that can catch "
+        "it.",
+        _raw(b"\x2c\x00\x0b\x23", max_stack=1),
     )
     case(
         "stack-underflow",

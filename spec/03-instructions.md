@@ -21,9 +21,9 @@ undefined opcode — which a verifier refuses, and which no conforming
 container contains.
 
 Notation used below: `imm8`/`imm16` are signed immediates, `idx8` an
-unsigned index, `off16` a signed byte offset **relative to the first
-byte after the instruction**. The stack effect column reads
-`consumed → produced`.
+unsigned index, `type8` a type code from §4.1, `off16` a signed byte
+offset **relative to the first byte after the instruction**. The stack
+effect column reads `consumed → produced`.
 
 ## 3.2 Groups and opcode ranges
 
@@ -167,13 +167,31 @@ reach a decision".
 | Opcode | Instruction | Effect |
 |---|---|---|
 | `0x1E` | `NOT` | `bool → bool` |
+| `0x2E` | `AND` | `bool bool → bool` |
+| `0x2F` | `OR` | `bool bool → bool` |
 
-There is no `AND` or `OR` instruction. The language's `and` and `or`
-short-circuit, which makes them control flow, and the compiler lowers
-them to branches. That is not merely an encoding convenience: it means
-`sensor_a.ok and temp > 25` does not evaluate the comparison when the
-first operand is false, so an absent `temp` cannot poison an expression
-whose answer was already determined.
+**Neither `AND` nor `OR` short-circuits**, and that is what they are
+for. Both operands are on the stack before the instruction runs, and
+validity propagates as the maximum like everywhere else (§1.3), so
+`sensor.ok and temp > 25` with an unread `temp` is an `unavailable`
+`bool` — an answer the script can fall back from — rather than a
+branch on an absent value, which is a fault (§1.3.1). Lowering `and` to
+a jump would produce exactly that fault, on the input the construct
+exists to survive; §6.3.3 is the surface-language side of the same
+argument.
+
+There is deliberately **no three-valued shortcut**: `false AND
+unavailable` is `unavailable`, not `false`, even though the answer
+would be `false` whatever the second operand turns out to be. SQL takes
+the other road, and the price of it here would be a rule that holds for
+two opcodes and nowhere else in the instruction set — plus a branch in
+both backends where there is currently none. A script that wants the
+short answer writes `… else false`, which says so.
+
+The pair is at `0x2E`–`0x2F` rather than beside `NOT` because the bool
+block had one free code and this needed two; an instruction pair a
+compiler emits from one construct is better kept together than moved
+apart to sit under its heading.
 
 ### Branches and return
 
@@ -211,6 +229,8 @@ if measurement later says otherwise.
 | `0x29` | `IS_VALID` | 1 | `T → bool` | |
 | `0x2A` | `IS_UNAVAILABLE` | 1 | `T → bool` | |
 | `0x2B` | `IS_INVALID` | 1 | `T → bool` | |
+| `0x2C` | `CONST.unavailable type8` | 2 | `→ T` | `unavailable`, as the named type |
+| `0x2D` | `CONST.invalid type8` | 2 | `→ T` | `invalid`, as the named type |
 
 `ELSE` takes the value first and the fallback second, and both must
 have the same type. It catches **both** non-valid states (§1.3.1); the
@@ -221,6 +241,34 @@ The three predicates accept any type, always produce a `valid` `bool`,
 and are the only way a script can inspect a state rather than
 propagate it. They are what makes §1.3.1's fault avoidable: a script
 that wants to handle an absent sensor explicitly can.
+
+The two constants are the only instructions that produce a state
+because somebody **chose** it. Every other state in the machine arises
+as a side effect — of an operand, of a host read with no reading, of an
+undefined arithmetic case — and none of those is a way to say *this one
+is invalid, deliberately*, which a script must be able to say when it
+refuses to turn a faulted reading into a number (§6.3.5).
+
+Three things about them:
+
+- **The value is zero** — `0`, `0.0`, `false` — and this is normative
+  rather than incidental. A non-valid value still reaches a host write
+  and still reaches an entry point's result, so the bytes are
+  observable, and two backends that chose differently would diverge on
+  them.
+- **The operand is a type code, not an index** (§4.1), and it may not be
+  `void`. It exists for the verifier's stack: the instruction pushes a
+  typed slot, and nothing later in the stream would notice if it were
+  wrong.
+- **No handler reads it.** That is the reverse of §3.2's rule that a
+  type belongs in the opcode — the rule is there because a type byte
+  would put float handling inside every arithmetic handler and make it
+  unremovable, and that argument only bites where the handler differs
+  per type. Here it does not differ at all: one handler pushes a zero
+  and a state, whatever the operand says. For the same reason,
+  `CONST.invalid i64` in a container that requires only `core` is
+  conforming — an `i64`-typed *value* has never needed the `i64` group,
+  only 64-bit arithmetic has.
 
 ## 3.4 The `i64` and `i64div` groups
 

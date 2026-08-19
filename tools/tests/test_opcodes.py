@@ -16,6 +16,7 @@ from mcuscript.opcodes import (
     GROUP_RANGES,
     Group,
     Operand,
+    ValType,
     groups_used,
 )
 
@@ -74,6 +75,36 @@ def test_the_loop_group_holds_the_bound_and_not_the_branch():
         "loop.guard"
     ]
     assert BY_NAME["jmp"].group is Group.CORE
+
+
+def test_the_boolean_pair_takes_two_bools_and_not_two_i32s():
+    """The distinction the `bits` group makes easy to lose.
+
+    `and.i32` and `and` are different instructions with different
+    operand types, and a compiler reaching for the wrong one would
+    produce something that verifies and computes nonsense on -1.
+    """
+    for name in ("and", "or"):
+        op = BY_NAME[name]
+        assert op.group is Group.CORE
+        assert op.pops == (ValType.BOOL, ValType.BOOL)
+        assert op.pushes == (ValType.BOOL,)
+    assert BY_NAME["and.i32"].group is Group.BITS
+
+
+def test_a_chosen_state_carries_a_type_and_not_an_index():
+    """`type8` exists so that nothing mistakes the byte for a table index.
+
+    It is the operand no handler reads (§3.3) — the verifier is its only
+    consumer — and an index-shaped operand would have invited a lookup
+    into a table it has nothing to do with.
+    """
+    for name in ("const.unavailable", "const.invalid"):
+        op = BY_NAME[name]
+        assert op.group is Group.CORE
+        assert op.operand is Operand.TYPE8
+        assert op.size == 2
+        assert op.pops == () and op.pushes == ()  # the type decides, not the table
 
 
 @pytest.mark.parametrize("chapter", ["03-instructions.md"])

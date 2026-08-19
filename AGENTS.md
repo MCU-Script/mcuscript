@@ -20,7 +20,12 @@ governance.
 
 **The back end exists; the front end has begun.** The container
 format, the verifier, the VM and the C backend are written and tested,
-and every instruction the specification defines works in both backends.
+and every instruction the specification defines works in both backends —
+including the four the surface syntax needed, added on 2026-08-19
+(ADR 0010): boolean `and`/`or`, which do not short-circuit, and
+`const.unavailable`/`const.invalid`, the only way a program states a
+validity state rather than causing one.
+
 The surface syntax is `spec/06-syntax.md` (ADR 0009), and its **lexer,
 AST, parser and semantic pass exist** — `mcuscript parse <file>` reads a
 script and prints its tree, and `sema.py` types it, checks its

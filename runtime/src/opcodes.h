@@ -87,6 +87,11 @@ enum {
 	OP_IS_VALID = 0x29,       /* is_valid */
 	OP_IS_UNAVAILABLE = 0x2A, /* is_unavailable */
 	OP_IS_INVALID = 0x2B,     /* is_invalid */
+	OP_CONST_UNAVAILABLE = 0x2C, /* const.unavailable */
+	OP_CONST_INVALID = 0x2D,     /* const.invalid */
+	/* bool, continued: `not` is at 0x1E, where the block began */
+	OP_AND = 0x2E, /* and */
+	OP_OR = 0x2F,  /* or */
 
 	/* -- the i64 group -- */
 	OP_CONST_I64 = 0x40, /* const.i64 */

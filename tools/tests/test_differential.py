@@ -18,7 +18,7 @@ that is where the promise was most in doubt.
 from __future__ import annotations
 
 import pytest
-from harness import PROFILE, agree, both  # noqa: F401
+from harness import PROFILE, agree, both, compile_once  # noqa: F401
 
 from mcuscript.asm import assemble
 from mcuscript.cbackend import UnsupportedProgram, generate
@@ -131,10 +131,49 @@ def test_not_agrees(vm, cc, tmp_path):
     )
 
 
-# -- validity -------------------------------------------------------------
-
-
 ABSENT_HOST = "entity read i32 a dim 1 {}\nentity read i32 b dim 1 {}\n"
+
+
+@pytest.mark.parametrize("operator", ["and", "or"])
+def test_the_boolean_operators_agree_over_every_pair_of_states(
+    vm, cc, tmp_path, operator
+):
+    """Sixteen worlds: two operands, each true, false, absent or faulted.
+
+    The operands are comparisons rather than literals because that is
+    the only way to hand a `bool` a state — and it is the shape the
+    construct exists for, `temp > 25 and humidity > 60` with one sensor
+    silent (§3.3).
+    """
+    source = (
+        PROFILE
+        + ".entity read i32 a dim 1\n.entity read i32 b dim 1\n"
+        + ".entry go -> bool\n"
+        + "  load.h a\n  const.i32.s8 0\n  gt.i32\n"
+        + "  load.h b\n  const.i32.s8 0\n  gt.i32\n"
+        + f"  {operator}\n  ret_v\n"
+    )
+    program = compile_once(vm, cc, tmp_path, source)
+    worlds = ["= 5", "= -5", "= unavailable", "= invalid"]
+    for a in worlds:
+        for b in worlds:
+            program.agree(ABSENT_HOST.format(a, b))
+
+
+@pytest.mark.parametrize("instruction", ["const.unavailable", "const.invalid"])
+@pytest.mark.parametrize("type_", ["i32", "i64", "f32", "bool"])
+def test_a_chosen_state_agrees_in_every_type(vm, cc, tmp_path, instruction, type_):
+    """Including the value, which is where the two could quietly differ.
+
+    Nothing may *use* a non-valid value, but plenty may carry it: it
+    reaches the entry point's result, and from there the embedder. Both
+    backends therefore owe the same zero, not merely the same state.
+    """
+    source = PROFILE + f".entry go -> {type_}\n  {instruction} {type_}\n  ret_v\n"
+    agree(vm, cc, tmp_path, source)
+
+
+# -- validity -------------------------------------------------------------
 
 
 @pytest.mark.parametrize("a", ["= 5", "= unavailable", "= invalid"])

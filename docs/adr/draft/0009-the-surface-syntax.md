@@ -324,11 +324,11 @@ and it turned out to need four instructions, all small, all in `core`.
   normative for *this* language, and a conforming **compiler** is still
   defined by the containers it emits, so a second front end with a
   different syntax remains legitimate.
-- **Four `core` instructions are owed before M3 can compile what this
-  chapter marks built.** They are small and they are the only container
-  change the built language needs. Two more additions — an arena for
-  arrays, a string constant area — are named for planned constructs and
-  are not owed yet.
+- **Four `core` instructions were owed before M3 could compile what this
+  chapter marks built, and they exist now** — ADR 0010, decisions 14 and
+  22, at `0x2C`–`0x2F`. They were the only container change the built
+  language needed. Two more additions — an arena for arrays, a string
+  constant area — are named for planned constructs and are not owed yet.
 - **ADR 0002 §8 question 3 is answered**, including the ternary
   conflict of §3.2, in favour of §2.5: there is no `? :`, and the
   if-expression is the conditional.

@@ -116,6 +116,33 @@ def test_round_trip_of_calls_parameters_and_a_cap():
     assert assemble(text).encode() == original.encode()
 
 
+STATES = """.profile 1 0.0
+.entry go -> bool
+        const.true
+        const.false
+        and
+        const.unavailable bool
+        or
+        const.invalid bool
+        else
+        ret_v
+"""
+
+
+def test_round_trip_of_a_type_operand():
+    """The one operand kind that is neither an index nor a number.
+
+    A `type8` that round-tripped as a number would still assemble and
+    still disassemble; it would just say `const.invalid 1`, and the next
+    reader would look for constant 1.
+    """
+    original = assemble(STATES)
+    text = disassemble(original)
+    assert "  const.unavailable bool" in text
+    assert "  const.invalid bool" in text
+    assert assemble(text).encode() == original.encode()
+
+
 def test_a_function_that_is_not_invocable():
     container = assemble(
         ".profile 0 0.0\n"
@@ -152,6 +179,8 @@ def test_locals_and_constants_are_addressed_by_name():
         (".entry go\n  const.i32.s8 500\n  ret\n", "does not fit"),
         (".entry go\n  add.i32 3\n", "takes no operand"),
         (".entry go\n  const.i32.s8\n", "takes one operand"),
+        (".entry go\n  const.invalid 1\n  ret\n", "is not a type"),
+        (".entry go\n  const.invalid void\n  ret\n", "is not a type"),
         (".wobble 1\n", "unknown directive"),
         (".entry go\n.entry go\n  ret\n", "already defined"),
         (".entity read i32 a\n.entity read i32 a\n", "already imported"),

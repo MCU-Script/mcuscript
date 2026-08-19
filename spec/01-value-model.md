@@ -123,7 +123,10 @@ the other, because there is nothing to get subtly wrong.
 Certain operations produce a state regardless of their operands:
 integer division or modulo by zero produces `invalid` (§1.5), and a
 host read of an entity that has no current reading produces
-`unavailable` (§1.4).
+`unavailable` (§1.4). Two instructions produce one because the program
+said so and for no other reason (§3.3) — everything else here is a side
+effect, and a language whose scripts must be able to *keep* a fault
+needs one way to state one.
 
 **The representation is a companion, not a payload.** The alternative —
 reserving sentinel values such as `INT32_MIN` — was rejected because a

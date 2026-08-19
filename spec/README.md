@@ -12,11 +12,12 @@ SPDX-License-Identifier: Apache-2.0
   both backends and compares the bytes. **Every instruction the document
   defines works end to end in both backends**: `core`, `i64`, `i64div`,
   `float`, `call`, `bits` and `loop`. No group is reserved any more.
-- **Chapter 6, the surface syntax, is specified and not yet
-  implemented.** It plans the whole language, marks every construct
-  **built**, **planned** or **excluded**, and names the four `core`
-  instructions the built half still needs (§6.13). Nothing above the
-  container exists as code.
+- **Chapter 6, the surface syntax, is specified and half implemented.**
+  It plans the whole language and marks every construct **built**,
+  **planned** or **excluded**. A script is read, parsed, typed and
+  dimensioned; what does not exist yet is code generation, so no script
+  becomes a container. The four `core` instructions the built half
+  needed (§6.13) are in chapter 3 and run in both backends.
 
 This is the contract. Everything else in this repository is an
 implementation of it, including the reference compiler, the VM and the

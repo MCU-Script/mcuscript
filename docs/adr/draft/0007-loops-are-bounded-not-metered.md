@@ -106,8 +106,9 @@ gets them, and it is not worth designing the bytecode twice.
   change.** Measured on cortex-m33, `no loop` comes out at 5,596 bytes,
   which is exactly what `full` measured the day before. Nothing
   regressed for anyone who does not use loops.
-- **A build with loops pays 384 bytes**, and almost none of it is the
-  instruction. Measured on `vm.o`, cortex-m33, `-Os`:
+- **A build with loops paid 384 bytes when this was written**, and
+  almost none of it was the instruction. Measured on `vm.o`,
+  cortex-m33, `-Os`:
 
   | | bytes |
   |---|---:|
@@ -125,6 +126,14 @@ gets them, and it is not worth designing the bytecode twice.
   worth more than that. The useful corollary is that a **second** loop
   instruction would cost about 48 bytes, because the expensive part is
   already paid.
+
+  **It is 72 bytes today**, and that is this analysis being confirmed
+  rather than corrected. ADR 0010 assigned four `core` opcodes in the
+  hole at `0x2C`–`0x2F`; the range got dense enough for GCC to dispatch
+  more of it from a table, and the re-lowering that made up 310 of the
+  384 stopped happening. Nothing about loops changed. What the figure
+  measures is the dispatch loop's shape, which is why ADR 0004 §4.9 now
+  says to read every per-group figure as a fact about one build.
 - **The differential tests cover the new shape**, which is where the
   claim lives: a loop that ends by its own test, one that runs out of
   turns (fault and exit code included), one whose counter was never set,

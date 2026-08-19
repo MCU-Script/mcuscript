@@ -106,19 +106,19 @@ with `python ../tools/measure_footprint.py`:
 
 | | flash | of which the loader |
 |---|---:|---:|
-| every group | 5,596 B | 1,617 B |
-| `core` + `float` | 3,676 B | 1,617 B |
-| `core` only | 3,084 B | 1,621 B |
+| every group | 5,812 B | 1,621 B |
+| `core` + `float` | 3,748 B | 1,617 B |
+| `core` only | 3,220 B | 1,621 B |
 
 Linked rather than compiled, because the compiler's own support library
 is part of what a device pays: 64-bit division alone pulls in 698 bytes
 of it, which is why `i64div` is a group of its own. On a Cortex-M0+,
-with neither a divide instruction nor an FPU, the full build is 8,786 B
-rather than 5,596.
+with neither a divide instruction nor an FPU, the full build is 8,986 B
+rather than 5,812.
 
-No static RAM at all. An embedder declares an `mcuscript_program` (380
+No static RAM at all. An embedder declares an `mcuscript_program` (372
 bytes with the default limits) and an `mcuscript_slots` (576), and the
-runtime borrows at most 192 bytes of stack while loading and 348 while
+runtime borrows at most 176 bytes of stack while loading and 348 while
 running — never both, since loading has finished before anything runs.
 
 The loader column is the same figure three times, and that is the thing
@@ -127,7 +127,7 @@ knows what an instruction is. Everything that did — the type rules, the
 instruction-length table, the call-graph condensation — was verification,
 and it is gone. What is left is a parser and a dispatch loop, so
 **dropping groups is now most of what there is to drop**: 2.5 KB of the
-5.6.
+5.7.
 
 Also verified on hardware rather than argued: an nRF5340 running a
 container that uses all five groups returns the same value, bit for bit,

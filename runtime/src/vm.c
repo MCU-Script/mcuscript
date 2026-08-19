@@ -296,6 +296,21 @@ bool mcuscript_invoke(const mcuscript_program *program, int entry, mcuscript_slo
 			values[sp - 1] = values[sp - 1] ? 0u : 1u;
 			pc += 1;
 			break;
+		/* Neither of these short-circuits, and that is the point:
+		 * an operand nobody read cannot propagate its state, and a
+		 * branch on an absent value is a fault (§1.3.1). Both
+		 * operands are on the stack already. */
+		case OP_AND:
+		case OP_OR: {
+			bool a = values[sp - 2] != 0;
+			bool b = values[sp - 1] != 0;
+			bool out = (opcode == OP_AND) ? (a && b) : (a || b);
+			sp--;
+			values[sp - 1] = out ? 1u : 0u;
+			states[sp - 1] = mcuscript_op_worse(states[sp - 1], states[sp]);
+			pc += 1;
+			break;
+		}
 
 #if MCUSCRIPT_GROUPS & MCUSCRIPT_GROUP_BITS
 		/* -- bits ----------------------------------------------- */
@@ -389,6 +404,17 @@ bool mcuscript_invoke(const mcuscript_program *program, int entry, mcuscript_slo
 			pc += 1;
 			break;
 		}
+		/* The operand names a type and this does not read it: the
+		 * value is zero whichever type it is, and the type is what
+		 * the *verifier* needed to know (§3.3). */
+		case OP_CONST_UNAVAILABLE:
+			PUSH(0u, MCUSCRIPT_UNAVAILABLE);
+			pc += 2;
+			break;
+		case OP_CONST_INVALID:
+			PUSH(0u, MCUSCRIPT_INVALID);
+			pc += 2;
+			break;
 
 #if MCUSCRIPT_GROUPS & MCUSCRIPT_GROUP_I64
 		/* -- i64 ------------------------------------------------ */

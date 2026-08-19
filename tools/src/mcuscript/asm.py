@@ -368,6 +368,11 @@ class _Parser:
                 raise AsmError(line, f"{value} does not fit an imm16")
             return bytes(out) + value.to_bytes(2, "little", signed=True)
 
+        if op.operand is Operand.TYPE8:
+            # A type name, not an index: `const.invalid i32`.
+            out.append(_type(arg, line).value)
+            return bytes(out)
+
         table, index = self._resolve(
             op, arg, line, const_index, import_index, function_index, local_index
         )
@@ -535,6 +540,8 @@ def _render_operand(
         return str(int.from_bytes(code[pc + 1 : pc + 2], "little", signed=True))
     if op.operand is Operand.IMM16:
         return str(int.from_bytes(code[pc + 1 : pc + 3], "little", signed=True))
+    if op.operand is Operand.TYPE8:
+        return str(ValType(code[pc + 1]))
     index = code[pc + 1]
     if op.name in ("load.l", "store.l", "loop.guard"):
         return local_names[index]

@@ -37,6 +37,14 @@ runtime = true
 description = "One container that requires every instruction group: i64, i64div, float, call, bits and loop alongside core."
 
 [[case]]
+name = "ok-chosen-state"
+file = "ok-chosen-state.mcs"
+stage = "ok"
+refusal = ""
+runtime = true
+description = "The four instructions the surface syntax needed (§6.13): two booleans that do not short-circuit, and the two states a program can choose. A verifier that types the operand of a chosen state as a table index rather than as a type will refuse this."
+
+[[case]]
 name = "ok-capped-recursion"
 file = "ok-capped-recursion.mcs"
 stage = "ok"
@@ -227,6 +235,14 @@ stage = "verification"
 refusal = "type_mismatch"
 runtime = false
 description = "add.i32 applied to two bools."
+
+[[case]]
+name = "chosen-state-of-no-type"
+file = "chosen-state-of-no-type.mcs"
+stage = "verification"
+refusal = "type_mismatch"
+runtime = false
+description = "A chosen state whose operand names `void`. The instruction pushes a value and `void` is not one — and because no handler reads the operand, a verifier is the only thing that can catch it."
 
 [[case]]
 name = "stack-underflow"

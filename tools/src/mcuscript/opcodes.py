@@ -96,6 +96,7 @@ class Operand(enum.Enum):
     IMM16 = "imm16"  # signed
     IDX8 = "idx8"  # unsigned index into a table
     OFF16 = "off16"  # signed, relative to the byte after the instruction
+    TYPE8 = "type8"  # a `ValType` code, not an index
 
 
 OPERAND_SIZE = {
@@ -104,6 +105,7 @@ OPERAND_SIZE = {
     Operand.IMM16: 2,
     Operand.IDX8: 1,
     Operand.OFF16: 2,
+    Operand.TYPE8: 1,
 }
 
 
@@ -129,6 +131,7 @@ class Poly(enum.Enum):
     RET = "ret"  # against the function's return type
     RET_V = "ret_v"
     LOOP_GUARD = "loop_guard"  # an i32 local, touched but not stacked
+    CONST_STATE = "const_state"  # a chosen state, of the type in the operand
 
 
 @dataclass(frozen=True, slots=True)
@@ -216,6 +219,14 @@ _OPS: list[Op] = [
     Op(0x29, "is_valid", Group.CORE, poly=Poly.PREDICATE),
     Op(0x2A, "is_unavailable", Group.CORE, poly=Poly.PREDICATE),
     Op(0x2B, "is_invalid", Group.CORE, poly=Poly.PREDICATE),
+    Op(0x2C, "const.unavailable", Group.CORE, Operand.TYPE8, poly=Poly.CONST_STATE),
+    Op(0x2D, "const.invalid", Group.CORE, Operand.TYPE8, poly=Poly.CONST_STATE),
+    # -- core: bool, continued ---------------------------------------
+    # `not` is at 0x1E, where the bool block began; the pair went here
+    # because two adjacent codes were free here and one was free there,
+    # and a pair the compiler emits together should decode together.
+    Op(0x2E, "and", Group.CORE, **_binary(_BOOL)),
+    Op(0x2F, "or", Group.CORE, **_binary(_BOOL)),
     # -- i64 -----------------------------------------------------------
     Op(0x40, "const.i64", Group.I64, Operand.IDX8, pushes=(_I64,)),
     Op(0x41, "add.i64", Group.I64, **_binary(_I64)),
