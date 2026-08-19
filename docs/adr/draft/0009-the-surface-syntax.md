@@ -154,20 +154,35 @@ and it turned out to need four instructions, all small, all in `core`.
     dimensioned values, and it is not really one: a ratio has no
     dimension in the physical sense, so `50% * 50%` is `25%` and
     `27°C * 105%` leaves the temperature a temperature.
-13. **Four built-ins cross between a dimension and a number, and they
-    name the unit.** `to_i32(x, °C)`, `to_i64`, `to_f32` and the inverse
-    `to_unit(n, °C)`; the unit is omitted for a value that has none, and
-    then they are plain conversions between the numeric types. Nothing
-    else converts, in either direction.
+13. **Four built-ins cross between a dimension and a number, and the
+    second argument is a unit — never a type.** `to_f32(temp, °C)`,
+    `to_i32`, `to_i64`, and the inverse `to_unit(n, °C)`. The unit is
+    absent whenever the value has no dimension, because the target type
+    is already in the name: `to_i64(count)`, and `to_i64(count, i32)`
+    says the same thing twice and is refused for it.
 
     The unit argument is the decision, not the functions. `to_i32(temp)`
     would have to mean *the base-unit number*, and §1.4 says base units
     belong to the profile and may change between its versions — so such
     a script would silently reinterpret its own numbers the day a
-    profile moved from tenths to hundredths of a degree. That is exactly
-    the failure §1.4 exists to prevent, and it would have been
-    reintroduced by a convenience. A conversion that would need rounding
-    is refused and names `round(…)` and `trunc(…)`.
+    profile moved from tenths to hundredths of a degree. Naming the unit
+    turns that into a refusal: a script that says `c°C` and meets a
+    profile without it is told so.
+
+    **`to_i32` and `to_i64` are for the exact conversions only.**
+    Counting a quantity in a unit coarser than its base is a division
+    and yields a decimal (decision 9), so `to_i32(temp, °C)` on a
+    hundredths profile is refused and offers `round(to_f32(temp, °C))`.
+    Counting it in the base unit is exact, and that is how a script
+    reaches the number the profile holds. `round` and `trunc` are
+    therefore defined as *decimal to whole number*, which is what closes
+    the loop.
+
+    The consequence lands on the profile format and is the price of the
+    design: **a base unit that is not spelled cannot be reached.** A
+    profile working in hundredths while declaring only `°C` has put
+    everything below a whole degree out of a script's reach. That is a
+    legitimate choice and it should be made as one.
 
     They need nothing new from the container: a unit factor is a
     compile-time multiply, and the four numeric conversion instructions

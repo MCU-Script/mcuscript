@@ -566,6 +566,15 @@ to_i32(x)  to_i64(x)  to_f32(x)  to_unit(x, u)   # built — §6.3.10
 min(a, b)  max(a, b)                             # planned
 ```
 
+**`round` and `trunc` turn a decimal into a whole number**, and that is
+their whole job: `round` to the nearest and away from zero on a tie,
+`trunc` toward zero. A dimensionless `f32` becomes an `i32`; a
+dimensioned one becomes that dimension in its declared data type. They
+are what §6.3.10's refusals point at, and defining them this way is what
+closes the loop — `round(to_f32(temp, °C))` is an `i32` and needs
+nothing further. `abs` is the odd one out and gives back what it was
+given.
+
 They are **compile-time expansions**: each lowers to instructions, and
 none of them reads anything outside its own operands. That is the rule
 that closes the set, and it is the rule rather than the list that
@@ -609,33 +618,43 @@ built-ins do it, and they are the **only** way — no operator converts,
 and nothing is implicit.
 
 ```
-to_i32(x, °C)      to_i64(x, °C)      to_f32(x, °C)
-to_unit(n, °C)
+to_f32(temp, °C)      # 32.5   — this temperature, counted in °C
+to_i32(temp, c°C)     # 3250   — counted in hundredths, which is exact
+to_unit(3250, c°C)    # 32.5°C — a number becoming a quantity again
+to_i64(count)         # a plain widening; `count` has no dimension
 ```
 
-`to_i32(x, °C)` is *"give me this quantity as a number of °C"*, and
-`to_unit(n, °C)` is its inverse, *"this number is that many °C"*. For a
-value that has no dimension the unit is omitted and the built-in is a
-plain conversion between `i32`, `i64` and `f32`.
+**The second argument is a unit. It is never a type**, and it is absent
+whenever the value has no dimension — the target type is already in the
+built-in's name, so `to_i64(count, i32)` says the same thing twice and
+is refused for it.
 
-**The unit is named, and a base unit is never assumed.** That is the
-whole design of these four, and the reason is §1.4: base units are the
-profile's, they may change between profile versions, and a script that
-said `to_i32(temp)` would be silently reinterpreting its own numbers the
-day a profile moved from tenths to hundredths of a degree. Naming the
-unit makes the script say what it means, and makes it survive that
-change. A profile whose scaling matches none of its declared units has
-a profile-format problem, not a script one.
+**A unit is named and a base unit is never assumed.** That is the whole
+design of these four, and the reason is §1.4: base units belong to the
+profile and may change between its versions, so a `to_i32(temp)` that
+meant *the base-unit number* would silently reinterpret a script's own
+numbers the day a profile moved from tenths to hundredths of a degree.
+A script that names `c°C` and meets a profile that no longer has it is
+**refused**, by name, which is the difference that matters.
 
-Two rules keep them honest:
+Two rules keep them honest, and both are decided at compile time:
 
-- **A conversion that would need rounding is refused**, naming
-  `round(…)` and `trunc(…)`. `to_i32(x, °C)` where the quantity is
-  32.5 °C is an error, because which of 32 and 33 was wanted is not the
-  compiler's to guess.
-- **The unit argument is required exactly when the operand has a
-  dimension.** `to_f32(count, °C)` and `to_i32(temp)` are both errors,
-  and each says which half is wrong.
+- **`to_i32` and `to_i64` are for the conversions that are exact.**
+  Counting a quantity in a unit coarser than its base is a division, and
+  a division yields a decimal (§6.5.5) — so `to_i32(temp, °C)` on a
+  profile that stores hundredths is refused, and the refusal offers
+  `round(to_f32(temp, °C))`. Counting it in its **base unit** is exact,
+  and `to_i32(temp, c°C)` is how a script reaches the number the profile
+  actually holds.
+- **The unit is required exactly when the operand has a dimension.**
+  `to_f32(count, °C)` and `to_i32(temp)` are both errors, and each says
+  which half is wrong.
+
+That first rule is why a profile's base unit **must be spelled** if a
+script is ever to reach the whole of a quantity: a profile that works in
+hundredths and declares only `°C` has made everything below a whole
+degree unreachable. Deliberately or not, and §6.5.4 says so where
+profiles are described.
 
 They need nothing new from the container: a unit factor is a compile-time
 multiply or divide, and `CONVERT.i32_f32`, `TRUNC.f32_i32`,
@@ -840,6 +859,15 @@ they say how fine the quantity is, and every arithmetic result in that
 dimension carries them (§6.5.5) — so a profile that declares tenths of a
 degree in an `i32` has said, once and where it can be judged, that
 0.05 °C does not exist in its world.
+
+**A profile should spell its base unit**, as one of the dimension's
+ordinary units. Nothing forces it to, and the consequence of not doing
+so is worth stating plainly: a profile that works in hundredths of a
+degree while declaring only `°C` has made everything below a whole
+degree unreachable, because §6.3.10's conversions name a unit and there
+is no unit to name. That may be exactly what a profile wants — a
+resolution it uses internally and does not offer — but it is a choice
+and should be made as one.
 
 Consequences worth stating outright:
 
