@@ -321,6 +321,15 @@ Choosing the other backend is still the bigger knob — generated C links
 no loader and no VM, so the same script costs zero of these bytes — but
 it is no longer the only one that matters.
 
+**And there is no target to measure against, by decision.** ADR 0002 §8
+carries the reasoning: an integrator's hardware is not ours to know, so
+a budget would be a number chosen for a device nobody named. This table
+is therefore not progress toward a goal — it is the evidence that the
+engine is as small as is sensibly achievable, kept honest by being
+re-measured whenever something moves. A device this is still too large
+for is a device somebody writes their own runtime for, which the
+specification exists to make possible (§2.6).
+
 **RAM, and none of it is static.** The runtime declares no writable
 data at all; every byte below is the embedder's, and sized by the macros
 in `mcuscript.h` rather than by the container.

@@ -1375,10 +1375,10 @@ asserting the results come apart (ADR 0004 §4.5, spec §1.5).
 
 And the **flash and RAM budget**, which this list called question 1 and
 which was the oldest unmeasured claim in the project. It is measured now,
-on three Cortex-M targets and on a real nRF5340, and the answer corrects
-the §1.3 and §2.7 estimate rather than confirming it: 7.4 KB of flash for
-an expression-only build on a Cortex-M33 and 10.5 KB for a complete one,
-where the guess was 1–2 KB — and 14 KB complete on a Cortex-M0+, whose
+on three Cortex-M targets and on a real nRF5340, and the answer corrected
+the §1.3 and §2.7 estimate rather than confirming it: at the time of the
+measurement, 7.4 KB of flash for an expression-only build on a Cortex-M33
+and 10.5 KB for a complete one, where the guess was 1–2 KB — and 14 KB complete on a Cortex-M0+, whose
 missing divide instruction and missing FPU are paid for out of the
 compiler's support library. The guess was right about the *interpreter*
 — that is 1.5 KB — and silent about the loader and verifier, which are
@@ -1390,7 +1390,23 @@ is going back to. The feature-module mechanism of §1.3 is now real
 rather than declared, and buys 3–14 % per group; the size decision that
 matters is which backend a device uses, because generated C links none
 of this. Figures, method and the on-hardware run: ADR 0004 §4.9 and
-§4.10, reproducible with `python tools/measure_footprint.py`.
+§4.10, reproducible with `python tools/measure_footprint.py`. The
+current numbers are smaller again — 3.2 KB and 5.7 KB, after the device
+verifier went — and they will keep moving; §4.9 is the place that holds
+today's.
+
+**There is no target figure, and there is not going to be one.** The
+product owner closed that question on 2026-08-20 and the reasoning
+belongs here rather than in a commit message: we do not know what
+hardware an integrator will put this on, so a budget would be a number
+invented for a device nobody named. What the project owes instead is
+the effort — keep the engine as small as is sensibly achievable, and
+keep measuring so "sensibly" stays a fact rather than a feeling. Where
+that is still too much for somebody, the specification is the product:
+they can write their own runtime for their own device, and §2.6 already
+says what such a runtime has to answer to. So "how small is small
+enough" is not an open question that will one day be answered — it is a
+question this project does not have.
 
 Whether the verifier belongs on the device at all is now itself an open
 question (ADR 0004, Open) — raised by the measurement and settled on
