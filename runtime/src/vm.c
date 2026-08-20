@@ -575,6 +575,26 @@ bool mcuscript_invoke(const mcuscript_program *program, int entry, mcuscript_slo
 			pc += 1;
 			break;
 		}
+
+#if MCUSCRIPT_GROUPS & MCUSCRIPT_GROUP_I64
+		/* The pair that needs both groups (§3.2): a build with one and
+		 * not the other compiles neither, and refuses a container that
+		 * asks for them because such a container declares both. */
+		case OP_CONVERT_I64_F32:
+			values[sp - 1] = mcuscript_op_from_f32(
+				mcuscript_op_convert_i64_f32(mcuscript_op_as_i64(values[sp - 1])));
+			pc += 1;
+			break;
+		case OP_TRUNC_F32_I64: {
+			uint8_t state = states[sp - 1];
+			int64_t out = mcuscript_op_trunc_f32_i64(
+				mcuscript_op_as_f32(values[sp - 1]), &state);
+			values[sp - 1] = mcuscript_op_from_i64(out);
+			states[sp - 1] = state;
+			pc += 1;
+			break;
+		}
+#endif
 #endif
 
 		case OP_JMP:

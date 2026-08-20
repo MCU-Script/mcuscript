@@ -34,11 +34,12 @@ backends and compare the bytes. The assembler stays — it is how a test
 writes a container the compiler would never emit.
 
 What the compiler has no way to reach yet is a **profile** and a
-**registry**: which dimensions exist is a profile's to declare and how
-one is written down is M4's, and which entities a script may touch is
-the embedder's. So the command compiles against a world that declares
-neither (legal per §6.5.4), and a unit suffix or a host name is refused
-by name. Everything above the container is still a proposal.
+**registry**. Both are supplied by whoever integrates the language
+(ADR 0011): MCUScript's side of it is that a path can be passed in, and
+the file format at the end of that path is M4's. Until then the command
+compiles against a world that declares neither — legal per §6.5.4 — and
+a unit suffix or a host name is refused by name. Everything above the
+container is still a proposal.
 
 Chapter 6 marks every construct **built**, **planned** or **excluded**.
 "Built" there means *this is what M3 implements*; today that means the

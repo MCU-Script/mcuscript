@@ -159,27 +159,38 @@ member.
 | Refused | Because |
 |---|---|
 | `@"2026-08-19 13:25"` | what its fields count from is an epoch, and the epoch belongs to the profile format (M4) |
-| `i64` to `f32` in either direction | the instruction set converts between `i32` and each of the others and not between those two (§3.4, §3.5) |
 | 64-bit bitwise and shifts | §3.7 says there are none in this version |
 | a 64-bit loop range | the guard counts in `i32` (§3.8) |
 
-The first is temporary and the rest are the instruction set's shape.
-None of them is a silently wrong lowering, which is the property that
-matters: each is a diagnostic with a span, from the same machinery a
-type error uses.
+The first is temporary and the other two are the instruction set's
+shape. None of them is a silently wrong lowering, which is the property
+that matters: each is a diagnostic with a span, from the same machinery
+a type error uses.
 
-### 10. `mcuscript build` compiles against a world that declares nothing
+A fourth stood here — `i64` to `f32` in either direction — and it was
+wrong. **ADR 0012 replaced it with two instructions**, because a
+dimension's data type is the profile's to choose and a refusal would
+have made some of those choices second-class.
 
-The command exists and is honest about what it cannot do yet. Which
-dimensions exist is a profile's to say and how a profile is written down
-is **M4's**; which entities a script may reach is the embedder's, and
-that format is nobody's yet. So the command compiles against an empty
-profile and an empty registry — which §6.5.4 explicitly allows — and a
-unit suffix or a host name is refused by name.
+### 10. The profile is the integrator's, and the command takes a path
 
-Inventing either format here to make the command more useful is the
-failure mode this repository is set up to prevent: it would be M4,
-decided in passing, by the stage that happens to need it first.
+Settled by the product owner while this was being written, and it
+settles more than the command: **the profile and the registry are
+supplied by whoever integrates the language.** For the first embedder
+that is MCUHome's job, and how any of them produces one is theirs. What
+MCUScript owes is the way in — *"we create, for the mcuscript call,
+only the possibility of passing the path to the profile as an argument
+or an environment variable."*
+
+So the interface is a path, not a discovery rule, not a search order and
+not a default location. The **format** of what sits at that path is
+still the next milestone's, and until it exists the command compiles
+against an empty profile and an empty registry — which §6.5.4 explicitly
+allows — and a unit suffix or a host name is refused by name.
+
+Inventing a format here to make the command more useful is the failure
+mode this repository is set up to prevent: it would be M4, decided in
+passing, by the stage that happened to need it first.
 
 ## Consequences
 
@@ -211,7 +222,6 @@ decided in passing, by the stage that happens to need it first.
 
 ## What this does not decide
 
-How `mcuscript build` gets a profile and a registry, which is the
-product-owner question this step ends on: pull the profile format
-forward into M3, define an interim one, or leave the command as it is
-until M4.
+What a profile file *looks like*. Point 10 fixes who owns one and how it
+reaches the compiler; the format, and the same question for the
+registry, are M4's.

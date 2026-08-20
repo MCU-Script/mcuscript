@@ -61,6 +61,7 @@ result yet.
 | [0009](draft/0009-the-surface-syntax.md) | The surface syntax, planned whole |
 | [0010](draft/0010-four-instructions-the-syntax-needed.md) | Four instructions the syntax needed |
 | [0011](draft/0011-the-code-generator.md) | The code generator, and what writing it settled |
+| [0012](draft/0012-a-64-bit-quantity-may-be-a-decimal.md) | A 64-bit quantity may be a decimal |
 
 Start with [0002](draft/0002-inherited-context.md). It marks every item
 as **decided**, **recorded direction** or **on the table**, and its §8

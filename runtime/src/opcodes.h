@@ -123,6 +123,9 @@ enum {
 	OP_GE_F32 = 0x6D,    /* ge.f32 */
 	OP_CONVERT_I32_F32 = 0x70, /* convert.i32_f32 */
 	OP_TRUNC_F32_I32 = 0x71,   /* trunc.f32_i32 */
+	/* These two need the i64 group as well (§3.2) */
+	OP_CONVERT_I64_F32 = 0x72, /* convert.i64_f32 */
+	OP_TRUNC_F32_I64 = 0x73,   /* trunc.f32_i64 */
 
 	/* -- the call group -- */
 	OP_CALL = 0x80, /* call */

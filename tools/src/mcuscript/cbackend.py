@@ -637,13 +637,22 @@ def _instruction(
     if name in _UNARY:
         source, result, helper = _UNARY[name]
         return [_write_slot(top, result, f"{helper}({_read_slot(top, source)})")]
-    if name == "trunc.f32_i32":
+    if name in ("trunc.f32_i32", "trunc.f32_i64"):
+        wide = name.endswith("i64")
         return [
             _write_slot(
                 top,
-                ValType.I32,
-                f"mcuscript_op_trunc_f32_i32({_read_slot(top, ValType.F32)}, "
-                f"&{top_state})",
+                ValType.I64 if wide else ValType.I32,
+                f"mcuscript_op_trunc_f32_i{'64' if wide else '32'}"
+                f"({_read_slot(top, ValType.F32)}, &{top_state})",
+            )
+        ]
+    if name == "convert.i64_f32":
+        return [
+            _write_slot(
+                top,
+                ValType.F32,
+                f"mcuscript_op_convert_i64_f32({_read_slot(top, ValType.I64)})",
             )
         ]
     if name == "extend.i32_i64":

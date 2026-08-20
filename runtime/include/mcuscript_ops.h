@@ -338,4 +338,29 @@ static inline int32_t mcuscript_op_trunc_f32_i32(float value, uint8_t *state)
 	return (int32_t)value;
 }
 
+/*
+ * The same, one width up (§3.5). The bound is written as a float that is
+ * exactly 2^63, which `INT64_MAX` is not — converting `INT64_MAX` to a
+ * float rounds it *up* to 2^63 and the test would then admit a value the
+ * cast cannot represent.
+ */
+static inline int64_t mcuscript_op_trunc_f32_i64(float value, uint8_t *state)
+{
+	if (!(value >= -9223372036854775808.0f && value < 9223372036854775808.0f)) {
+		*state = MCUSCRIPT_OPS_INVALID;
+		return 0;
+	}
+	return (int64_t)value;
+}
+
+/*
+ * 64 bits do not fit in 24 of mantissa, so this rounds — to nearest,
+ * ties to even, which is what C's conversion does under IEEE-754 and
+ * what both backends therefore agree on.
+ */
+static inline float mcuscript_op_convert_i64_f32(int64_t value)
+{
+	return (float)value;
+}
+
 #endif /* MCUSCRIPT_OPS_H */

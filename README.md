@@ -57,10 +57,11 @@ language and marks every construct **built**, **planned** or
 run *scripts* through both backends and compare the bytes.
 
 What a script cannot reach yet is a **profile**: which dimensions exist,
-how units are spelled and what each normalizes to is a profile's to
-declare, and how one is written down is the next milestone. Until then
-the command compiles against a world that declares none, and a unit
-suffix is refused by name rather than guessed at.
+how units are spelled and what each normalizes to is declared by
+whoever integrates the language, and the format that declaration is
+written in is the next milestone. Until then the command compiles
+against a world that declares none, and a unit suffix is refused by name
+rather than guessed at.
 
 Do not depend on this repository. The specification is at
 `0.1.0-draft` and says so; ADR 0002 marks each remaining item as

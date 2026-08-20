@@ -34,7 +34,7 @@ file = "ok-every-group.mcs"
 stage = "ok"
 refusal = ""
 runtime = true
-description = "One container that requires every instruction group: i64, i64div, float, call, bits and loop alongside core."
+description = "One container that requires every instruction group: i64, i64div, float, call, bits and loop alongside core. It also carries the two conversions that sit in `float` and require `i64` besides (§3.2)."
 
 [[case]]
 name = "ok-chosen-state"

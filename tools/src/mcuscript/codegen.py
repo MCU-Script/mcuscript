@@ -70,6 +70,9 @@ _COMPARE = {
 
 _SUFFIX = {ValType.I32: "i32", ValType.I64: "i64", ValType.F32: "f32"}
 
+#: Toward zero, at the width the result needs (§3.5).
+_TRUNC = {ValType.I32: "trunc.f32_i32", ValType.I64: "trunc.f32_i64"}
+
 _BITWISE = {
     "&": "and.i32",
     "|": "or.i32",
@@ -630,11 +633,15 @@ class _Emit:
         if have is ValType.I64 and want is ValType.I32:
             self.code.emit("wrap.i64_i32")
             return
-        raise error(
+        if have is ValType.I64 and want is ValType.F32:
+            self.code.emit("convert.i64_f32")
+            return
+        if have is ValType.F32 and want is ValType.I64:
+            self.code.emit("trunc.f32_i64")
+            return
+        raise error(  # pragma: no cover - every pair above is covered
             f"turning {have} into {want} is not something this version can do",
             span,
-            "The instruction set converts between `i32` and each of the "
-            "others, and not between `i64` and `f32`.",
         )
 
     # -- calls ----------------------------------------------------------------
@@ -727,14 +734,14 @@ class _Emit:
     def rounding(self, node: ast.Call, name: str) -> None:
         argument = node.args[0]
         assert isinstance(argument, ast.Expr)
+        target = self.analysis.type_of(node).type
         self.expr(argument)
         if name == "trunc":
-            self.code.emit("trunc.f32_i32")
+            self.code.emit(_TRUNC[target])
         else:
-            self.round_f32(node.span)
-        self.convert(ValType.I32, self.analysis.type_of(node).type, node.span)
+            self.round_f32(node.span, target)
 
-    def round_f32(self, span: Span) -> None:
+    def round_f32(self, span: Span, target: ValType = ValType.I32) -> None:
         """Nearest, away from zero on a tie — §6.3.10's rule.
 
         `TRUNC` goes toward zero, so the half is added in the operand's
@@ -758,11 +765,11 @@ class _Emit:
             self.push_number(Fraction(-1, 2), ValType.F32, span)
             self.code.patch(done)
             self.code.emit("add.f32")
-            self.code.emit("trunc.f32_i32")
+            self.code.emit(_TRUNC[target])
 
         def fallback() -> None:
             self.code.emit("load.l", slot)
-            self.code.emit("trunc.f32_i32")
+            self.code.emit(_TRUNC[target])
 
         self.guarded(slot, body, fallback)
 
@@ -860,8 +867,7 @@ class _Emit:
             else:
                 self.round_integer(divisor, working, span)
         if working is ValType.F32 and target is not ValType.F32:
-            self.round_f32(span)
-            self.convert(ValType.I32, target, span)
+            self.round_f32(span, target)
         else:
             self.convert(working, target, span)
 

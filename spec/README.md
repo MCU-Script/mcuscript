@@ -18,9 +18,11 @@ SPDX-License-Identifier: Apache-2.0
   script is read, typed, dimensioned and turned into a container, which
   the differential tests then run through both backends and compare. The
   four `core` instructions the built half needed (§6.13) are in chapter
-  3. Four constructs the front end accepts have no lowering and say so —
-  a date literal, `i64` to `f32` in either direction, 64-bit bitwise
-  operations, and a 64-bit loop range.
+  3, and so are the two conversions between `i64` and `f32` that a
+  profile holding a quantity in either type turns out to need. Two
+  constructs the front end accepts have no lowering and say so — a date
+  literal, whose epoch is the profile format's, and 64-bit bitwise
+  operations and loop ranges, which the instruction set does not have.
 
 This is the contract. Everything else in this repository is an
 implementation of it, including the reference compiler, the VM and the

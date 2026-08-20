@@ -230,7 +230,9 @@ def _cases() -> list[Case]:
         "ok",
         "",
         "One container that requires every instruction group: i64, "
-        "i64div, float, call, bits and loop alongside core.",
+        "i64div, float, call, bits and loop alongside core. It also "
+        "carries the two conversions that sit in `float` and require "
+        "`i64` besides (§3.2).",
         _asm(
             ".const big i64 4294967296\n"
             ".const two i64 2\n"
@@ -250,6 +252,13 @@ def _cases() -> list[Case]:
             "  const.i64 big\n"
             "  const.i64 two\n"
             "  div.i64\n"
+            # The pair that lives in `float` and needs `i64` as well
+            # (§3.2): a verifier reading the group mask off the opcode
+            # ranges alone will get this container's mask wrong.
+            "  convert.i64_f32\n"
+            "  const.f32 half\n"
+            "  mul.f32\n"
+            "  trunc.f32_i64\n"
             "  wrap.i64_i32\n"
             "  const.i32.s8 3\n"
             "  and.i32\n"

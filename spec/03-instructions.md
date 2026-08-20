@@ -51,9 +51,16 @@ implementation and required by a container only if it uses it.
 `i64div` is the one group that depends on another: its operands can
 only be produced by `i64`, so an implementation claiming `i64div`
 without `i64` accepts containers that cannot exist, and a container
-requiring `i64div` requires `i64` too. Groups are otherwise
-independent, and this one is a split rather than a new capability —
-see §3.4 for why it is worth the exception.
+requiring `i64div` requires `i64` too. It is a split rather than a new
+capability — see §3.4 for why it is worth the exception.
+
+Two instructions have the same shape without being a group: the
+conversions between `i64` and `f32` (§3.5) sit in the `float` range and
+touch a type only `i64` puts on the stack, so a container using one
+declares **both** groups and an implementation compiles the pair only
+where it has both. They are in `float` rather than in `i64` because
+that is where every other conversion to and from a decimal is, and a
+reader looking for one looks there.
 
 ## 3.3 The `core` group
 
@@ -329,6 +336,8 @@ A container requiring `i64div` requires `i64` as well (§3.2).
 | `0x68`–`0x6D` | `EQ` `NE` `LT` `LE` `GT` `GE` `.f32` | `f32 f32 → bool` |
 | `0x70` | `CONVERT.i32_f32` | `i32 → f32`, round-to-nearest-even |
 | `0x71` | `TRUNC.f32_i32` | `f32 → i32`, toward zero; `invalid` if NaN or out of range |
+| `0x72` | `CONVERT.i64_f32` | `i64 → f32`, round-to-nearest-even; needs `i64` as well (§3.2) |
+| `0x73` | `TRUNC.f32_i64` | `f32 → i64`, toward zero; `invalid` if NaN or out of range; needs `i64` |
 
 There is no `REM.f32`: it would pull `fmodf` and its libm dependency
 onto a device that may have neither, for an operation formulas do not
@@ -343,7 +352,17 @@ IEEE-754 has a defined answer and integers do not. NaN is likewise a
 defined value is the single most important line in this group: C leaves
 an out-of-range float-to-integer conversion undefined, so a C backend
 that emitted a bare cast would diverge from the VM on exactly the input
-a faulty sensor produces.
+a faulty sensor produces. `TRUNC.f32_i64` says the same thing about the
+wider one.
+
+**The 64-bit pair exists because a dimension may be held in either
+type.** A profile that counts energy in an `i64` and a script that
+divides two of those have a decimal on their hands whatever anybody
+prefers, and a language whose conversions stopped at 32 bits would make
+that a refusal rather than a number — with no way around it, since a
+dimension's data type is the profile's to choose and not the script's.
+`CONVERT.i64_f32` rounds, because 64 bits do not fit in 24 of mantissa;
+that is the ordinary property of the conversion and not a fault.
 
 ## 3.6 The `call` group
 

@@ -143,6 +143,11 @@ class Op:
     pops: tuple[ValType, ...] = ()  # bottom of the popped run first
     pushes: tuple[ValType, ...] = ()
     poly: Poly | None = None
+    #: A second group this instruction needs, beyond the one its opcode
+    #: falls in. Only the conversions between `i64` and `f32` have one:
+    #: they sit in the `float` range and touch a type only `i64` puts on
+    #: the stack, so a container using one requires both (§3.2).
+    needs: Group | None = None
     doc: str = ""
 
     @property
@@ -256,6 +261,22 @@ _OPS: list[Op] = [
     Op(0x6D, "ge.f32", Group.FLOAT, **_compare(_F32)),
     Op(0x70, "convert.i32_f32", Group.FLOAT, pops=(_I32,), pushes=(_F32,)),
     Op(0x71, "trunc.f32_i32", Group.FLOAT, pops=(_F32,), pushes=(_I32,)),
+    Op(
+        0x72,
+        "convert.i64_f32",
+        Group.FLOAT,
+        pops=(_I64,),
+        pushes=(_F32,),
+        needs=Group.I64,
+    ),
+    Op(
+        0x73,
+        "trunc.f32_i64",
+        Group.FLOAT,
+        pops=(_F32,),
+        pushes=(_I64,),
+        needs=Group.I64,
+    ),
     # -- call ----------------------------------------------------------
     Op(0x80, "call", Group.CALL, Operand.IDX8, poly=Poly.CALL),
     # -- bits ----------------------------------------------------------
@@ -314,6 +335,8 @@ def groups_used(code: bytes) -> int:
         if op is None:
             raise ValueError(f"undefined opcode 0x{code[pc]:02X} at {pc}")
         mask |= op.group.mask
+        if op.needs is not None:
+            mask |= op.needs.mask
         pc += op.size
     return mask
 

@@ -24,7 +24,7 @@ from mcuscript.asm import disassemble
 from mcuscript.codegen import generate
 from mcuscript.container import Container, ImportKind
 from mcuscript.diagnostics import CompileError
-from mcuscript.opcodes import ValType
+from mcuscript.opcodes import ValType, group_names
 from mcuscript.parser import parse
 from mcuscript.sema import analyse
 
@@ -251,12 +251,28 @@ def test_a_date_has_no_number_to_compile_to():
     assert "date" in refusal('on go {\n  let t: instant = @"2026-08-19 13:25"\n}\n')
 
 
-def test_a_64_bit_number_cannot_become_a_decimal():
-    """`i64` and `f32` have no conversion between them (§3.4, §3.5)."""
-    message = refusal(
-        "on go {\n  let big: i64 = 5\n  fan.speed = to_i32(to_f32(big))\n}\n"
-    )
-    assert "i64" in message and "f32" in message
+@pytest.mark.parametrize(
+    ("script", "groups"),
+    [
+        ("on go {\n  let big: i64 = 5\n  return to_f32(big)\n}\n", "i64"),
+        ("on go { return to_i64(1.5) }\n", "i64"),
+        # Two 64-bit numbers divided are a decimal (§6.5.5), which is the
+        # case that has no way around the conversion.
+        ("on go {\n  let a: i64 = 7\n  let b: i64 = 2\n  return a / b\n}\n", "i64"),
+    ],
+)
+def test_a_64_bit_number_and_a_decimal_convert_both_ways(script, groups):
+    """§3.5's pair, and why it is not optional.
+
+    A profile chooses a dimension's data type, so a quantity may be held
+    in an `i64`; a script that divides two of those has a decimal
+    whatever anybody prefers. The container declares **both** groups for
+    it, because the instruction sits in `float` and touches a type only
+    `i64` produces (§3.2).
+    """
+    container = build(script)
+    names = group_names(container.required_groups)
+    assert "float" in names and groups in names
 
 
 def test_bitwise_operations_stay_32_bit():
@@ -513,6 +529,14 @@ ANSWERS = {
         # are evaluated and the answer is the honest one.
         "on go { return sensor.temp > 25°C and sensor.humidity > 60% }\n",
         ("bool", "false", "valid"),
+    ),
+    "a 64-bit number as a decimal": (
+        "on go {\n  let a: i64 = 7\n  let b: i64 = 2\n  return a / b }\n",
+        ("f32", "0x40600000(3.5)", "valid"),
+    ),
+    "a decimal as a 64-bit number": (
+        "on go { return to_i64(2.5) }\n",
+        ("i64", "3", "valid"),
     ),
     "a comparison across the wrap": (
         # §6.5.6: the difference against zero, so a moment a second
