@@ -10,7 +10,9 @@ import pytest
 from homeprofile import HOME, NO_CALENDAR, REGISTRY
 
 from mcuscript.diagnostics import CompileError
+from mcuscript.opcodes import ValType
 from mcuscript.parser import parse
+from mcuscript.profile import Clock, Dimension, Profile
 from mcuscript.sema import analyse
 
 
@@ -217,6 +219,56 @@ def test_a_date_belongs_to_the_profiles_calendar():
 
 def test_without_a_calendar_a_date_is_refused():
     assert "no calendar" in message('let x = @"2026-08-18"', NO_CALENDAR)
+
+
+def test_a_time_of_day_is_a_dimension_of_its_own():
+    """Two roles, and the literal decides which (§7.2.4)."""
+    assert quantity('@"13:25"') == "daytime"
+    assert quantity('@"2026-08-18"') == "instant"
+
+
+def test_without_one_a_time_of_day_is_refused():
+    text = message('let x = @"13:25"', NO_CALENDAR)
+    assert "a time of day means nothing here" in text
+    assert "times of day" in text
+
+
+def test_a_date_is_worth_what_the_epoch_says():
+    """1970 is the fixture's epoch and milliseconds are its base unit."""
+    analysis = in_entry('let x: instant = @"2026-08-20 04:02:51"')
+    assert Fraction(1787198571000) in analysis.values.values()
+
+
+def test_a_time_of_day_counts_from_midnight():
+    analysis = in_entry('let x: daytime = @"12:00"')
+    assert Fraction(43200) in analysis.values.values()
+
+
+def test_a_date_that_is_not_a_day_says_which_field():
+    assert "there is no month 13" in message('let x = @"2026-13-01"')
+    assert "February 2026 has 28 days" in message('let x = @"2026-02-30"')
+    assert "there is no hour 25" in message('let x = @"25:00"')
+
+
+def test_a_moment_the_dimension_cannot_hold_is_refused_not_wrapped():
+    """A profile counting milliseconds from 1970 in an i32 covers 24 days."""
+    narrow = Profile(
+        "narrow",
+        "0.1",
+        (
+            Dimension(
+                1,
+                "instant",
+                ValType.I32,
+                "ms_utc",
+                clock=Clock(Fraction(1000), 0),
+            ),
+        ),
+        id=1,
+    )
+    text = message('let x = @"2026-08-20"', narrow)
+    assert "further from its epoch than instant reaches" in text
+    assert "-2147483648 to 2147483647 ms_utc" in text
 
 
 # -- §6.3.5 and §6.3.4 match and if ------------------------------------

@@ -20,9 +20,15 @@ SPDX-License-Identifier: Apache-2.0
   four `core` instructions the built half needed (§6.13) are in chapter
   3, and so are the two conversions between `i64` and `f32` that a
   profile holding a quantity in either type turns out to need. Two
-  constructs the front end accepts have no lowering and say so — a date
-  literal, whose epoch is the profile format's, and 64-bit bitwise
-  operations and loop ranges, which the instruction set does not have.
+  construct the front end accepts has no lowering and says so: 64-bit
+  bitwise operations and loop ranges, which the instruction set does not
+  have.
+- **Chapter 7, profiles and registries, is specified and implemented.**
+  It fixes the form of the two documents a compiler is given and nothing
+  about their content, which is what makes a profile portable between
+  toolchains rather than a file one compiler happens to parse. With it a
+  date literal has a number to compile to — the last construct that was
+  typed and not lowered.
 
 This is the contract. Everything else in this repository is an
 implementation of it, including the reference compiler, the VM and the
@@ -40,9 +46,9 @@ the embedder's concern, identically for either backend.
 ## What is specified here, and what is not
 
 Specified: the value model, the binary container, the instruction set
-and its semantics, the loading and linking rules, the errors, and the
-surface syntax. A conforming implementation agrees with this document on
-all of them.
+and its semantics, the loading and linking rules, the errors, the
+surface syntax, and the form of a profile and a registry. A conforming
+implementation agrees with this document on all of them.
 
 **Not** specified, on purpose:
 
@@ -58,8 +64,10 @@ all of them.
   embedder can attach whatever it needs (§2, ancillary sections).
 - **What the host offers.** The set of entities and host functions a
   script may reach, their names, and what happens when one is written,
-  belong to the embedder. This document specifies only how a script
-  *refers* to them and how those references are resolved.
+  belong to the embedder. This document specifies how a script *refers*
+  to them, how those references are resolved, and — since chapter 7 —
+  the shape of the document the embedder writes them in. Not one name in
+  it.
 - **When a write takes effect.** Whether an embedder applies writes
   immediately or buffers them to a commit point is its policy. What
   this document does fix is that a script always reads back what it
@@ -71,7 +79,9 @@ all of them.
   table. Profiles are versioned separately and pinned in the container
   header. This holds without exception: **no dimension and no base unit
   is fixed here, not even for time** (§1.4, ADR 0008), and a profile
-  that declares none at all is legal.
+  that declares none at all is legal. Chapter 7 fixes how a profile is
+  *written*, which is a different thing and the reason the sentence
+  above survives it.
 
 ## The two backends
 
@@ -100,7 +110,9 @@ There are three kinds of implementation, and each conforms to a
 different thing.
 
 A **compiler** conforms if every container it emits is conforming
-(§2.6).
+(§2.6). One that reads a profile or a registry conforms to chapter 7 by
+accepting exactly the documents it defines — which is a separate claim,
+because a compiler may legitimately be given its world some other way.
 
 A **runtime** conforms if it:
 
@@ -131,9 +143,10 @@ against.
 | [04-linking.md](04-linking.md) | The constant, entry-point and import tables; name resolution; every error |
 | [05-execution.md](05-execution.md) | Invocation, frames, recursion, faults, termination |
 | [06-syntax.md](06-syntax.md) | **The surface syntax** — lexical structure, expressions, statements, inference, and the whole language planned including what is not built |
+| [07-profiles.md](07-profiles.md) | **The two documents a compiler is given** — the form of a profile and of a registry, and how a command is handed them |
 | [corpus/](corpus/) | **Containers, with the verdict each must get.** Not prose — how an implementation checks itself against the four documents above |
 
-All six exist in draft, and each round of work on them changes the
+All seven exist in draft, and each round of work on them changes the
 ones before. Writing 3 to 5 changed 1 and 2 twice: `DUP` turned out to
 be the one instruction that pushes more than it pops, and the group
 table gained two entries.

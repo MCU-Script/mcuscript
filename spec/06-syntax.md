@@ -188,10 +188,13 @@ character in every configuration format this audience already uses.
 
 The grammar of what may stand inside is **fixed by this document**, and
 its meaning is **the profile's**: the compiler parses the fields, and the
-profile's dimension says which dimension a date-and-time literal belongs
-to, what its epoch is and how the fields normalize to its base unit. A
-profile that declares no such dimension makes `@"…"` an error saying
-exactly that. The language has no calendar of its own (ADR 0008).
+profile says which dimension the literal belongs to, what its epoch is
+and how the fields normalize to its base unit (§7.2.4). A literal that
+carries a date and one that is only a time are **different quantities**
+and land in different dimensions — a time of day is not a point in
+history — so a profile declares them separately, and one that declares
+neither makes `@"…"` an error saying exactly that. The language has no
+calendar of its own (ADR 0008).
 
 Accepted forms, and nothing else: `YYYY-MM-DD`, `hh:mm`, `hh:mm:ss`,
 and a date and a time joined by one space or by `T`. Fields are fixed
@@ -892,12 +895,13 @@ taken out of circulation everywhere.
 
 A dimension is a data type, a named base unit, a set of units with a
 factor and an optional offset, and optionally a mark that it is
-**cyclic** (§6.5.6), a **scale factor** (§6.5.5.1), or the **calendar**
-— the one dimension a date-and-time literal belongs to (§6.1.7). **The language
-defines none of them** (ADR 0008): not temperature, not percent, and not
-time. It defines the notations — suffixes (§6.1.5), duration literals
-(§6.1.6) and date-and-time literals (§6.1.7) — and a profile gives them
-meaning.
+**cyclic** (§6.5.6), a **scale factor** (§6.5.5.1), or a **calendar** —
+where a date-and-time literal lands (§6.1.7). **The language defines
+none of them** (ADR 0008): not temperature, not percent, and not time.
+It defines the notations — suffixes (§6.1.5), duration literals (§6.1.6)
+and date-and-time literals (§6.1.7) — and a profile gives them meaning.
+The form the profile's own document takes is §7; what is in it is
+nobody's business here.
 
 The data type and the base unit are one statement, not two. Together
 they say how fine the quantity is, and every arithmetic result in that

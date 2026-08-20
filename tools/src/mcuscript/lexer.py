@@ -73,6 +73,19 @@ OPERATORS = (
     "(", ")", "{", "}", "[", "]", ",", ".", ":",
 )  # fmt: skip
 
+
+def is_identifier(text: str) -> bool:
+    """Whether a word is an identifier (§6.1.3), keywords not considered.
+
+    The scanner's rule read as a question, for the two callers that have
+    a whole word already and no source position: a profile's dimension
+    names and a registry's entity names (§7.2.2, §7.3.2).
+    """
+    if not text or not (text[0].isascii() and (text[0].isalpha() or text[0] == "_")):
+        return False
+    return all(char.isascii() and (char.isalnum() or char == "_") for char in text)
+
+
 #: Non-letter characters a unit suffix may contain (§6.1.5). Letters are
 #: allowed too, and there Unicode rather than ASCII, because `µs` and `Ω`
 #: are units people write and neither is an identifier.
@@ -376,9 +389,21 @@ class _Lexer:
         raise error(f"`{char}` means nothing in this language", span)
 
 
+def split_datetime(value: str) -> tuple[str, str]:
+    """The inside of `@"…"` as a date and a time, either of them possibly empty.
+
+    Written once because three readers need it and one of them is not in
+    this file: a profile's epoch is the same notation (§7.2.4).
+    """
+    date, _, time = value.partition(" ") if " " in value else value.partition("T")
+    if not time and ":" in date:
+        return "", date
+    return date, time
+
+
 def _check_datetime(value: str, span: Span) -> None:
     """§6.1.7 fixes what may stand inside `@"…"`, and nothing else may."""
-    date, _, time = value.partition(" ") if " " in value else value.partition("T")
+    date, time = split_datetime(value)
     ok = (
         (_DATE.fullmatch(value) is not None)
         or (_TIME.fullmatch(value) is not None)

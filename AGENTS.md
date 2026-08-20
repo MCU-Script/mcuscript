@@ -33,13 +33,16 @@ into a container and the differential tests run *scripts* through both
 backends and compare the bytes. The assembler stays — it is how a test
 writes a container the compiler would never emit.
 
-What the compiler has no way to reach yet is a **profile** and a
-**registry**. Both are supplied by whoever integrates the language
-(ADR 0011): MCUScript's side of it is that a path can be passed in, and
-the file format at the end of that path is M4's. Until then the command
-compiles against a world that declares neither — legal per §6.5.4 — and
-a unit suffix or a host name is refused by name. Everything above the
-container is still a proposal.
+**A compiler can be given a world.** `spec/07-profiles.md` (ADR 0013)
+fixes the form of the two documents an integrator supplies — a
+**profile**, which declares the dimensions, and a **registry**, which
+declares what a script may reach — and `world.py` reads them. Both
+arrive as a path and nothing else: `--profile` / `MCUSCRIPT_PROFILE`,
+`--registry` / `MCUSCRIPT_REGISTRY`, no search order and no default
+location. With neither, a compilation runs against a world that declares
+nothing, which is legal (§6.5.4) and makes every suffix and every host
+name an error naming itself. The content of both documents belongs to
+the integrator; the specification fixes not one dimension of it.
 
 Chapter 6 marks every construct **built**, **planned** or **excluded**.
 "Built" there means *this is what M3 implements*; today that means the
@@ -53,8 +56,9 @@ argues against.
 
 So the split to keep in mind is: everything below the container is
 **decided and executed**; the surface syntax is **decided and not
-executed**; and everything else above the container — profiles, the
-embedding — is still a *proposal*. Before writing anything in the last
+executed**; the form of a profile and a registry is **decided and
+read**; and the rest above the container — what a real profile says, how
+an embedding works — is still a *proposal*. Before writing anything in the last
 of those, read
 [docs/adr/draft/0002-inherited-context.md](docs/adr/draft/0002-inherited-context.md)
 — it marks every item as **decided**, **recorded direction** or **on
@@ -67,7 +71,7 @@ to prevent.
 | Path | Role |
 |---|---|
 | `spec/` | **The specification** — the contract every implementation answers to. Its own version number, and deliberately its own top-level directory so it can be split into `mcu-script/spec` in one cut if a second implementation ever justifies it. `spec/corpus/` is part of it: containers with the verdict each must get, committed as bytes and regenerated with `python tools/build_corpus.py` (ADR 0005) |
-| `tools/` | The **host toolchain**, Python: container reader/writer, assembler, verifier, C backend, and the compiler (`diagnostics.py`, `lexer.py`, `ast.py`, `parser.py`, `profile.py`, `registry.py`, `sema.py`, `codegen.py`) |
+| `tools/` | The **host toolchain**, Python: container reader/writer, assembler, verifier, C backend, the compiler (`diagnostics.py`, `lexer.py`, `ast.py`, `parser.py`, `profile.py`, `registry.py`, `sema.py`, `codegen.py`) and the world it is given (`world.py`, `hostheader.py`) |
 | `runtime/` | The **device runtime**, C99: loader, verifier, VM. No dependencies, never allocates |
 | `docs/adr/` | Architecture decision records — living drafts in `draft/`, immutable finals at the top level once something real exists |
 | `.github/` | CI, issue templates, CODEOWNERS |

@@ -27,7 +27,7 @@ from __future__ import annotations
 
 from . import ast
 from .diagnostics import Span, error
-from .lexer import Token, TokenKind, tokenize
+from .lexer import Token, TokenKind, split_datetime, tokenize
 
 _COMPARISONS = frozenset({"<", "<=", ">", ">=", "==", "!="})
 _ASSIGNMENTS = frozenset({"=", "+=", "-=", "*=", "/="})
@@ -448,13 +448,7 @@ class _Parser:
             return ast.StringLit(token.span, token.value)
         if token.kind is TokenKind.DATETIME:
             self.advance()
-            date, _, time = (
-                token.value.partition(" ")
-                if " " in token.value
-                else token.value.partition("T")
-            )
-            if not time and ":" in date:
-                date, time = "", date
+            date, time = split_datetime(token.value)
             return ast.DateTime(token.span, date, time)
         if token.kind is TokenKind.IDENT:
             return self.name()

@@ -16,7 +16,7 @@ from dataclasses import fields as dc_fields
 from dataclasses import is_dataclass, replace
 from pathlib import Path
 
-from . import SPEC_VERSION, __version__
+from . import SPEC_VERSION, __version__, hostheader
 from .asm import AsmError, assemble, disassemble
 from .cbackend import UnsupportedProgram
 from .container import Container, ImportKind
@@ -25,6 +25,17 @@ from .errors import Refused
 from .opcodes import IMPLEMENTED_GROUPS, Group, ValType, group_names
 from .parser import parse
 from .verify import verify
+from .world import (
+    PROFILE_VARIABLE,
+    WorldError,
+    given,
+    path_from,
+    read_profile,
+    read_registry,
+)
+
+#: §7.5. The header the registry writes, from a flag or from here.
+HEADER_VARIABLE = "MCUSCRIPT_EMIT_C"
 
 EXIT_OK = 0
 EXIT_REFUSED = 1
@@ -57,7 +68,29 @@ def main(argv: list[str] | None = None) -> int:
         help="what to call the entry point of a file that is one "
         "expression; the file's name without its suffix by default",
     )
+    _world(p)
     p.set_defaults(run=_build)
+
+    p = sub.add_parser("profile", help="check a profile and show what it declares")
+    p.add_argument("file", type=Path)
+    p.set_defaults(run=_profile)
+
+    p = sub.add_parser("registry", help="check a registry and show what it declares")
+    p.add_argument("file", type=Path)
+    p.add_argument(
+        "--profile",
+        metavar="PATH",
+        default=None,
+        help="the profile it was written against; MCUSCRIPT_PROFILE if unset",
+    )
+    p.add_argument(
+        "--emit-c",
+        metavar="PATH",
+        default=None,
+        help="write the host's import table there as C, overwriting it; "
+        "MCUSCRIPT_EMIT_C if unset",
+    )
+    p.set_defaults(run=_registry)
 
     p = sub.add_parser("asm", help="assemble text into a container")
     p.add_argument("source", type=Path)
@@ -108,6 +141,9 @@ def main(argv: list[str] | None = None) -> int:
         return EXIT_REFUSED
     except UnsupportedProgram as error:
         print(f"cannot lower: {error}", file=sys.stderr)
+        return EXIT_USAGE
+    except WorldError as error:
+        print(f"{error}", file=sys.stderr)
         return EXIT_USAGE
     except OSError as error:
         print(f"{error}", file=sys.stderr)
@@ -160,32 +196,112 @@ def _is_nested(value: object) -> bool:
     return isinstance(value, tuple | list) and bool(value)
 
 
+def _world(parser: argparse.ArgumentParser) -> None:
+    """The two documents a compilation is given (§7.4), or neither."""
+    parser.add_argument(
+        "--profile",
+        metavar="PATH",
+        default=None,
+        help="the dimensions a script may use; MCUSCRIPT_PROFILE if unset",
+    )
+    parser.add_argument(
+        "--registry",
+        metavar="PATH",
+        default=None,
+        help="what a script may reach outside itself; MCUSCRIPT_REGISTRY if unset",
+    )
+
+
 def _build(args: argparse.Namespace) -> int:
     """Compile a script (§6) into a container.
 
-    **No profile and no registry yet.** Which dimensions exist is a
-    profile's to say and how one is written down is not built; which
-    entities a script may reach is the embedder's, and the same. So this
-    compiles against a world that declares neither — legal, per §6.5.4,
-    and the reason a unit suffix or a host name is refused here by name
-    rather than compiled wrongly.
+    With neither document this compiles against a world that declares
+    nothing — legal per §6.5.4, and the reason a unit suffix or a host
+    name is then refused by name rather than compiled wrongly.
     """
     from .codegen import compile_script
-    from .profile import EMPTY as NO_PROFILE
-    from .registry import EMPTY as NO_REGISTRY
 
+    profile, registry = given(args.profile, args.registry)
     source = args.script.read_text(encoding="utf-8")
     _last_source[0] = source
     container = compile_script(
         source,
         str(args.script),
-        NO_PROFILE,
-        NO_REGISTRY,
+        profile,
+        registry,
         entry_name=args.entry or args.script.stem,
     )
     blob = container.encode()
     args.output.write_bytes(blob)
     print(f"{args.output}: {len(blob)} bytes, {len(container.functions)} function(s)")
+    return EXIT_OK
+
+
+def _profile(args: argparse.Namespace) -> int:
+    """Read a profile and say what it declares (§7.2).
+
+    A profile author needs an answer without having to invent a script
+    to provoke one, and the useful answer is the table as the compiler
+    now understands it rather than the file read back.
+    """
+    profile = read_profile(args.file)
+    print(
+        f"profile {profile.name} {profile.version} (id {profile.id}) — "
+        f"{len(profile.dimensions)} dimension(s)"
+    )
+    for dimension in profile.dimensions:
+        marks = []
+        if dimension.cyclic:
+            marks.append("cyclic")
+        if dimension.scale:
+            marks.append("scale")
+        if dimension.clock is not None:
+            marks.append(
+                "times of day" if dimension.clock.is_time_of_day else "dates and times"
+            )
+        units = ", ".join(unit.spelling for unit in dimension.units) or "—"
+        line = (
+            f"  {dimension.name:<14} {dimension.type!s:<4} "
+            f"{dimension.base_unit:<8} {units}"
+        )
+        print(f"{line:<58} [{', '.join(marks)}]" if marks else line)
+    return EXIT_OK
+
+
+def _registry(args: argparse.Namespace) -> int:
+    """Read a registry against its profile, and optionally write the C table."""
+    profile_path = path_from(args.profile, PROFILE_VARIABLE)
+    if profile_path is None:
+        print(
+            "a registry is read against a profile: pass --profile, or set "
+            f"{PROFILE_VARIABLE}",
+            file=sys.stderr,
+        )
+        return EXIT_USAGE
+    profile = read_profile(profile_path)
+    registry = read_registry(args.file, profile)
+
+    print(
+        f"registry {args.file} — {len(registry.entities)} entit(ies), "
+        f"{len(registry.functions)} function(s), against profile "
+        f"{profile.id} {profile.version}"
+    )
+    for entity in registry.entities:
+        access = (
+            "readwrite"
+            if entity.readable and entity.writable
+            else ("read" if entity.readable else "write")
+        )
+        print(f"  {entity.name:<20} {access:<10} {entity.quantity}")
+    for function in registry.functions:
+        params = ", ".join(str(q) for q in function.params)
+        returns = f" -> {function.returns}" if function.returns else ""
+        print(f"  {function.name}({params}){returns}")
+
+    header = path_from(args.emit_c, HEADER_VARIABLE)
+    if header is not None:
+        hostheader.write(registry, header, source=str(args.file))
+        print(f"{header}: the host's import table, {len(registry.names)} entries")
     return EXIT_OK
 
 

@@ -125,7 +125,8 @@ not for time.**
   declare a time dimension, name its base unit, and decide whether its
   clock is cyclic — with §8 question 6 (the percent base unit) now joined
   by the time base as a profile question rather than a specification one.
-  Both belong to M4.
+  Both are answered in its own repository now that there is a form to
+  answer them in (ADR 0013).
 - **ADR 0002 §2.11 gap 7 is answered rather than carried.** Its problem
   was that a 64-bit time base does not fit the sketch's 32-bit cells;
   §1.2 answered the mechanical half by fixing 8-byte slots, and this
@@ -135,10 +136,11 @@ not for time.**
 
 ## Open
 
-- **Whether `profile-home` names its clock `now`** — likely, and M4's to
-  decide. If it does, every example in this project's documentation reads
-  as it always did; what changed is who promises it.
+- **Whether `profile-home` names its clock `now`** — likely, and its own
+  to decide. If it does, every example in this project's documentation
+  reads as it always did; what changed is who promises it.
 - **Where the recommended fragment lives**, this repository or the
   profile's. It is a toolkit for profile authors, which argues for here;
   it is also the first content of `profile-home`, which argues for
-  there. Deferred to M4, when there is a profile format to write it in.
+  there. The format exists (ADR 0013), so this is now a question about
+  where a file goes rather than about whether it can be written.

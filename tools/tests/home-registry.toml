@@ -1,0 +1,62 @@
+# What a script may reach in the test world — the embedder's half.
+
+format = 1
+
+[profile]
+id = 1
+version = "0.1"
+
+[entity."sensor.temp"]
+quantity = "temperature"
+
+[entity."sensor.outside"]
+quantity = "temperature"
+
+[entity."sensor.humidity"]
+quantity = "humidity"
+
+[entity."sensor.count"]
+quantity = "i32"
+
+[entity."clock.hour"]
+quantity = "i32"
+
+[entity."fan.speed"]
+quantity = "i32"
+access = "readwrite"
+
+[entity."valve.open"]
+quantity = "bool"
+access = "readwrite"
+
+[entity."led.fault"]
+quantity = "bool"
+access = "write"
+
+[entity."state.latch"]
+quantity = "bool"
+access = "readwrite"
+
+[entity."setpoint.target"]
+quantity = "temperature"
+access = "readwrite"
+
+# An embedder may declare a bare name, and some do.
+[entity.brightness]
+quantity = "i32"
+access = "readwrite"
+
+[entity."timer.started"]
+quantity = "uptime"
+
+[entity."timer.expires"]
+quantity = "uptime"
+
+[function."fan.on"]
+
+[function."timer.after"]
+params = ["duration"]
+
+[function."math.log"]
+params = ["f32"]
+returns = "f32"

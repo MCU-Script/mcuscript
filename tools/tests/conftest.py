@@ -18,6 +18,17 @@ import pytest
 
 RUNTIME = Path(__file__).resolve().parents[2] / "runtime"
 
+#: §7.4 lets two variables name a profile and a registry, and §7.5 one
+#: more name a header. A test run inherits the shell it was started
+#: from, and none of these tests mean to.
+WORLD_VARIABLES = ("MCUSCRIPT_PROFILE", "MCUSCRIPT_REGISTRY", "MCUSCRIPT_EMIT_C")
+
+
+@pytest.fixture(autouse=True)
+def _no_world_from_the_environment(monkeypatch):
+    for variable in WORLD_VARIABLES:
+        monkeypatch.delenv(variable, raising=False)
+
 
 @pytest.fixture(scope="session")
 def vm(tmp_path_factory) -> Path:

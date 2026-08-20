@@ -1,0 +1,52 @@
+# The same profile without either calendar role, for the refusal §6.1.7
+# promises: a profile that declares no such dimension makes `@"…"` an
+# error saying exactly that.
+
+format = 1
+
+[profile]
+name = "bare"
+id = 1
+version = "0.1"
+
+[dimension.temperature]
+id = 1
+type = "i32"
+base_unit = "c°C"
+
+[dimension.temperature.units]
+"c°C" = 1
+"°C" = 100
+"°F" = { factor = "500/9", offset = "-16000/9" }
+
+[dimension.humidity]
+id = 2
+type = "i32"
+base_unit = "d%"
+
+[dimension.humidity.units]
+"d%" = 1
+"%" = 10
+
+[dimension.duration]
+id = 3
+type = "i32"
+base_unit = "ms"
+
+[dimension.duration.units]
+ms = 1
+s = 1000
+min = 60000
+h = 3600000
+d = 86400000
+
+[dimension.ratio]
+id = 4
+type = "f32"
+base_unit = "one"
+scale = true
+
+[dimension.ratio.units]
+one = 1
+pct = "1/100"
+ppm = "1/1000000"

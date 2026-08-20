@@ -16,6 +16,8 @@ Every container here goes through `mcuscript.verify` on the way out, so
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 from harness import agree, compile_once
 from homeprofile import HOME, REGISTRY
@@ -241,16 +243,6 @@ def test_a_limit_on_either_function_of_a_cycle_covers_both():
 # -- what it refuses --------------------------------------------------------
 
 
-def test_a_date_has_no_number_to_compile_to():
-    """The one construct the front end types and cannot lower.
-
-    What `@"…"` counts from is an epoch, and an epoch belongs to the
-    profile format — so this refusal is a statement about what is built,
-    not about the script.
-    """
-    assert "date" in refusal('on go {\n  let t: instant = @"2026-08-19 13:25"\n}\n')
-
-
 @pytest.mark.parametrize(
     ("script", "groups"),
     [
@@ -286,12 +278,11 @@ def test_bitwise_operations_stay_32_bit():
 
 
 def test_the_command_compiles_a_file(tmp_path, capsys):
-    """`mcuscript build`, which has no profile and no registry yet.
+    """`mcuscript build` with neither document named.
 
-    A world that declares neither is legal (§6.5.4) and is what the
-    command compiles against until a profile can be named, so what it
-    takes is a script of plain numbers — and what it proves is that the
-    pipeline reaches a file from a shell.
+    A world that declares neither is legal (§6.5.4), so what it takes is
+    a script of plain numbers — and what it proves is that the pipeline
+    reaches a file from a shell.
     """
     from mcuscript.cli import main
 
@@ -326,6 +317,102 @@ def test_a_unit_without_a_profile_says_so(tmp_path, capsys):
     script.write_text("25°C\n", encoding="utf-8")
     assert main(["build", str(script), "-o", str(tmp_path / "out.mcsb")]) == 2
     assert "declares units" in capsys.readouterr().err
+
+
+HERE = Path(__file__).resolve().parent
+
+
+def test_the_command_compiles_against_a_named_world(tmp_path, capsys):
+    """§7.4: the two paths, and what changes when they are given."""
+    from mcuscript.cli import main
+
+    script = tmp_path / "warm.mcs"
+    script.write_text("on go { fan.speed = to_i32(sensor.temp, °C) }\n")
+    out = tmp_path / "warm.mcsb"
+    assert (
+        main(
+            [
+                "build",
+                str(script),
+                "-o",
+                str(out),
+                "--profile",
+                str(HERE / "home.toml"),
+                "--registry",
+                str(HERE / "home-registry.toml"),
+            ]
+        )
+        == 0
+    )
+    container = Container.decode(out.read_bytes())
+    # The container pins the profile it was built against (§2.4).
+    assert (container.profile_id, container.profile_major) == (HOME.id, HOME.major)
+
+
+def test_the_variables_name_the_same_two_paths(tmp_path, monkeypatch):
+    from mcuscript.cli import main
+
+    monkeypatch.setenv("MCUSCRIPT_PROFILE", str(HERE / "home.toml"))
+    monkeypatch.setenv("MCUSCRIPT_REGISTRY", str(HERE / "home-registry.toml"))
+    script = tmp_path / "warm.mcs"
+    script.write_text("on go { fan.speed = to_i32(sensor.temp, °C) }\n")
+    assert main(["build", str(script), "-o", str(tmp_path / "out.mcsb")]) == 0
+
+
+def test_the_commands_that_check_a_document(tmp_path, capsys):
+    """A profile author needs an answer without inventing a script."""
+    from mcuscript.cli import main
+
+    assert main(["profile", str(HERE / "home.toml")]) == 0
+    assert "temperature" in capsys.readouterr().out
+
+    header = tmp_path / "imports.h"
+    assert (
+        main(
+            [
+                "registry",
+                str(HERE / "home-registry.toml"),
+                "--profile",
+                str(HERE / "home.toml"),
+                "--emit-c",
+                str(header),
+            ]
+        )
+        == 0
+    )
+    assert "MCUSCRIPT_IMPORT_SENSOR_TEMP" in header.read_text()
+
+
+def test_a_registry_needs_the_profile_it_belongs_to(capsys):
+    from mcuscript.cli import main
+
+    assert main(["registry", str(HERE / "home-registry.toml")]) == 2
+    assert "pass --profile" in capsys.readouterr().err
+
+
+def test_a_document_that_is_wrong_stops_the_command(tmp_path, capsys):
+    from mcuscript.cli import main
+
+    bad = tmp_path / "bad.toml"
+    bad.write_text(
+        "\n".join(
+            [
+                "format = 1",
+                "[profile]",
+                'name = "x"',
+                "id = 1",
+                'version = "0.1"',
+                "[dimension.temp]",
+                "id = 1",
+                'type = "i32"',
+                'base_unit = "c"',
+                "[dimension.temp.units]",
+                "c = 1.5",
+            ]
+        )
+    )
+    assert main(["profile", str(bad)]) == 2
+    assert "has to be exact" in capsys.readouterr().err
 
 
 # -- the same script, both backends -----------------------------------------
@@ -466,6 +553,17 @@ ANSWERS = {
         "}\n"
         "on go { return down(3) }\n",
         ("i32", "6", "valid"),
+    ),
+    "a date is worth its distance from the epoch": (
+        # The fixture's epoch is 1970 and its base unit a millisecond,
+        # so this is one subtraction and one factor — computed by the
+        # compiler, because after §1.4 there is no calendar left.
+        'on go { return @"2026-08-20 04:02:51" }\n',
+        ("i64", "1787198571000", "valid"),
+    ),
+    "a time of day counts from midnight": (
+        'on go { return @"12:00" }\n',
+        ("i32", "43200", "valid"),
     ),
     "a conversion into the profile's own base unit": (
         # `c°C` starts with a letter and contains `°`, which is the

@@ -387,7 +387,7 @@ class _Emit:
 
     def expr(self, node: ast.Expr) -> None:
         match node:
-            case ast.Number() | ast.Duration():
+            case ast.Number() | ast.Duration() | ast.DateTime():
                 self.literal(node)
             case ast.BoolLit():
                 self.code.emit("const.true" if node.value else "const.false")
@@ -411,20 +411,13 @@ class _Emit:
                 self.if_expr(node, value=self.wants_value(node))
             case ast.Match():
                 self.match_expr(node)
-            case ast.DateTime():
-                raise error(
-                    "a date has no number to compile to yet",
-                    node.span,
-                    "What its fields count from is the profile's, and that "
-                    "format is not built.",
-                )
             case _:  # pragma: no cover - sema refuses everything else
                 raise error("this expression cannot be compiled yet", node.span)
 
     def wants_value(self, node: ast.Expr) -> bool:
         return self.analysis.type_of(node).type is not ValType.VOID
 
-    def literal(self, node: ast.Number | ast.Duration) -> None:
+    def literal(self, node: ast.Number | ast.Duration | ast.DateTime) -> None:
         quantity = self.analysis.type_of(node)
         value = self.analysis.values[id(node)]
         self.push_number(value, quantity.type, node.span)

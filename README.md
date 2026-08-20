@@ -43,7 +43,7 @@ never heard of MCUHome is a design goal, not a side effect.
 
 ## Status
 
-**Both ends work; what is missing above them is a profile.**
+**Both ends work, and a compiler can be told what world it is in.**
 Chapters 1 to 5 of [the specification](spec/) are written and
 implemented — the container format, the verifier, the VM in C, and the C
 backend — and a differential test runs the same container through both
@@ -56,12 +56,14 @@ language and marks every construct **built**, **planned** or
 <file>` turns a script into a container — and the differential tests
 run *scripts* through both backends and compare the bytes.
 
-What a script cannot reach yet is a **profile**: which dimensions exist,
-how units are spelled and what each normalizes to is declared by
-whoever integrates the language, and the format that declaration is
-written in is the next milestone. Until then the command compiles
-against a world that declares none, and a unit suffix is refused by name
-rather than guessed at.
+[Chapter 7](spec/07-profiles.md) is the last of them: which dimensions
+exist and what a script may reach outside itself are declared by whoever
+integrates the language, and this fixes the form of those two documents
+without fixing one word of their content. A compiler is handed them by
+path — `--profile`, `--registry`, or the matching environment variables
+— and nothing is searched for. Given neither, it compiles against a
+world that declares nothing and refuses a unit suffix by name rather
+than guessing at it.
 
 Do not depend on this repository. The specification is at
 `0.1.0-draft` and says so; ADR 0002 marks each remaining item as
@@ -128,8 +130,7 @@ ARM cross compiler.
 
 ## What it looks like
 
-Decided and written down in [chapter 6](spec/06-syntax.md), and not yet
-compiled by anything:
+Decided in [chapter 6](spec/06-syntax.md), and compiled:
 
 ```
 fan.speed = match temp { > 28°C -> 3, > 25°C -> 2, else -> 0 }
@@ -196,6 +197,15 @@ from the real result.
   the language fixes no unit, no base unit and no clock
 - [0009](docs/adr/draft/0009-the-surface-syntax.md) — the surface
   syntax, planned whole before any of it is compiled
+- [0010](docs/adr/draft/0010-four-instructions-the-syntax-needed.md) —
+  the four instructions the surface syntax turned out to need
+- [0011](docs/adr/draft/0011-the-code-generator.md) — the code
+  generator, and what writing it settled
+- [0012](docs/adr/draft/0012-a-64-bit-quantity-may-be-a-decimal.md) —
+  converting between `i64` and `f32`, because a dimension may be either
+- [0013](docs/adr/draft/0013-the-two-documents-a-compiler-is-given.md) —
+  the form of a profile and of a registry, and how one reaches the
+  compiler
 
 ## Contributing
 

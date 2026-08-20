@@ -158,14 +158,15 @@ member.
 
 | Refused | Because |
 |---|---|
-| `@"2026-08-19 13:25"` | what its fields count from is an epoch, and the epoch belongs to the profile format (M4) |
+| `@"2026-08-19 13:25"` | what its fields count from is an epoch, and no profile could state one |
 | 64-bit bitwise and shifts | §3.7 says there are none in this version |
 | a 64-bit loop range | the guard counts in `i32` (§3.8) |
 
-The first is temporary and the other two are the instruction set's
-shape. None of them is a silently wrong lowering, which is the property
-that matters: each is a diagnostic with a span, from the same machinery
-a type error uses.
+The first was temporary and is **gone**: ADR 0013 gave a profile a form
+to declare its epoch in, and a date literal now compiles. The other two
+are the instruction set's shape. None of them is a silently wrong
+lowering, which is the property that matters: each is a diagnostic with
+a span, from the same machinery a type error uses.
 
 A fourth stood here — `i64` to `f32` in either direction — and it was
 wrong. **ADR 0012 replaced it with two instructions**, because a
@@ -183,14 +184,16 @@ only the possibility of passing the path to the profile as an argument
 or an environment variable."*
 
 So the interface is a path, not a discovery rule, not a search order and
-not a default location. The **format** of what sits at that path is
-still the next milestone's, and until it exists the command compiles
+not a default location. The **format** of what sits at that path was
+left to the next milestone, and with no path given the command compiles
 against an empty profile and an empty registry — which §6.5.4 explicitly
-allows — and a unit suffix or a host name is refused by name.
+allows — and a unit suffix or a host name is refused by name. That is
+still what happens when neither is named; what changed is that they can
+be (ADR 0013).
 
-Inventing a format here to make the command more useful is the failure
-mode this repository is set up to prevent: it would be M4, decided in
-passing, by the stage that happened to need it first.
+Inventing a format here to make the command more useful would have been
+the failure mode this repository is set up to prevent: a format decided
+in passing, by the stage that happened to need it first.
 
 ## Consequences
 
@@ -224,4 +227,4 @@ passing, by the stage that happened to need it first.
 
 What a profile file *looks like*. Point 10 fixes who owns one and how it
 reaches the compiler; the format, and the same question for the
-registry, are M4's.
+registry, are ADR 0013's.

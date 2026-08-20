@@ -20,10 +20,7 @@ is why `(a + b) / 2` on two temperatures is a temperature and
 `current / baseline` on two temperatures is a decimal.
 
 What this stage does **not** do, and says so rather than pretending:
-strings and arrays are planned (§6.10, §6.9) and refused here by name;
-a date literal is type-checked against the profile's calendar dimension
-but not turned into a number, because that needs an epoch and the
-profile format is M4's.
+strings and arrays are planned (§6.10, §6.9) and refused here by name.
 """
 
 from __future__ import annotations
@@ -35,7 +32,7 @@ from fractions import Fraction
 from . import ast
 from .diagnostics import Span, error
 from .opcodes import ValType
-from .profile import Dimension, Profile, Unit
+from .profile import Dimension, Profile, Unit, civil_seconds, day_seconds
 from .registry import Entity, HostFunction, Quantity, Registry, nearest
 
 
@@ -612,15 +609,63 @@ class _Analyser:
         return Quantity(dimension.type, dimension)
 
     def datetime(self, node: ast.DateTime) -> Quantity:
-        calendar = self.profile.calendar
-        if calendar is None:
+        """`@"…"` is worth what the profile's clock says it is (§7.2.4).
+
+        Two dimensions can take one of these and which one is decided by
+        the literal: a date is a point in history and a time of day is
+        not, so they are different quantities and a profile declares
+        them separately.
+        """
+        dated = bool(node.date)
+        dimension = self.profile.instant if dated else self.profile.time_of_day
+        if dimension is None or dimension.clock is None:
+            kind = "a date" if dated else "a time of day"
+            thing = "points in time" if dated else "times of day"
             raise error(
-                "this profile has no calendar, so a date means nothing here",
+                f"this profile has no calendar, so {kind} means nothing here",
                 node.span,
-                f"The profile `{self.profile.name}` declares no dimension "
-                "for points in time.",
+                f"The profile `{self.profile.name}` declares no dimension for {thing}.",
             )
-        return Quantity(calendar.type, calendar)
+        clock = dimension.clock
+        written = f"{node.date} {node.time}".strip()
+        try:
+            seconds = (
+                civil_seconds(node.date, node.time) - (clock.epoch or 0)
+                if dated
+                else day_seconds(node.time)
+            )
+        except ValueError as bad:
+            raise error(f'"{written}" is not a moment', node.span, str(bad)) from bad
+        value = seconds * clock.second
+        if dimension.is_integer and value.denominator != 1:
+            raise error(
+                f'"{written}" is finer than {dimension.name} is held',
+                node.span,
+                f"This profile counts {dimension.name} in whole {dimension.base_unit}.",
+            )
+        self._reachable(value, dimension, written, node.span)
+        self.out.values[id(node)] = value
+        return Quantity(dimension.type, dimension)
+
+    def _reachable(
+        self, value: Fraction, dimension: Dimension, written: str, span: Span
+    ) -> None:
+        """A moment the dimension's type cannot hold is refused, not wrapped."""
+        if not dimension.is_integer:
+            return
+        width = 32 if dimension.type is ValType.I32 else 64
+        low, high = -(2 ** (width - 1)), 2 ** (width - 1) - 1
+        if low <= value <= high:
+            return
+        counted = (
+            "from its epoch" if dimension.clock.epoch is not None else "from midnight"
+        )
+        raise error(
+            f'"{written}" is further {counted} than {dimension.name} reaches',
+            span,
+            f"This profile holds {dimension.name} in {dimension.type}, "
+            f"which counts {low} to {high} {dimension.base_unit}.",
+        )
 
     def unit_of(self, spelling: str, span: Span) -> tuple[Dimension, Unit]:
         found = self.profile.find_unit(spelling)
@@ -1016,10 +1061,19 @@ class _Analyser:
                 return value, None, self.written_unit(node.args[1])[1], factor
             return value, None, None, factor
         if len(node.args) < 2:
+            spellings = value.dimension.units
+            if not spellings:
+                raise error(
+                    f"this profile spells no unit of {value}",
+                    node.span,
+                    f"A conversion says which unit to count in, and "
+                    f"`{value}` has none to name. Its base unit is a word "
+                    "for diagnostics, not a unit a script may write.",
+                )
             raise error(
                 f"`{name}` needs to know which unit to count {value} in",
                 node.span,
-                f"Write `{name}(…, {value.dimension.base_unit or 'unit'})`.",
+                f"Write `{name}(…, {spellings[0].spelling})`.",
             )
         dimension, unit = self.written_unit(node.args[1])
         if dimension is not value.dimension:

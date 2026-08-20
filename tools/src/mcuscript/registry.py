@@ -37,6 +37,13 @@ class Quantity:
     type: ValType
     dimension: Dimension | None = None
 
+    def __post_init__(self) -> None:
+        if self.dimension is not None and self.dimension.type is not self.type:
+            raise ValueError(
+                f"{self.dimension.name} is held in {self.dimension.type}, "
+                f"and this says {self.type}"
+            )
+
     def __str__(self) -> str:
         return self.dimension.name if self.dimension else str(self.type)
 

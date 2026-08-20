@@ -362,8 +362,9 @@ and it turned out to need four instructions, all small, all in `core`.
   whatever scaling its wire format has, which may match no unit the
   profile declares. So the binding format must be able to state its own
   scaling and have the glue convert at the boundary — never the script,
-  which would put the profile's internals back into user code. This is
-  M4's, and it is the counterpart of decision 13: the script names a
+  which would put the profile's internals back into user code. A binding
+  format is not the registry of ADR 0013 and is still nobody's; it is
+  the counterpart of decision 13: the script names a
   unit because it must not know the base unit, and the binding states a
   factor because it does not have a unit at all.
 - **A host function's parameters have types in the container and no
