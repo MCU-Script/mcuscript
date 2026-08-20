@@ -224,7 +224,9 @@ def test_a_factor_may_be_a_ratio_or_a_decimal_string(tmp_path):
     profile = read_profile(
         write(
             tmp_path,
-            MINIMAL.replace('"°C" = 100', '"°F" = { factor = "500/9", offset = "0.5" }'),
+            MINIMAL.replace(
+                '"°C" = 100', '"°F" = { factor = "500/9", offset = "0.5" }'
+            ),
         )
     )
     unit = profile.find_unit("°F")[1]
@@ -276,8 +278,7 @@ def test_a_dimension_without_an_epoch_takes_the_times_of_day(tmp_path):
     profile = read_profile(
         write(
             tmp_path,
-            MINIMAL
-            + CLOCK.replace('epoch = "1970-01-01 00:00:00", ', ""),
+            MINIMAL + CLOCK.replace('epoch = "1970-01-01 00:00:00", ', ""),
         )
     )
     assert profile.time_of_day is not None and profile.instant is None
@@ -296,19 +297,20 @@ def test_an_epoch_that_is_not_a_day_says_which_field(tmp_path):
 
 
 def test_two_dimensions_cannot_both_take_a_date(tmp_path):
-    text = MINIMAL + CLOCK + CLOCK.replace("instant", "other").replace("id = 9", "id = 10")
+    text = (
+        MINIMAL + CLOCK + CLOCK.replace("instant", "other").replace("id = 9", "id = 10")
+    )
     assert "two dimensions take a date" in refused(tmp_path, text)
 
 
 def test_a_ratio_is_not_a_calendar(tmp_path):
-    assert "not a calendar" in refused(
-        tmp_path, MINIMAL + CLOCK + "scale = true\n"
-    )
+    assert "not a calendar" in refused(tmp_path, MINIMAL + CLOCK + "scale = true\n")
 
 
 def test_a_ratio_does_not_wrap(tmp_path):
     assert "does not wrap" in refused(
-        tmp_path, MINIMAL.replace('type = "i32"', 'type = "i32"\ncyclic = true\nscale = true')
+        tmp_path,
+        MINIMAL.replace('type = "i32"', 'type = "i32"\ncyclic = true\nscale = true'),
     )
 
 
@@ -343,7 +345,9 @@ def test_a_registry_newer_than_the_profile_is_refused(tmp_path):
 
 def test_a_registry_older_than_the_profile_is_read(tmp_path):
     """A profile that only added dimensions did not move the world."""
-    profile = read_profile(write(tmp_path, MINIMAL.replace('version = "1.2"', 'version = "1.9"')))
+    profile = read_profile(
+        write(tmp_path, MINIMAL.replace('version = "1.2"', 'version = "1.9"'))
+    )
     registry = read_registry(write(tmp_path, REGISTRY, "registry.toml"), profile)
     assert registry.names == ("sensor.temp",)
 
@@ -372,9 +376,11 @@ def test_a_part_after_a_dot_may_be_one_of_them(tmp_path):
 
 def test_a_quantity_that_is_neither_says_what_is_near(tmp_path):
     text = refused_registry(
-        tmp_path, REGISTRY.replace('quantity = "temperature"', 'quantity = "temprature"')
+        tmp_path,
+        REGISTRY.replace('quantity = "temperature"', 'quantity = "temperatures"'),
     )
-    assert "is not a dimension or a type" in text and "temperature" in text
+    assert "is not a dimension or a type" in text
+    assert "Did you mean `temperature`?" in text
 
 
 def test_an_access_that_is_not_one_of_the_three_is_refused(tmp_path):
@@ -481,7 +487,9 @@ def test_a_name_the_enum_needs_for_itself_is_refused(tmp_path):
     """`MCUSCRIPT_IMPORT_COUNT` is how many there are, not one of them."""
     profile = read_profile(write(tmp_path, MINIMAL))
     registry = read_registry(
-        write(tmp_path, REGISTRY + '\n[entity.count]\nquantity = "i32"\n', "registry.toml"),
+        write(
+            tmp_path, REGISTRY + '\n[entity.count]\nquantity = "i32"\n', "registry.toml"
+        ),
         profile,
     )
     with pytest.raises(hostheader.NameCollision):
@@ -526,8 +534,19 @@ def test_the_generated_header_compiles(cc, tmp_path):
     )
     runtime = Path(__file__).resolve().parents[2] / "runtime" / "include"
     built = subprocess.run(
-        [cc, "-std=c99", "-Wall", "-Wextra", "-Werror", "-c", str(unit),
-         f"-I{tmp_path}", f"-I{runtime}", "-o", str(tmp_path / "use.o")],
+        [
+            cc,
+            "-std=c99",
+            "-Wall",
+            "-Wextra",
+            "-Werror",
+            "-c",
+            str(unit),
+            f"-I{tmp_path}",
+            f"-I{runtime}",
+            "-o",
+            str(tmp_path / "use.o"),
+        ],
         capture_output=True,
         text=True,
         check=False,

@@ -111,7 +111,10 @@ def generate(registry: Registry, path: Path, *, source: str = "a registry") -> s
 def _record(entry: Entity | HostFunction) -> str:
     if isinstance(entry, Entity):
         quantity = entry.quantity
-        kind, access = "MCUSCRIPT_KIND_ENTITY", _ACCESS[(entry.readable, entry.writable)]
+        kind, access = (
+            "MCUSCRIPT_KIND_ENTITY",
+            _ACCESS[(entry.readable, entry.writable)],
+        )
         params, count = "NULL", 0
     else:
         quantity = entry.returns

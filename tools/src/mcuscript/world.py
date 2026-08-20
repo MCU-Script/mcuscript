@@ -9,7 +9,7 @@ two TOML files, each named by a path, neither of them searched for.
 
 Everything here is strict on purpose, and the strictness is the point
 rather than a style. **An unknown key is an error**: a reader that
-skipped what it did not recognise would read `ofset = -16000` as a unit
+skipped what it did not recognise would read `offst = -16000` as a unit
 with no offset, accept the file, and compile every temperature in the
 world 32 degrees wrong. **A factor is never a float**: TOML's floats are
 binary, `0.001` is not one of them, and §6.3.10 decides at compile time
@@ -33,10 +33,10 @@ from typing import Any
 from .container import fnv1a32
 from .lexer import KEYWORDS, SUFFIX_SYMBOLS, TYPE_NAMES, is_identifier, split_datetime
 from .opcodes import ValType
-from .profile import Clock, Dimension, Profile, Unit, civil_seconds
 from .profile import EMPTY as NO_PROFILE
-from .registry import Entity, HostFunction, Quantity, Registry, nearest
+from .profile import Clock, Dimension, Profile, Unit, civil_seconds
 from .registry import EMPTY as NO_REGISTRY
+from .registry import Entity, HostFunction, Quantity, Registry, nearest
 
 #: §7.4. A flag beats the variable; nothing else is consulted.
 PROFILE_VARIABLE = "MCUSCRIPT_PROFILE"
@@ -244,8 +244,7 @@ def _exact(doc: _Doc, where: str, value: Any) -> Fraction:
         raise doc.fail(
             where,
             f'"{value}" is not a number',
-            "A whole number, a decimal such as \"0.001\", or a ratio such "
-            'as "500/9".',
+            'A whole number, a decimal such as "0.001", or a ratio such as "500/9".',
         ) from bad
 
 
@@ -296,8 +295,7 @@ def _version(doc: _Doc, table: _Table, key: str) -> str:
         raise doc.fail(
             table.at(key),
             f'"{text}" is not a version',
-            "Two whole numbers with a dot between them, each at most "
-            '65535 — "0.1".',
+            'Two whole numbers with a dot between them, each at most 65535 — "0.1".',
         )
     return text
 
@@ -328,8 +326,7 @@ def _dimension(doc: _Doc, where: str, word: str, body: Any) -> Dimension:
         raise doc.fail(
             table.at("type"),
             f"`{type_name}` is not a type a dimension may be held in",
-            f"One of {known}. A quantity that is a yes-or-no has no units "
-            "to convert.",
+            f"One of {known}. A quantity that is a yes-or-no has no units to convert.",
         )
     base_unit = _label(doc, table.at("base_unit"), table.string("base_unit"))
     units = _units(doc, table)
@@ -370,9 +367,7 @@ def _label(doc: _Doc, where: str, text: str) -> str:
 
 def _spelling(doc: _Doc, where: str, text: str) -> str:
     """A unit spelling is the lexer's rule and not a profile's (§6.1.5)."""
-    ok = bool(text) and all(
-        char.isalpha() or char in SUFFIX_SYMBOLS for char in text
-    )
+    ok = bool(text) and all(char.isalpha() or char in SUFFIX_SYMBOLS for char in text)
     if not ok:
         raise doc.fail(
             where,
@@ -451,7 +446,9 @@ def read_registry(path: str | Path, profile: Profile) -> Registry:
     functions = []
     where, table = root.mapping("function")
     for word, body in table.items():
-        functions.append(_function(doc, f"{where}.{_quoted(word)}", word, body, profile))
+        functions.append(
+            _function(doc, f"{where}.{_quoted(word)}", word, body, profile)
+        )
     root.done()
 
     _unique(doc, entities, functions)
@@ -522,9 +519,7 @@ def _quantity(doc: _Doc, where: str, text: str, profile: Profile) -> Quantity:
     raise doc.fail(where, f"`{text}` is not a dimension or a type", *notes)
 
 
-def _entity(
-    doc: _Doc, where: str, word: str, body: Any, profile: Profile
-) -> Entity:
+def _entity(doc: _Doc, where: str, word: str, body: Any, profile: Profile) -> Entity:
     if not isinstance(body, dict):
         raise doc.fail(where, f"this is {_kind(body)}, and a table was wanted")
     _name(doc, where, word)
@@ -570,8 +565,7 @@ def _unique(doc: _Doc, entities: list[Entity], functions: list[HostFunction]) ->
     if len(names) > 0xFF:
         raise doc.fail(
             "",
-            f"this registry declares {len(names)} names, and a host's table "
-            "holds 255",
+            f"this registry declares {len(names)} names, and a host's table holds 255",
         )
     seen: dict[str, str] = {}
     for entry in (*entities, *functions):

@@ -48,7 +48,7 @@ nothing is searched for (§7.4).
 
 **Every key this chapter does not define is an error, in both
 documents.** A reader that ignored what it did not recognise would read
-`ofset = -16000` as a unit with no offset, accept the file, and compile
+`offst = -16000` as a unit with no offset, accept the file, and compile
 every temperature in the world 32 degrees wrong. There is no key whose
 absence is worth that.
 
@@ -247,6 +247,7 @@ one that does not. The conditions, gathered:
 | a dimension name that is not an identifier, is a keyword, or is a type name | §7.2.2 |
 | `id` outside 1 … 65535, or used twice | |
 | `type` other than `i32`, `i64`, `f32` | |
+| a `base_unit` that is not one printable word | §7.2.2 |
 | a unit spelling outside §6.1.5's character set | |
 | one spelling on two dimensions | |
 | a factor that is a TOML float, is zero, or is negative | §7.2.3 |
@@ -254,6 +255,7 @@ one that does not. The conditions, gathered:
 | `cyclic` together with `scale`, or `scale` together with `calendar` | |
 | two calendar dimensions with an epoch, or two without | |
 | an `epoch` outside the grammar of §6.1.7, or one with no date | |
+| a `second` that is not greater than zero | §7.2.4 |
 
 These refusals have **no names**, and that is a considered difference
 from §4.6. A container's refusal is named because a loader reports it to
@@ -347,6 +349,7 @@ about the container format and not a gap in it; §7.5 is the answer.
 | one name declared twice, as an entity and as a function | |
 | **two names whose FNV-1a hashes collide** | §4.4.1 |
 | a `quantity` that is neither a declared dimension nor a type | |
+| `params` that is not a list of quantities | |
 | `access` other than the three | |
 | `quantity` given as `void` | a function that yields nothing leaves `returns` out |
 | more than 255 entries | §4.4's count is a `u8`, and so is a host's |

@@ -137,7 +137,7 @@ twice, a type that changed — the C compiler says so.
 ### 8. An unknown key is an error
 
 In both documents, everywhere. A reader that skipped what it did not
-recognise would read `ofset = -16000` as a unit with no offset, accept
+recognise would read `offst = -16000` as a unit with no offset, accept
 the file, and compile every temperature 32 degrees wrong. The reader
 suggests the key it thinks was meant, from the keys the chapter defines
 at that place.
