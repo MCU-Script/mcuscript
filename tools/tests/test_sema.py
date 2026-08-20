@@ -233,6 +233,47 @@ def test_without_one_a_time_of_day_is_refused():
     assert "times of day" in text
 
 
+def test_a_profile_with_one_calendar_role_says_which_one_it_has():
+    """A refusal that says "no calendar" where there is one is wrong.
+
+    A profile may declare a date dimension and no time-of-day dimension,
+    which is what `profile-home` does. The literal still has nowhere to
+    go, and the refusal is about the role rather than the calendar.
+    """
+    dates_only = Profile(
+        "dates",
+        "0.1",
+        (
+            Dimension(
+                1,
+                "time",
+                ValType.I64,
+                "ms",
+                clock=Clock(Fraction(1000), 0),
+            ),
+        ),
+        id=1,
+    )
+    text = message('let x = @"07:00"', dates_only)
+    assert "no dimension for times of day" in text
+    assert "no calendar" not in text
+    assert "`time` counts from a date" in text
+    assert '@"2026-01-01 07:00"' in text
+
+
+def test_the_same_holds_the_other_way_round():
+    times_only = Profile(
+        "times",
+        "0.1",
+        (Dimension(1, "daytime", ValType.I32, "s_day", clock=Clock(Fraction(1))),),
+        id=1,
+    )
+    text = message('let x = @"2026-08-20 07:00"', times_only)
+    assert "no dimension for points in time" in text
+    assert "no calendar" not in text
+    assert '@"07:00"' in text
+
+
 def test_a_date_is_worth_what_the_epoch_says():
     """1970 is the fixture's epoch and milliseconds are its base unit."""
     analysis = in_entry('let x: instant = @"2026-08-20 04:02:51"')

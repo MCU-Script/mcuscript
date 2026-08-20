@@ -168,6 +168,18 @@ static inline mcuscript_value mcuscript_i32(int32_t value)
 	return out;
 }
 
+static inline mcuscript_value mcuscript_i64(int64_t value)
+{
+	mcuscript_value out = { .as = { .i64 = value }, .validity = MCUSCRIPT_VALID };
+	return out;
+}
+
+static inline mcuscript_value mcuscript_f32(float value)
+{
+	mcuscript_value out = { .as = { .f32 = value }, .validity = MCUSCRIPT_VALID };
+	return out;
+}
+
 static inline mcuscript_value mcuscript_bool(bool value)
 {
 	mcuscript_value out = { .as = { .boolean = value }, .validity = MCUSCRIPT_VALID };

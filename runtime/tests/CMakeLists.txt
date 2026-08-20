@@ -5,6 +5,10 @@ add_executable(test_header test_header.c)
 target_link_libraries(test_header PRIVATE mcuscript)
 add_test(NAME header COMMAND test_header)
 
+add_executable(test_values test_values.c)
+target_link_libraries(test_values PRIVATE mcuscript)
+add_test(NAME values COMMAND test_values)
+
 # The world a test describes in a file, and the output protocol both
 # backends answer in. Linked into the VM runner here, and compiled
 # alongside generated C by the differential harness.

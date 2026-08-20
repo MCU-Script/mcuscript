@@ -30,7 +30,7 @@ from dataclasses import dataclass, field
 from fractions import Fraction
 
 from . import ast
-from .diagnostics import Span, error
+from .diagnostics import CompileError, Span, error
 from .opcodes import ValType
 from .profile import Dimension, Profile, Unit, civil_seconds, day_seconds
 from .registry import Entity, HostFunction, Quantity, Registry, nearest
@@ -619,13 +619,7 @@ class _Analyser:
         dated = bool(node.date)
         dimension = self.profile.instant if dated else self.profile.time_of_day
         if dimension is None or dimension.clock is None:
-            kind = "a date" if dated else "a time of day"
-            thing = "points in time" if dated else "times of day"
-            raise error(
-                f"this profile has no calendar, so {kind} means nothing here",
-                node.span,
-                f"The profile `{self.profile.name}` declares no dimension for {thing}.",
-            )
+            raise self.no_calendar_for(node, dated=dated)
         clock = dimension.clock
         written = f"{node.date} {node.time}".strip()
         try:
@@ -646,6 +640,35 @@ class _Analyser:
         self._reachable(value, dimension, written, node.span)
         self.out.values[id(node)] = value
         return Quantity(dimension.type, dimension)
+
+    def no_calendar_for(self, node: ast.DateTime, *, dated: bool) -> CompileError:
+        """Why this literal has nowhere to belong (§7.2.4).
+
+        A profile may declare a calendar for one role and not the other,
+        and then "this profile has no calendar" is false as well as
+        unhelpful. Where the other role exists, the refusal names it and
+        shows the shape that would have been read.
+        """
+        thing = "points in time" if dated else "times of day"
+        other = self.profile.time_of_day if dated else self.profile.instant
+        if other is None:
+            kind = "a date" if dated else "a time of day"
+            return error(
+                f"this profile has no calendar, so {kind} means nothing here",
+                node.span,
+                f"The profile `{self.profile.name}` declares no dimension for {thing}.",
+            )
+        shape = f'@"{node.time}"' if dated else f'@"2026-01-01 {node.time}"'
+        counts = (
+            "takes a time of day and no date"
+            if dated
+            else "counts from a date, so a moment written for it needs one"
+        )
+        return error(
+            f"this profile has no dimension for {thing}",
+            node.span,
+            f"`{other.name}` {counts} — {shape}.",
+        )
 
     def _reachable(
         self, value: Fraction, dimension: Dimension, written: str, span: Span
