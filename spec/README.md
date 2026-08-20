@@ -144,6 +144,7 @@ against.
 | [05-execution.md](05-execution.md) | Invocation, frames, recursion, faults, termination |
 | [06-syntax.md](06-syntax.md) | **The surface syntax** — lexical structure, expressions, statements, inference, and the whole language planned including what is not built |
 | [07-profiles.md](07-profiles.md) | **The two documents a compiler is given** — the form of a profile and of a registry, and how a command is handed them |
+| [profile-ids.md](profile-ids.md) | **The register of profile ids** — which published profile holds which number, and the range that is never allocated |
 | [corpus/](corpus/) | **Containers, with the verdict each must get.** Not prose — how an implementation checks itself against the four documents above |
 
 All seven exist in draft, and each round of work on them changes the

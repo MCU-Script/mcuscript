@@ -95,10 +95,19 @@ calendar = { epoch = "1970-01-01 00:00:00", second = 1000 }
 profile pins, and a file that claimed it would produce containers
 indistinguishable from the dimensionless ones.
 
-Nothing here allocates ids. The number is an identity in the sense a
-magic number is: two profiles that choose the same one is a mistake no
-reader can see, which is the reason the version is pinned beside it and
-the reason a registry pins both (§7.3.1).
+**Ids from `0x80000000` up are never allocated and never will be.** A
+profile private to one house, one vendor or one experiment takes its id
+from there. That is the whole mechanism: below the boundary an id is an
+identity in the sense a magic number is, and two profiles choosing the
+same one is a mistake no reader can diagnose — the version pinned beside
+it and the registry pinning both (§7.3.1) narrow that and do not close
+it. Above the boundary the question does not arise, because nothing
+published is ever there to collide with.
+
+Ids below the boundary are recorded in
+[profile-ids.md](profile-ids.md). A register is not a permission: a
+profile may use any id it likes and no reader checks. What it buys is
+that a published profile can be looked up before its number is reused.
 
 ### 7.2.2 A dimension
 

@@ -198,8 +198,12 @@ or a conversion.
   §7.5 removes the ordinary way to get that wrong rather than the
   possibility. Carrying parameter dimensions in `HOST` is a container
   change and has not been argued for.
-- **Nothing allocates profile ids.** Two profiles that choose the same
-  number is a mistake no reader can see. The version is pinned beside it
-  and a registry pins both, which narrows it; it does not close it.
+- ~~**Nothing allocates profile ids.**~~ Answered 2026-08-20, when the
+  first profile needed a number: `spec/profile-ids.md` registers the
+  published ones and reserves everything from `0x80000000` up as never
+  allocated. The reservation is the part that does work — a profile
+  private to one building takes its id from there and cannot collide
+  with anything published. Below the boundary the register narrows the
+  problem and, as before, does not close it: nothing checks.
 - **No corpus for profiles.** If a second toolchain appears, the argument
   that produced `spec/corpus/` applies here too.
